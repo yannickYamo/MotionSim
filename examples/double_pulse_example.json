@@ -1,0 +1,14 @@
+{
+  "note": "made-up numbers to show the file format",
+  "v_dc": 400,
+  "energy_unit": "mJ",
+  "rg_on": 4.7,
+  "rg_off": 4.7,
+  "v_drive": 15,
+  "points": [
+    {"tj": 25, "current": 20, "e_on": 0.33, "e_off": 0.26},
+    {"tj": 25, "current": 40, "e_on": 0.86, "e_off": 0.52},
+    {"tj": 150, "current": 20, "e_on": 0.58, "e_off": 0.40},
+    {"tj": 150, "current": 40, "e_on": 1.22, "e_off": 0.74}
+  ]
+}

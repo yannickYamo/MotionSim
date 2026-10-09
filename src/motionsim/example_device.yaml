@@ -1,0 +1,53 @@
+# Synthetic device for testing the engine. Not a real part: every curve is a
+# straight line chosen to be plausible for a 600 V, 30 A IGBT with a diode.
+schema_version: 1
+vendor: synthetic
+part_number: LINEAR-600V-30A
+technology: Si IGBT
+ratings:
+  v_max: 600
+  i_nominal: 30
+  tj_max: 150
+package:
+  topology: six_pack
+  rth_case_sink: 0.1
+switch:
+  kind: igbt
+  conduction:
+    source: {kind: synthetic, note: "Vce = 0.90 V + 30 mOhm at 25 C, 0.80 V + 45 mOhm at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 60], value: [0.90, 2.70]}
+      - {tj: 150, current: [0, 60], value: [0.80, 3.50]}
+  e_on:
+    v_ref: 300
+    source: {kind: synthetic, note: "20 uJ/A at 25 C, 30 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 60], value: [0, 1.2e-3]}
+      - {tj: 150, current: [0, 60], value: [0, 1.8e-3]}
+  e_off:
+    v_ref: 300
+    source: {kind: synthetic, note: "15 uJ/A at 25 C, 25 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 60], value: [0, 0.9e-3]}
+      - {tj: 150, current: [0, 60], value: [0, 1.5e-3]}
+  thermal:
+    source: {kind: synthetic}
+    r: [0.2, 0.5, 0.6]
+    tau: [0.001, 0.01, 0.1]
+diode:
+  kind: diode
+  conduction:
+    source: {kind: synthetic, note: "Vf = 1.00 V + 25 mOhm at 25 C, 0.85 V + 30 mOhm at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 60], value: [1.00, 2.50]}
+      - {tj: 150, current: [0, 60], value: [0.85, 2.65]}
+  e_rr:
+    v_ref: 300
+    source: {kind: synthetic, note: "5 uJ/A at 25 C, 12 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 60], value: [0, 0.30e-3]}
+      - {tj: 150, current: [0, 60], value: [0, 0.72e-3]}
+  thermal:
+    source: {kind: synthetic}
+    r: [0.4, 0.8, 1.0]
+    tau: [0.001, 0.01, 0.1]

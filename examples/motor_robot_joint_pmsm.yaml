@@ -1,0 +1,21 @@
+# Permanent-magnet synchronous motor (also a brushless motor run with sinusoidal
+# currents and field-oriented control). The values below describe a made-up 48 V
+# robot-joint motor. Replace them with your motor's.
+type: pmsm
+name: my motor
+magnets: surface      # surface: magnets on the rotor surface (Ld = Lq)
+                      # interior: magnets buried in the rotor (Lq > Ld, adds reluctance torque)
+pole_pairs: 7         # number of magnet poles divided by 2
+
+# Back-EMF: give exactly one of the three.
+kv: 100               # speed constant, rpm per volt (peak line-to-line)
+# ke: 10.0            # back-EMF constant, peak line-to-line volts per 1000 rpm
+# flux_linkage: 0.0079  # permanent-magnet flux linkage, Wb peak
+
+# Inductance: one value for a surface-magnet motor, two for interior magnets.
+l: 0.00012            # phase inductance, H (line-to-line inductance divided by 2)
+# ld: 0.00010         # d-axis inductance, H
+# lq: 0.00018         # q-axis inductance, H
+
+rs: 0.045             # phase resistance, ohm (line-to-line resistance divided by 2)
+i_max: 40             # optional: winding current limit, A rms

@@ -1,0 +1,8 @@
+# Made-up surface permanent-magnet motor of the size a 300 V appliance drive runs.
+# Not a real product.
+name: appliance PMSM (synthetic)
+pole_pairs: 4
+flux_linkage: 0.10   # Wb peak
+ld: 0.008            # H
+lq: 0.008            # H
+rs: 1.0              # ohm per phase

@@ -1,0 +1,123 @@
+"""Steady-state permanent-magnet synchronous machine.
+
+Turns a speed and a torque into what the inverter has to deliver: phase
+current, voltage, power factor and output frequency. Standard dq-frame
+equations in peak (amplitude-invariant) quantities:
+
+    torque = 1.5 * p * (psi * iq + (Ld - Lq) * id * iq)
+    vd = Rs * id - w * Lq * iq
+    vq = Rs * iq + w * (Ld * id + psi)
+
+Current is chosen for the least amplitude that makes the torque. When the
+voltage that needs exceeds what the DC link can give, id is pushed negative
+until the voltage fits (field weakening).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
+from scipy.optimize import brentq, minimize_scalar
+
+from motionsim.motor.stage import Unreachable
+
+
+class Motor(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = "motor"
+    pole_pairs: int = Field(gt=0)
+    flux_linkage: float = Field(gt=0, description="permanent-magnet flux linkage, Wb peak")
+    ld: float = Field(gt=0, description="d-axis inductance, H")
+    lq: float = Field(gt=0, description="q-axis inductance, H")
+    rs: float = Field(ge=0, description="phase resistance, ohm")
+    i_max: float | None = Field(default=None, gt=0, description="phase current limit, A rms")
+
+
+@dataclass(frozen=True)
+class DriveState:
+    i_d: float  # A peak
+    i_q: float  # A peak
+    v_d: float  # V peak
+    v_q: float  # V peak
+    f_out: float  # Hz
+    field_weakening: bool
+    p_shaft: float  # W
+    p_copper: float  # W
+
+    @property
+    def i_rms(self) -> float:
+        return float(np.hypot(self.i_d, self.i_q) / np.sqrt(2))
+
+    @property
+    def v_peak(self) -> float:
+        return float(np.hypot(self.v_d, self.v_q))
+
+    @property
+    def power_factor(self) -> float:
+        power = 1.5 * (self.v_d * self.i_d + self.v_q * self.i_q)
+        apparent = 1.5 * self.v_peak * np.hypot(self.i_d, self.i_q)
+        return float(power / apparent) if apparent else 1.0
+
+    def modulation_index(self, v_dc: float) -> float:
+        return self.v_peak / (v_dc / 2)
+
+
+def _iq_for(motor: Motor, torque: float, i_d: float) -> float:
+    return torque / (1.5 * motor.pole_pairs * (motor.flux_linkage + (motor.ld - motor.lq) * i_d))
+
+
+def _voltages(motor: Motor, w: float, i_d: float, i_q: float) -> tuple[float, float]:
+    v_d = motor.rs * i_d - w * motor.lq * i_q
+    v_q = motor.rs * i_q + w * (motor.ld * i_d + motor.flux_linkage)
+    return v_d, v_q
+
+
+def operating_state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
+    """Currents and voltages for a speed and torque, within a peak phase voltage v_max."""
+    w = motor.pole_pairs * 2 * np.pi * rpm / 60
+    # Most negative id that keeps flux positive: beyond it the magnet is fully opposed.
+    floor = -0.999 * motor.flux_linkage / motor.ld
+
+    if motor.ld == motor.lq or torque == 0:
+        i_d = 0.0
+    else:
+        span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
+        lo, hi = (max(-span, floor), 0.0) if motor.ld < motor.lq else (0.0, span)
+        best = minimize_scalar(
+            lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded"
+        )
+        i_d = float(best.x)
+    i_q = _iq_for(motor, torque, i_d)
+    v_d, v_q = _voltages(motor, w, i_d, i_q)
+    weakening = False
+
+    if np.hypot(v_d, v_q) > v_max:
+        weakening = True
+
+        def excess(x: float) -> float:
+            return float(np.hypot(*_voltages(motor, w, x, _iq_for(motor, torque, x))) - v_max)
+
+        if excess(floor) > 0:
+            raise Unreachable(
+                f"{torque:g} N·m at {rpm:g} rpm needs more voltage than {v_max:.4g} V peak "
+                "even with full field weakening"
+            )
+        i_d = float(brentq(excess, floor, i_d))
+        i_q = _iq_for(motor, torque, i_d)
+        v_d, v_q = _voltages(motor, w, i_d, i_q)
+
+    state = DriveState(
+        i_d=i_d, i_q=i_q, v_d=v_d, v_q=v_q,
+        f_out=w / (2 * np.pi),
+        field_weakening=weakening,
+        p_shaft=torque * w / motor.pole_pairs,
+        p_copper=1.5 * motor.rs * (i_d**2 + i_q**2),
+    )
+    if motor.i_max is not None and state.i_rms > motor.i_max:
+        raise Unreachable(
+            f"{torque:g} N·m at {rpm:g} rpm needs {state.i_rms:.3g} A rms, above the motor's "
+            f"{motor.i_max:g} A limit"
+        )
+    return state

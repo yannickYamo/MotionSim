@@ -1,0 +1,5 @@
+# Made-up 24 V brushed DC gearmotor. Not a real product.
+type: dc
+name: brushed DC gearmotor (synthetic)
+kt: 0.05     # N·m per A
+r: 0.4       # ohm

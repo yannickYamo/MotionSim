@@ -1,0 +1,8 @@
+# Made-up bipolar stepper of NEMA 23 size. Not a real product.
+type: stepper
+name: NEMA 23 stepper (synthetic)
+steps_per_rev: 200
+i_phase: 2.8        # A peak, set by the driver
+r: 0.9              # ohm per phase
+l: 0.0025           # H per phase
+holding_torque: 1.2 # N·m at i_phase

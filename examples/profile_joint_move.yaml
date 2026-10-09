@@ -1,0 +1,10 @@
+# How the load moves: speed changing in straight lines between the points you give.
+# Speeds are at the load (after the gearbox), in rpm. This made-up move swings a
+# robot joint a quarter turn up from hanging and holds it there.
+name: my move
+start_angle_deg: 0      # for a gravity load: 0 is hanging straight down, 90 is horizontal
+segments:
+  - {duration: 0.3, speed_start: 0, speed_end: 20}    # accelerate
+  - {duration: 0.45, speed_start: 20, speed_end: 20}  # cruise
+  - {duration: 0.3, speed_start: 20, speed_end: 0}    # brake
+  - {duration: 2.0, speed_start: 0, speed_end: 0}     # hold against gravity

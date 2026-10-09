@@ -1,0 +1,21 @@
+# What the motor drives. Delete what does not apply; everything defaults to zero.
+# The values describe a made-up robot joint: a 3 kg arm with its mass 0.25 m from
+# the axis, behind a 50:1 gearbox.
+name: my load
+gear_ratio: 50          # motor turns per load turn (1 for direct drive)
+gear_efficiency: 0.85   # 1 for direct drive
+motor_inertia: 0.00002  # rotor inertia, kg·m2
+inertia: 0.19           # load inertia at the load shaft, kg·m2 (m * r^2 for a point mass)
+friction_coulomb: 0.2   # constant friction torque, N·m
+friction_viscous: 0.01  # friction growing with speed, N·m per rad/s
+# constant_torque: 0    # a steady opposing torque, N·m (conveyor, winch)
+# fan_coefficient: 0    # N·m per (rad/s)^2, for fans, pumps and propellers
+gravity:                # a mass on an arm
+  mass: 3.0             # kg
+  arm: 0.25             # m from the axis to the mass
+# vehicle:              # instead of gravity, for a wheel drive
+#   mass: 20            # kg carried by this motor
+#   wheel_radius: 0.08  # m
+#   rolling_resistance: 0.015
+#   drag_area: 0.0      # drag coefficient times frontal area, m2
+#   slope_percent: 5

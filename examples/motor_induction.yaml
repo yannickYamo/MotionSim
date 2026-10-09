@@ -1,0 +1,10 @@
+# Made-up 400 V class induction motor of about 1.5 kW. Not a real product.
+type: induction
+name: induction motor (synthetic)
+pole_pairs: 2
+rs: 4.0
+rr: 3.5
+lm: 0.32
+lls: 0.015
+llr: 0.015
+i_magnetising: 2.4  # A peak at rated flux

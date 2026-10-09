@@ -1,0 +1,6 @@
+# Made-up brushless DC motor of the size a 48 V robot joint uses. Not a real product.
+type: bldc
+name: robot joint BLDC (synthetic)
+pole_pairs: 7
+kt: 0.09     # N·m per A
+r: 0.08      # ohm, phase to phase
