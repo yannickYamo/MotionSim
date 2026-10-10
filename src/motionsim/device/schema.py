@@ -83,6 +83,9 @@ class ConductionModel(_Model):
     basis: Basis = Basis.curve
     assumption: str | None = None
     source: Source
+    # How far one part may differ from another: the datasheet's maximum over its typical
+    # value, where it gives both. Devices in parallel share current as unevenly as this allows.
+    spread: float | None = Field(default=None, ge=1)
 
     @model_validator(mode="after")
     def _check(self) -> ConductionModel:
@@ -107,6 +110,10 @@ class SwitchingEnergy(_Model):
     # each as a multiple of the energy at rg. From the datasheet's own figure, at one current.
     rg_values: list[float] | None = None
     rg_factor: list[float] | None = None
+    # How the energy changes with the voltage switched: voltages in V, and the energy at
+    # each as a multiple of the energy at v_ref. From the datasheet's own figure.
+    v_values: list[float] | None = None
+    v_factor: list[float] | None = None
     voltage_scaling: VoltageScaling = VoltageScaling.linear
     basis: Basis = Basis.curve
     assumption: str | None = None
@@ -202,6 +209,7 @@ class Chip(_Model):
     reverse: ConductionModel | None = None  # mosfet: reverse voltage drop with the gate off
     charge: ChargeModel | None = None  # mosfet: for switching loss when e_on and e_off are absent
     thermal: FosterNetwork
+    rg_internal: float | None = Field(default=None, ge=0, description="the chip's own gate resistance, ohm")
 
     @model_validator(mode="after")
     def _check(self) -> Chip:
@@ -275,6 +283,8 @@ class Ratings(_Model):
     v_max: float = Field(gt=0)
     i_nominal: float = Field(gt=0)
     tj_max: float
+    i_pulsed: float | None = Field(default=None, gt=0, description="pulsed or peak current rating, A")
+    t_sc: float | None = Field(default=None, gt=0, description="short-circuit withstand time, s")
 
 
 class Device(_Model):

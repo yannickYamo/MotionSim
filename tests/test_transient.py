@@ -122,3 +122,31 @@ def test_repeating_a_motion_carries_the_heat_over() -> None:
     _, thrice = follow(device(), DC, load, profile, BASE, repeats=3)
     assert thrice.time[-1] == pytest.approx(3 * once.time[-1])
     assert thrice.peak > once.peak
+
+
+def test_life_counts_the_swing_of_every_turn_of_the_motor() -> None:
+    """A chip heats and cools once a turn. Turning slowly those swings are large and are what
+    wears it out; turning fast with the same current they are small. The life has to show it."""
+    from motionsim.lifetime import worst_of
+    device = linear_device(
+        sw_curves=[line(25.0, 1.0, 0.03)], d_curves=[line(25.0, 1.0, 0.03)], k_on=4e-5, k_off=4e-5, k_rr=1e-5,
+    )
+    motor = Pmsm(type="pmsm", pole_pairs=4, kv=60, l=0.0005, rs=0.05)
+    op = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=10000.0, t_sink=60.0)
+
+    def life(rpm: float):
+        load = Load(constant_torque=4.0)
+        profile = Profile(segments=[Segment(duration=60.0, speed_start=rpm, speed_end=rpm)])
+        _, trace = follow(device, motor, load, profile, op)
+        return worst_of(trace.chips, trace.swings), trace
+
+    slow, slow_trace = life(30.0)  # 2 Hz electrical
+    fast, _ = life(3000.0)
+    assert slow.repeats < fast.repeats / 10
+    assert slow.chip and slow.swing > fast.swing
+    # About two swings a second for a minute, each about the swing within one turn.
+    label = slow.chip
+    counted = sum(c for _, _, c in slow_trace.swings.get(label, []))
+    from motionsim.lifetime import rainflow
+    in_trace = sum(c for s, _, c in rainflow(slow_trace.chips[label]) if s > 0.5 * slow.swing)
+    assert 100 <= counted + in_trace <= 140

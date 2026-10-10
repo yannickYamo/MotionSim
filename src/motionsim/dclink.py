@@ -37,18 +37,21 @@ def returned(
     voltage_share: float = 0.8,
 ) -> Returned:
     """Energy a motion sends back to the DC link, and where it takes the link voltage."""
-    total = burst = running = longest = stretch = 0.0
+    # The link capacitor is a bucket that fills above the supply's level while the motor
+    # brakes and is emptied only by what the motor then draws. A short stretch of motoring
+    # between two brakings does not empty it: it takes out what it uses and no more. Taking
+    # all of that from the capacitor, and none from the supply, is the cautious reading.
+    total = burst = stored = longest = stretch = 0.0
     peak = 0.0
     for step, power in zip(cycle.solved, cycle.dc_power):
+        dt = step.sample.duration
         if power < 0:
-            running += -power * step.sample.duration
-            stretch += step.sample.duration
-            total += -power * step.sample.duration
+            total += -power * dt
             peak = max(peak, -power)
-            if running > burst:
-                burst, longest = running, stretch
-        else:
-            running = stretch = 0.0
+        stored = max(0.0, stored - power * dt)
+        stretch = stretch + dt if stored > 0 else 0.0
+        if stored > burst:
+            burst, longest = stored, stretch
     v_limit = voltage_share * v_rated
     v_peak = None if capacitance is None else float(np.sqrt(v_dc**2 + 2 * burst / capacitance))
     room = v_limit**2 - v_dc**2

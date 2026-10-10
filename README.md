@@ -4,6 +4,12 @@ Bring a power transistor's datasheet, your motor and your load. See what the pow
 
 MotionSim is a local web page with a loss and temperature engine behind it. It works from any vendor's datasheet, shows the equations it uses, and says in every result what the data supports and what it leaves out.
 
+Live page: https://yannickyamo.github.io/MotionSim/
+
+![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature, the verdict and its checks on the right](docs/images/page.png)
+
+The live page runs the engine in your browser, with a made-up part to try. It does not read datasheets: that needs your own key and a local install, as below.
+
 **Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). It has not been checked against a measured loss. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
 
 ## Who it is for
@@ -29,9 +35,10 @@ Five steps on one page, with the power stage drawn on screen the whole time:
    - Conduction and switching loss, and junction temperature as a range where values are assumed.
    - Temperature through the whole motion, the motor current, and a life estimate under thermal cycling.
    - A speed-torque map, in the motor's units or the load's.
-   - Starting values for gate resistors, dead time, modulation and heatsink.
-   - Up to five devices, or up to five loads, compared side by side.
-   - A report you can save as a PDF.
+   - **What to build**: the heatsink, the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
+   - **What it can drive**: the question turned round. The torque the device holds at each speed, how that moves with switching frequency and heatsink temperature, and how much heavier your load could be.
+   - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values.
+   - A setup you can save to a file, and a report you can save as a PDF.
 
 An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away.
 

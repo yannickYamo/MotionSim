@@ -195,10 +195,24 @@ def gate_resistors(
     else:
         lines.append("the gate driver's peak current is not considered: give it to include it")
     value = {}
+    inside = sw.rg_internal
     for name, limits, key in (("turn-on", on, "rg_on"), ("turn-off", off, "rg_off")):
         reason, least = max(limits.items(), key=lambda item: item[1])
         value[key] = _round_up(least)
-        lines.append(f"{name}: at least {value[key]:.2g} ohm in total, set by {reason}")
+        if inside is not None and value[key] < inside:
+            # The chip's own gate resistance is there whatever is fitted outside it.
+            value[key] = inside
+            lines.append(
+                f"{name}: {inside:.2g} ohm in total, which is the transistor's own gate resistance: no "
+                f"external resistor is needed for the limits, and none can make it faster"
+            )
+        else:
+            lines.append(f"{name}: at least {value[key]:.2g} ohm in total, set by {reason}")
+            if inside is not None:
+                lines.append(
+                    f"{name}: the transistor's own gate resistance is {inside:.2g} ohm of that, leaving "
+                    f"{max(value[key] - inside, 0):.2g} ohm for the driver and the external resistor"
+                )
     from motionsim.engine.mosfet import output_charge
 
     moved = c.q_gs - c.q_g_th + c.q_gd

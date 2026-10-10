@@ -97,6 +97,11 @@ class Role:
     # The leg this position belongs to, where the legs of the stage do different work.
     # Left out, every leg is taken to carry an equal part of what these positions lose.
     leg: str | None = None
+    # The current at the instants the switch turns on and off, where ripple at the switching
+    # frequency makes them differ from the mean: on at the bottom of the ripple, off at the
+    # top. Left out, both are the current above.
+    current_on: np.ndarray | None = None
+    current_off: np.ndarray | None = None
 
 
 def phase_leg_role(w: PhaseWaveform, count: int = 6, name: str = "phase leg") -> Role:

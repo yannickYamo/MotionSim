@@ -306,6 +306,43 @@ Vishay IRF540, vector figures. Body-diode curve at 25 °C stays under the tabula
 
 An independent line-by-line audit against first principles confirmed: IGBT and diode loss terms; FET conduction, overlap, output-charge and dead-time terms, to four digits against hand calculation; switching events in every symmetric scheme and in block and H-bridge drive in all quadrants; the temperature loop and the periodic peak against time stepping; permanent-magnet control against a brute-force search; induction, brushless DC and brushed DC power balance; the load model; the DC-link energy balance; the heat-spreading plate against its closed-form limit; and unit handling throughout.
 
+## Ripple at the switching frequency, and the link capacitor
+
+- The DC-link capacitor's ripple current, found from the switching sequence, against the closed form for three sinusoidal currents: within 2% at 32 combinations of modulation index (0.2 to 1.0), power factor (−0.9 to 1.0) and scheme (sine and space-vector). The mean link current equals the power balance.
+- One leg chopping into a winding: capacitor current I·√(D(1−D)) and current ripple V·D(1−D)/(L·f), both exact, at three duty cycles.
+- Three-phase ripple stays under one leg's bound V/(4·L·f) for three schemes and three modulation depths, and scales inversely with inductance.
+
+## Life, per chip
+
+- A single swing gives the model's own number of cycles; a swing twice as large lasts 2^5.039 times fewer.
+- A motion held at 2 Hz electrical for a minute counts between 100 and 140 swings of the size of the swing within one turn, and lasts less than a tenth as long as the same current at high speed.
+
+## What a device can drive
+
+- At the torque limit the hottest junction is at its rating within 0.5 °C, and 2% more torque is over it.
+- The limit falls with switching frequency and with heatsink temperature; past the motor's reach, the motor is what stops it.
+
+## Smaller checks added with them
+
+- Devices in parallel: two at 30 A are two stages of one at 15 A.
+- A module with and without a stated case-to-heatsink resistance of the same value gives the same junction temperature.
+- The DC link as a bucket: a short stretch of motoring between two brakings takes out only what it uses.
+- A hot motor: current up by the inverse of the magnet factor, winding loss by the copper factor over its square.
+- A magnet motor's back-EMF at speed against the supply and the rating.
+
+## The motor and the stage, further
+
+- Iron loss: the shaft gives the same, the motor loses the stated watts more plus the copper loss of the current that supplies them.
+- Saturation: far below the saturation current nothing changes; at it, a reluctance motor needs over 5% more current for the same torque.
+- A buried-magnet motor is found past the speed where full opposition of the magnet is not enough, with id beyond that point and the voltage within its limit.
+- Ripple at the switching instants: turn-on loss falls and turn-off loss rises.
+- Devices in parallel with a spread of 1.5: the hardest-worked of a pair has the temperature of 60% of the current, and the stage loses what 60% and 40% lose.
+- A chosen gate resistor is never below the transistor's own.
+
+## The page, walked at random
+
+Besides the fixed tour of every step and tab at three widths, the page is walked at random: a seeded sequence of whatever can be pressed, on a desk-width and a phone-width screen, with every placement check run after each press and nothing allowed to stay waiting. Two seeds, six walks each, about 130 surfaces a run.
+
 ## Datasheets the reader has been tried on
 
 No device data ships with this project and it favours no vendor. You bring the datasheets. This table says what the reader has been run on so far, so you can judge how far to trust it on yours.

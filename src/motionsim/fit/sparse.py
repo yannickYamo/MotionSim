@@ -175,7 +175,7 @@ def _energy(
     wanted = _TEST_RESISTOR.get(quantity)
     rows = [] if wanted is None else [o for o in _usable(obs, wanted, allow_flagged=allow) if o.typ]
     if not rows:
-        return table
+        return _with_voltage_figure(obs, quantity, table)
     table = table.model_copy(update={"rg": rows[0].typ})
     # The datasheet's figure of energy against gate resistance, as a multiple of the energy
     # at the table's own resistor. It was accepted only because it passes through that point.
@@ -188,7 +188,51 @@ def _energy(
             table = table.model_copy(update={
                 "rg_values": c.x, "rg_factor": [float(f"{v / at:.5g}") for v in c.y],
             })
-    return table
+    return _with_voltage_figure(obs, quantity, table)
+
+
+def _with_voltage_figure(obs: ObservationSet, quantity: Quantity, table: SwitchingEnergy) -> SwitchingEnergy:
+    """The datasheet's figure of energy against voltage, as a multiple of the energy at the
+    table's test voltage. Accepted only because it passes through that point."""
+    wanted = {Quantity.e_on: Quantity.e_on_v_curve, Quantity.e_off: Quantity.e_off_v_curve}.get(quantity)
+    found = [c for c in obs.curves if c.quantity is wanted and c.x and not c.flags]
+    if not found or not c_inside(found[0].x, table.v_ref):
+        return table
+    c = found[0]
+    at = float(np.interp(table.v_ref, c.x, c.y))
+    if at <= 0:
+        return table
+    return table.model_copy(update={"v_values": c.x, "v_factor": [float(f"{v / at:.5g}") for v in c.y]})
+
+
+def c_inside(xs: list[float], value: float) -> bool:
+    return bool(xs) and xs[0] <= value <= xs[-1]
+
+
+def spread_of(obs: ObservationSet, quantity: Quantity, allow: bool) -> float | None:
+    """The datasheet's maximum over its typical value for a conduction figure, from the first
+    row that gives both: how far one part may differ from another."""
+    for o in obs.observations:
+        if o.quantity is quantity and o.typ and o.max and o.max >= o.typ and (allow or o.status is not ReviewStatus.flagged):
+            return float(f"{o.max / o.typ:.4g}")
+    return None
+
+
+def internal_gate(obs: ObservationSet, allow: bool) -> float | None:
+    rows = [o for o in obs.observations if o.quantity is Quantity.rg_internal and (o.typ is not None or o.max is not None)
+            and (allow or o.status is not ReviewStatus.flagged)]
+    return None if not rows else (rows[0].typ if rows[0].typ is not None else rows[0].max)
+
+
+def extra_ratings(obs: ObservationSet, allow: bool) -> dict:
+    """The ratings a datasheet may or may not give: pulsed current and short-circuit time."""
+    out = {}
+    for key, quantity in (("i_pulsed", Quantity.i_pulsed), ("t_sc", Quantity.t_sc)):
+        rows = [o for o in obs.observations if o.quantity is quantity and (o.max or o.typ)
+                and (allow or o.status is not ReviewStatus.flagged)]
+        if rows:
+            out[key] = rows[0].max or rows[0].typ
+    return out
 
 
 def _energy_table(
@@ -395,13 +439,17 @@ def build_device(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
             v_max=_single(obs, Quantity.v_rated, "voltage rating", a).typ,
             i_nominal=_single(obs, Quantity.i_rated, "current rating", a).typ,
             tj_max=_single(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
+            **extra_ratings(obs, a),
         ),
         package=Package(
             topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline
         ),
         switch=Chip(
             kind="igbt",
-            conduction=_conduction(obs, Quantity.vce_sat, "saturation voltage", a),
+            conduction=_conduction(obs, Quantity.vce_sat, "saturation voltage", a).model_copy(
+                update={"spread": spread_of(obs, Quantity.vce_sat, a)}
+            ),
+            rg_internal=internal_gate(obs, a),
             e_on=e_on,
             e_off=_energy(obs, Quantity.e_off, "turn-off energy", a),
             thermal=_thermal(obs, Quantity.rth_jc_switch, "switch thermal resistance", a),

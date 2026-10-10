@@ -30,6 +30,56 @@ def verdict(checks: list[Check]) -> Level:
     return max((c.level for c in checks), default=Level.ok)
 
 
+def ripple_checks(point, op: OperatingPoint) -> list[Check]:
+    """Checks on what the switching itself does: ripple on the motor current, and the ripple
+    current the DC-link capacitor has to carry. point is a solved motor point."""
+    out = []
+    peak = point.stage.i_peak
+    if point.ripple_pp is not None and peak > 0:
+        share = point.ripple_pp / peak
+        text = (
+            f"the motor current carries {point.ripple_pp:.3g} A of ripple, peak to peak, at the "
+            f"switching frequency: {share:.0%} of its {peak:.3g} A peak"
+        )
+        if share > 0.2:
+            out.append(Check(Level.caution, "ripple", text + ". A motor with so little inductance wants a higher "
+                             "switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple"))
+        else:
+            out.append(Check(Level.ok, "ripple", text))
+    if point.capacitor_rms is not None:
+        out.append(Check(
+            Level.ok, "link capacitor",
+            f"the DC-link capacitor carries {point.capacitor_rms:.3g} A rms of ripple at the switching "
+            "frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top",
+        ))
+    return out
+
+
+def trip_check(motor, rpm: float, v_dc: float, v_rated: float) -> Check | None:
+    """What a magnet motor does to the link if the drive stops switching at this speed.
+
+    A turning magnet motor is a generator. While the drive runs, it holds the motor's
+    voltage down; if it trips, the diodes rectify the back-EMF straight into the link.
+    """
+    import math
+
+    w = abs(rpm) * math.pi / 30
+    if getattr(motor, "flux_linkage", None) and getattr(motor, "pole_pairs", None):
+        volts = math.sqrt(3) * motor.pole_pairs * w * motor.flux_linkage
+    elif getattr(motor, "type", "") == "bldc":
+        volts = motor.kt * w
+    else:
+        return None  # no magnets on the rotor, or a commutator in the way
+    text = f"if the drive stops switching at {abs(rpm):.0f} rpm, the motor's back-EMF is {volts:.0f} V between lines"
+    if volts > v_rated:
+        return Check(Level.fail, "trip", text + f", above the device's {v_rated:g} V rating: the diodes would charge "
+                     "the link past it. This needs protection that shorts the motor or burns the energy, or a lower top speed")
+    if volts > v_dc:
+        return Check(Level.caution, "trip", text + f", above the {v_dc:g} V supply: the motor would charge the link "
+                     "through the diodes until it slows. The link capacitor and the supply have to stand that")
+    return Check(Level.ok, "trip", text + ", below the supply: a trip there does no harm to the link")
+
+
 def check(
     device: Device,
     op: OperatingPoint,
@@ -89,14 +139,34 @@ def check(
             f"junction peaks at {peak:.0f} °C{spread}, {r.tj_max - high:.0f} °C below its rating",
         ))
 
-    if i_peak > r.i_nominal:
+    # A rating is one device's. With several in parallel each carries its share of the
+    # position's current, which is what the solver gives it too.
+    from motionsim.engine.solver import hot_share
+
+    shared = max(int(op.parallel), 1)
+    each = i_peak * hot_share(device, shared)  # the one that carries most
+    said = f"{each:.3g} A" if shared == 1 else f"{each:.3g} A a device ({i_peak:.3g} A at the switch, shared by {shared})"
+    if each > r.i_nominal:
         out.append(Check(
             Level.caution, "current",
-            f"peak current {i_peak:.3g} A is above the device's rated {r.i_nominal:g} A; check "
+            f"peak current {said} is above the device's rated {r.i_nominal:g} A; check "
             "what case temperature that rating assumes",
         ))
     else:
-        out.append(Check(Level.ok, "current", f"peak current {i_peak:.3g} A against a {r.i_nominal:g} A rating"))
+        out.append(Check(Level.ok, "current", f"peak current {said} against a {r.i_nominal:g} A rating"))
+    # The continuous rating may be passed for a moment; the pulsed rating may not.
+    if r.i_pulsed is not None and each > r.i_pulsed:
+        out.append(Check(
+            Level.fail, "current",
+            f"peak current {each:.3g} A a device is above its pulsed rating of {r.i_pulsed:g} A, "
+            "which nothing may exceed even briefly",
+        ))
+    if r.t_sc is not None:
+        out.append(Check(
+            Level.ok, "protection",
+            f"the device stands a short circuit for {r.t_sc * 1e6:.3g} µs: its protection has to see "
+            "the fault and turn it off inside that",
+        ))
 
     if result.validity is Validity.assumed:
         out.append(Check(Level.caution, "data", "part of this result rests on assumed data, listed under data support"))

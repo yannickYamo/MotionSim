@@ -6,7 +6,8 @@
 - Seven kinds of motor, each from its catalogue figures, braking included where the machine can brake.
 - A load and its motion, or a mission profile from a file, with junction and heatsink temperature followed through time, the way the drive starts the motor, and braking energy turned into a DC-link voltage.
 - Losses, junction temperatures, plain-language checks, a speed-torque map, a life estimate under thermal cycling, and starting values for gate resistors, dead time, modulation and heatsink.
-- Up to five devices, or five loads, side by side; a report to save.
+- What to build around the device: heatsink, link capacitor and its ripple current, gate drive, protection. And the question turned round: what a device can drive, and how much heavier the load could be.
+- Up to five devices, loads or motors side by side, or one setting at up to five values; a setup saved to a file; a report.
 - All of it from a local page and from the command line.
 
 ## Next, in order
@@ -15,7 +16,7 @@
 2. **Export of device models** to the formats circuit simulators read, so a model built from a datasheet can be used elsewhere.
 3. **The reader, further.** Quantities spread over several figures, curves drawn against gate voltage, and the figures of scanned datasheets.
 4. **The page, further.** The datasheet's own page shown beside what was read from it; a configuration saved to a file and opened again; a demo that runs in the browser with nothing to install.
-5. **The model, further.** Current ripple at the switching frequency, a braking resistor, a transistor's internal gate resistance, unequal sharing between devices in parallel.
+5. **The model, further.** A braking resistor, iron loss that follows the flux, saturation curves instead of one figure, thermal rebalancing between devices in parallel.
 
 ## Not planned
 

@@ -442,7 +442,13 @@ table.data td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var
 
 /* ---------- narrower screens ---------- */
 
-@media (max-width: 1180px) {
+/* Between a wide desk and a phone the steps fold to their numbers and the results give
+   some room back, so the drawing is seen whole on the common 1280 px laptop. */
+@media (max-width: 1400px) {
+  body[data-at="4"] #app { --panel: clamp(440px, 40vw, 680px); }
+  #stage { padding-inline: 18px; }
+}
+@media (max-width: 1400px) {
   #app { --rail: 76px; }
   .step-text { display: none; }
   #rail { padding: 22px 12px; }
@@ -625,3 +631,13 @@ label.add-part:focus-within { outline: 2px solid var(--orange); outline-offset: 
 .pwm-fold > summary::-webkit-details-marker { display: none; }
 .pwm-fold[open] > summary { margin-bottom: 8px; }
 .review-link + .review-link { margin-left: 16px; }
+.facts dd.words { font-size: 0.95rem; font-weight: 500; }
+
+/* ---------- comparing motors, trying a setting, keeping a setup ---------- */
+.compare-bar .segmented { flex-wrap: wrap; }
+.compare-bar .segmented button { min-height: 36px; }
+.compare-bar .fields.sweep { margin: 0; }
+.setup-files { display: flex; flex-wrap: wrap; gap: 6px 22px; }
+.link-label { display: inline-flex; align-items: center; min-height: 32px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.link-label:focus-within { outline: 2px solid var(--orange); outline-offset: 2px; }
+button.link:disabled { opacity: 0.45; cursor: default; }

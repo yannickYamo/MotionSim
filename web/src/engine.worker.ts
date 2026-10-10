@@ -11,7 +11,9 @@ let call: ((route: string, payload: string) => string) | null = null;
 
 async function start(engineUrl: string, devices: { name: string; text: string }[]): Promise<void> {
   const say = (progress: string) => postMessage({ progress });
-  say("Fetching the Python runtime");
+  // Said plainly: in this mode the Python runtime comes from a public file server, once,
+  // and is then kept by the browser. Nothing the user enters is sent anywhere.
+  say("Fetching the Python runtime from cdn.jsdelivr.net");
   importScripts(`${RUNTIME}pyodide.js`);
   const py = await loadPyodide({ indexURL: RUNTIME });
   say("Loading the numerical libraries");

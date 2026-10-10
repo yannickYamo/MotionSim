@@ -11,7 +11,8 @@
     "engine-check": "node scripts/engine-check.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "measure": "node scripts/measure.mjs"
+    "measure": "node scripts/measure.mjs",
+    "walk": "node scripts/walk.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

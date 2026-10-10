@@ -7,6 +7,7 @@ export interface MotorKind {
   family: string; label: string; about: string; start: Record<string, number>;
   values: Record<string, string | number>; fields: Field[];
   fixed_scheme: string | null; default_pwm: string;
+  optional: { key: string; label: string; unit: string; help: string }[];
 }
 export interface DeviceSummary {
   id: string; name: string; technology: string; v_max: number; i_nominal: number; tj_max: number;
@@ -42,6 +43,7 @@ export interface SwitchingPeriod { current: number; duty: number; p_on: number; 
 export interface Candidate {
   gate: GateUsed;
   pwm: SwitchingPeriod | null;
+  link: { capacitor_rms: number | null; ripple_pp: number | null } | null;
   id: string; name: string; technology: string; level: Level; problem: string | null; fix: string;
   result: Result | null; stall_tj: number | null; efficiency: number | null; checks: Check[]; needs: string[];
 }
@@ -51,7 +53,7 @@ export interface Cycle {
   rpm: number[]; torque: number[]; p_stage: (number | null)[]; p_dc: (number | null)[];
   summary: Record<string, number | null>; checks: Check[];
   i_peak: (number | null)[];
-  life: { repeats: number | null; hours: number | null; swing: number; swing_mean: number; swing_share: number; swings: number };
+  life: { repeats: number | null; hours: number | null; swing: number; swing_mean: number; swing_share: number; swings: number; chip: string; within_turn: boolean };
   start: { applies: "method" | "flux" | "none"; method: string; current?: number; align_time?: number; handover_rpm?: number; flux_time?: number; lines: string[] };
   inrush: { energy: number; peak: number | null; time: number | null } | null;
 }
@@ -98,6 +100,15 @@ function answerOf<T>(status: number, body: any): T {
   if (status !== 200) throw new Error(body?.error ?? `the engine answered ${status}`);
   return body as T;
 }
+
+/** What a device can hold at a point: the torque, what stops it, and where it is then. */
+export interface LimitRow { torque: number; why: string; tj: number | null; current: number | null }
+export interface Capability {
+  rpm: number[]; edge: LimitRow[];
+  design: LimitRow & { rpm: number; share: number | null; power: number; rated: number };
+  f_sw: number[]; by_f_sw: LimitRow[]; t_sink: number[]; by_t_sink: LimitRow[];
+}
+export interface Largest { scale: number; open: boolean; why: string; peak: number | null; tj_max: number | null }
 
 /** A kind of load a motor usually drives, sized from the motor's design point. */
 export interface LoadPreset {
@@ -204,6 +215,8 @@ export const api = {
   },
   /** Read a datasheet PDF. Only where a local server holds the user's key. */
   loads: (kind: string, rpm: number, torque: number, v_dc: number) => send<{ loads: LoadPreset[] }>("/api/loads", { kind, rpm, torque, v_dc }),
+  capability: (d: unknown) => send<Capability>("/api/capability", d),
+  largest: (d: unknown) => send<Largest>("/api/largest", d),
   suggest: (device: string) => send<Suggest>("/api/suggest", { device }),
   reading: (id: string) => send<Reading>(`/api/device/${encodeURIComponent(id)}`, null, undefined, "GET"),
   read: async (file: File) => {

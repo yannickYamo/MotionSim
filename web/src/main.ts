@@ -1,7 +1,7 @@
 import "./style.css";
 import { api, boot, Refused } from "./api";
-import type { Candidate, Check, Cycle, LoadPreset, MapGrid, ModelTable, Proposal, Reading, ReadOutcome, Recommendation, Setup, Stage, Suggest, Advice } from "./api";
-import { AT_MOTOR, compareBars, heatMap, lossBar, motionPreview, overlayChart, pwmChart, tableChart, timeChart } from "./charts";
+import type { Candidate, Capability, Check, Cycle, Largest, LoadPreset, MapGrid, ModelTable, Proposal, Reading, ReadOutcome, Recommendation, Setup, Stage, Suggest, Advice } from "./api";
+import { AT_MOTOR, compareBars, heatMap, limitChart, lossBar, motionPreview, overlayChart, pwmChart, tableChart, timeChart } from "./charts";
 import type { MapAxes } from "./charts";
 import { degrees, eng, escape, percent, sentence, sig, watts } from "./format";
 import { equationsPage } from "./equations";
@@ -24,7 +24,7 @@ const MOTOR = 1;
 const SUPPLY = 2;
 const LOAD = 3;
 const RESULTS = 4;
-const TABS: [Tab, string][] = [["proposal", "Verdict"], ["losses", "Losses"], ["motion", "Motion"], ["map", "Map"], ["settings", "Settings"]];
+const TABS: [Tab, string][] = [["proposal", "Verdict"], ["losses", "Losses"], ["motion", "Motion"], ["map", "Map"], ["settings", "What to build"], ["capability", "What it can drive"]];
 
 let setup: Setup;
 let state: State;
@@ -140,6 +140,8 @@ let review: { id: string; data?: Reading; failed?: string } | null = null;
 const cycles = new Map<string, Cycle | Refused>();
 const grids = new Map<string, MapGrid | Refused>();
 const MOST = 5; // devices, or loads, compared at once: more cannot be told apart on one chart
+let capable: Capability | Refused | null = null; // what the device under test can drive
+let biggest: Largest | Refused | "working" | null = null; // how far the load could be scaled up
 let missionFault: Refused | null = null;
 let pwmOpen: boolean | null = null; // whether the user has the period drawing open; null: not chosen, so by screen width
 let pending: AbortController | null = null;
@@ -254,7 +256,9 @@ function renderStage(): void {
     }
   }
   const before = [...document.querySelectorAll<HTMLElement>("#readouts [data-roll]")].map((e) => e.textContent ?? "");
-  const table = r && conditionsGiven() && comparing() && !(blocked && state.reached >= SUPPLY) ? compareTable() : "";
+  // The table belongs to the results: away from them the things compared are not being
+  // worked out, so the plain figures of the device under test are shown.
+  const table = r && state.step === RESULTS && conditionsGiven() && comparing() && !(blocked && state.reached >= SUPPLY) ? compareTable() : "";
   $("#compare-table").innerHTML = table;
   $("#readouts").innerHTML = table ? "" : cells;
   // Under the figures: where the two kinds of loss come from, period by period.
@@ -345,7 +349,8 @@ function motorPanel(): string {
     : "";
   return `<h2 tabindex="-1">The motor it drives</h2><p class="lead">Pick the kind of motor, then put in its figures from the maker's data. The values shown are a made-up example to replace.${suits}</p>
 <fieldset class="kinds"><legend>Kind of motor</legend>${list}</fieldset>
-<div class="fields">${m.fields.map((f) => (f.options ? select(`motors.${state.kind}.${f.key}`, f.label, String(v[f.key] ?? f.options[0]), f.options.map((o) => [o, o]), f.help) : field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, hint(f.key, f.unit) + f.help))).join("")}</div>${nextButton(MOTOR)}`;
+<div class="fields">${m.fields.map((f) => (f.options ? select(`motors.${state.kind}.${f.key}`, f.label, String(v[f.key] ?? f.options[0]), f.options.map((o) => [o, o]), f.help) : field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, hint(f.key, f.unit) + f.help))).join("")}</div>
+${m.optional?.length ? `<details class="more"${m.optional.some((f) => v[f.key] !== undefined && v[f.key] !== "") ? " open" : ""}><summary>${icon("adjustments")}More about this motor<span class="quiet">optional: iron loss${m.optional.some((f) => f.key === "i_sat") ? " and saturation" : ""}. Left empty, they are left out and the result says so</span></summary><div class="fields">${m.optional.map((f) => field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, f.help)).join("")}</div></details>` : ""}${nextButton(MOTOR)}`;
 }
 
 /** Whether a chosen device has no tabulated switching energy, so needs its gate drive described. */
@@ -393,11 +398,11 @@ function supplyPanel(): string {
   return `<h2 tabindex="-1">Supply and design point</h2><p class="lead">The voltage you feed the power stage from, and the hardest point the motor has to hold. The device is tested here.</p>
 <div class="fields">${field("conditions.v_dc", "Supply voltage", c.v_dc, "V")}${select("supply", "Supply", state.supply, [["one-way", "Power supply"], ["battery", "Battery"]], "A battery takes braking energy back. A power supply does not.")}
 ${field("conditions.rpm", "Speed", c.rpm, "rpm")}${field("conditions.torque", "Torque", c.torque, "N·m")}
-${field("conditions.f_khz", "Switching frequency", c.f_khz, "kHz", "Above 20 kHz is inaudible. Lower loses less.")}${field("conditions.parallel", "Devices in parallel", c.parallel, "a switch", "1 unless you put several side by side to share the current.")}${field("conditions.t_sink", "Heatsink temperature", c.t_sink, "°C", "What the heatsink sits at when warm. 60 is a fair start.")}<div class="wide">${scheme}</div></div>
+${field("conditions.f_khz", "Switching frequency", c.f_khz, "kHz", "Above 20 kHz is inaudible. Lower loses less.")}${field("conditions.parallel", "Devices in parallel", c.parallel, "a switch", "1 unless you put several side by side to share the current.")}${field("conditions.t_motor", "Motor temperature", c.t_motor, "°C", "Empty: the motor's figures as given, at 25 °C. A warm motor (80 to 120) needs more current for the same torque.")}${field("conditions.t_sink", "Heatsink temperature", c.t_sink, "°C", "What the heatsink sits at when warm. 60 is a fair start.")}<div class="wide">${scheme}</div></div>
 ${driversBuiltIn()
     ? `<details class="more"><summary>${icon("adjustments")}Dead time<span class="quiet">the gate drive is inside this module, so there is no gate voltage or resistor to set</span></summary><div class="fields">${field("conditions.t_dead_ns", "Dead time", c.t_dead_ns, "ns")}</div></details>`
     : `<details class="more"${c.v_drive || c.rg_on ? " open" : ""}><summary>${icon("adjustments")}Gate drive and layout<span class="quiet">${needsGate() ? "left empty, the gate resistors with the lowest loss within the limits are chosen for you" : "optional for your device"}</span></summary><div class="fields">
-${field("conditions.v_drive", "Gate drive voltage", c.v_drive, "V", "Often 10 to 12 for silicon, 15 to 20 for SiC, 5 for GaN.")}${field("conditions.t_dead_ns", "Dead time", c.t_dead_ns, "ns")}
+${field("conditions.v_drive", "Gate drive voltage", c.v_drive, "V", "Often 10 to 12 for silicon, 15 to 20 for SiC, 5 for GaN.")}${field("conditions.t_dead_ns", "Dead time", c.t_dead_ns, "ns")}${field("conditions.t_min_ns", "Shortest pulse", c.t_min_ns, "ns", "The shortest pulse your gate drive passes. It keeps the duty cycle off the rails.")}
 ${field("conditions.rg_on", "Turn-on gate resistance", c.rg_on, "Ω")}${field("conditions.rg_off", "Turn-off gate resistance", c.rg_off, "Ω")}
 ${field("conditions.l_loop_nh", "Loop inductance", c.l_loop_nh, "nH", "Of the switching loop on your board. 10 to 30 is typical for a careful layout.")}</div></details>`}
 ${nextButton(SUPPLY)}`;
@@ -468,7 +473,7 @@ function lifeBlock(c: Cycle): string {
   const big = (v: number) => (v >= 1e9 ? `${sig(v / 1e9, 2)} billion` : v >= 1e6 ? `${sig(v / 1e6, 2)} million` : v >= 1e3 ? `${sig(v / 1e3, 2)} thousand` : sig(v, 2));
   const body = l.repeats === null
     ? `<li>The junction temperature swings by less than 1 °C through this motion: thermal cycling wears nothing out here.</li>`
-    : `<li>About <b>${big(l.repeats)}</b> repeats of this motion${l.hours !== null ? `, which back to back is about ${big(l.hours)} hours` : ""}.</li><li>${percent(l.swing_share, 0)} of the wear comes from one swing of ${sig(l.swing, 2)} °C about ${Math.round(l.swing_mean)} °C. A smaller swing lasts far longer: halving it gives about thirty times the life.</li>`;
+    : `<li>About <b>${big(l.repeats)}</b> repeats of this motion${l.hours !== null ? `, which back to back is about ${big(l.hours)} hours` : ""}.</li><li>${l.chip ? `The chip that wears out first is the ${escape(l.chip)}. ` : ""}${percent(l.swing_share, 0)} of its wear comes from ${l.within_turn ? `the swing of ${sig(l.swing, 2)} °C it goes through on every turn of the motor` : `one swing of ${sig(l.swing, 2)} °C`}, about ${Math.round(l.swing_mean)} °C. A smaller swing lasts far longer: halving it gives about thirty times the life.${l.within_turn ? " Turning faster, or a larger chip, makes that swing smaller." : ""}</li>`;
   return `<h4>Life under thermal cycling</h4><ul class="plain small">${body}<li>A generic model for modules with aluminium bond wires (LESIT). A real part may last several times longer or shorter; use the maker's power-cycling curve where there is one.</li></ul>`;
 }
 
@@ -644,11 +649,12 @@ function devicesPanel(): string {
   const again = state.reached > DEVICE || state.added.length
     ? `<p class="aside"><button type="button" class="link" data-start-over>Start over: clear everything entered on this page</button></p>`
     : "";
+  const files = `<p class="aside setup-files"><button type="button" class="link" data-save-setup ${state.reached > DEVICE ? "" : "disabled"}>Save this setup to a file</button><label class="link-label"><input type="file" data-setup-file accept=".json,application/json" class="sr"/>Open a setup file</label></p>`;
   const example = setup.devices.some((d) => d.example) && !state.devices.includes("example")
     ? `<p class="aside"><button type="button" class="link" data-example>No part to hand? Try the tool with a made-up one.</button></p>`
     : "";
   return `<h2 tabindex="-1">The device you want to test</h2><p class="lead">Start with the power transistor or module you have in mind. Add its datasheet or your own data for it. Nothing is listed here that you did not bring.</p>
-${drop}${outcome}${how}${list}${reviewBlock()}${example}${again}${nextButton(DEVICE)}`;
+${drop}${outcome}${how}${list}${reviewBlock()}${example}${files}${again}${nextButton(DEVICE)}`;
 }
 
 /* ---------- results ---------- */
@@ -687,8 +693,8 @@ function lossesTab(): string {
   const list = (title: string, items: string[]) => (items.length ? `<details class="more"><summary>${title}<span class="quiet">${items.length}</span></summary><ul class="plain small">${items.map((n) => `<li>${escape(sentence(n))}</li>`).join("")}</ul></details>` : "");
   const compared = series();
   const side = compared.length < 2 ? ""
-    : state.compare === "devices"
-      ? `<h3>Loss of each device</h3>${compareBars(compared.map((x) => ({ name: x.name, parts: [{ value: x.candidate!.result!.conduction, tone: "cond" }, { value: x.candidate!.result!.switching, tone: "sw" }] })), "W")}<ul class="legend inline"><li><span class="key cond"></span>conduction</li><li><span class="key sw"></span>switching</li></ul>`
+    : state.compare !== "loads"
+      ? `<h3>${{ devices: "Loss of each device", motors: "Loss with each motor", sweep: "Loss at each value" }[state.compare as "devices"]}</h3>${compareBars(compared.map((x) => ({ name: x.name, parts: [{ value: resultOf(x)?.result?.conduction ?? 0, tone: "cond" }, { value: resultOf(x)?.result?.switching ?? 0, tone: "sw" }] })), "W")}<ul class="legend inline"><li><span class="key cond"></span>conduction</li><li><span class="key sw"></span>switching</li></ul>`
       : `<h3>Mean loss under each load</h3>${compareBars(compared.map((x) => { const g = cycles.get(x.key); return { name: x.name, parts: [{ value: g && !(g instanceof Refused) ? g.summary.mean_loss ?? 0 : 0, tone: "cond" }] }; }), "W")}`;
   return `${side}<h3>${escape(c!.name)}: one switch position</h3><p class="quiet">The hottest position. Conduction is the price of carrying current; switching is paid ${Math.round(state.conditions.f_khz * 1000).toLocaleString("en-US")} times a second.</p>
 ${lossBar(r.hottest, hasDiode)}${positions}
@@ -705,7 +711,7 @@ function motionTab(): string {
   const list = series();
   const drawn = list.map((x) => ({ x, g: cycles.get(x.key) })).filter((p): p is { x: Series; g: Cycle } => !!p.g && !(p.g instanceof Refused));
   const side = list.length < 2 ? ""
-    : `<h3>${state.compare === "devices" ? "Each device through the motion" : "Each load's motion"}</h3>${drawn.length ? overlayChart(drawn.map((p) => ({ name: p.x.name, time: p.g.time, tj: p.g.tj })), Math.max(...drawn.map((p) => p.g.summary.tj_max ?? 150))) + legendOf(drawn.map((p) => p.x.name)) : waiting("Following each one through its motion.")}${list.filter((x) => cycles.get(x.key) instanceof Refused).map((x) => `<p class="fact warn">${icon("alert-triangle")}<span>${escape(x.name)}: ${escape(sentence((cycles.get(x.key) as Refused).reason))}.</span></p>`).join("")}`;
+    : `<h3>${{ devices: "Each device through the motion", loads: "Each load's motion", motors: "Each motor through the motion", sweep: "The motion at each value" }[state.compare]}</h3>${drawn.length ? overlayChart(drawn.map((p) => ({ name: p.x.name, time: p.g.time, tj: p.g.tj })), Math.max(...drawn.map((p) => p.g.summary.tj_max ?? 150))) + legendOf(drawn.map((p) => p.x.name)) : waiting("Following each one through its motion.")}${list.filter((x) => cycles.get(x.key) instanceof Refused).map((x) => `<p class="fact warn">${icon("alert-triangle")}<span>${escape(x.name)}: ${escape(sentence((cycles.get(x.key) as Refused).reason))}.</span></p>`).join("")}`;
   return `${side}<h3>${escape(focused()!.name)} through the motion</h3>
 <p class="quiet">The hottest junction reaches <b>${degrees(s.peak!)}</b>.${saved > 0.5 ? ` Solving each instant as if it lasted forever would say ${degrees(s.forever!)}: short peaks do not have time to heat the chip fully.` : ""}</p>
 ${timeChart(cycle)}
@@ -753,6 +759,74 @@ function mapTab(): string {
   return `<h3>${escape(focused()!.name)} over the motor's range</h3>${controls}${side}<div id="map-body">${body}</div>`;
 }
 
+/** The inverter this load asks for, on one sheet: the device, what cools it, the capacitor
+ *  on the link, the gate drive and the protection. Every line is taken from a result worked
+ *  out elsewhere on the page; nothing is worked out here. */
+function buildSpec(): string {
+  const c = focused();
+  const r = c?.result;
+  if (!c || !r || !(advised instanceof Array)) return "";
+  const k = state.conditions;
+  const sinkRec = advised.find((x) => x.topic === "heatsink");
+  const dead = advised.find((x) => x.topic === "dead time");
+  const motion = cycle && !(cycle instanceof Refused) ? cycle : null;
+  const trip = [...c.checks, ...(motion?.checks ?? [])].filter((x) => x.topic === "trip").sort((a, b) => ["ok", "caution", "fail"].indexOf(b.level) - ["ok", "caution", "fail"].indexOf(a.level))[0];
+  const cap: string[] = [];
+  const rms = Math.max(c.link?.capacitor_rms ?? 0, motion?.summary.capacitor_rms_worst ?? 0);
+  if (rms > 0) cap.push(`Ripple-current rating of at least ${sig(rms, 2)} A rms at ${sig(k.f_khz)} kHz${motion?.summary.capacitor_rms ? ` (${sig(motion.summary.capacitor_rms, 2)} A rms averaged over the motion, which is what heats it)` : ""}. The supply's own ripple comes on top.`);
+  cap.push(`Voltage rating above the ${sig(k.v_dc)} V supply${motion?.summary.v_link_peak ? `, and above the ${sig(motion.summary.v_link_peak)} V the link reaches when the motor brakes` : ""}.`);
+  if (motion?.summary.c_needed) cap.push(`At least ${eng(motion.summary.c_needed, "F", 2)} to take the braking energy of this motion on a supply that cannot take it back.`);
+  if (motion?.inrush) cap.push(`Charging it stores ${sig(motion.inrush.energy)} J${motion.inrush.peak !== null ? `, with ${sig(motion.inrush.peak)} A peak through your precharge resistance` : "; limit the charging current with a precharge resistance"}.`);
+  const gate = [c.gate.kind === "built in" ? "Inside the module." : c.gate.rg_on ? `${sig(c.gate.rg_on, 2)} Ω on, ${sig(c.gate.rg_off ?? c.gate.rg_on, 2)} Ω off${c.gate.v_drive ? `, ${sig(c.gate.v_drive, 2)} V drive` : ""}${c.gate.kind === "chosen" ? ", chosen for the lowest loss within the limits" : c.gate.kind === "datasheet" ? ", as the datasheet measured with" : ", yours"}.` : "Start from the gate resistor of the datasheet's switching test.",
+    ...c.needs.slice(1).map((n) => `${sentence(n)}.`),
+    ...(dead?.value.t_dead ? [`Dead time of at least ${eng(dead.value.t_dead, "s", 2)}.`] : [])];
+  const protect = [
+    ...(trip ? [`${sentence(trip.message)}.`] : []),
+    ...(c.link?.ripple_pp ? [`A switch turns off up to ${sig(stage ? stage.i_peak + c.link.ripple_pp / 2 : c.link.ripple_pp / 2, 3)} A: the current peak with half the ${sig(c.link.ripple_pp, 2)} A ripple on top. Set the overcurrent trip above that and below the device's limit.`] : []),
+    ...(c.stall_tj !== null ? [`Held still at this torque the hottest junction reaches ${degrees(c.stall_tj)}: a stalled motor needs a current limit that holds it there, or a time limit.`] : []),
+  ];
+  const section = (title: string, glyph: string, head: string, lines: string[]) => `<section class="rec"><h4>${icon(glyph)}${title}<span class="rec-value">${escape(head)}</span></h4><ul class="plain small">${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></section>`;
+  return `<h3>What to build</h3><p class="quiet">The inverter this motor and load ask for, with ${escape(c.name)} as the switch.</p>
+${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It suits this design.", caution: "It can do this, with the cautions on the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
+${section("Heatsink", "temperature", sinkRec?.value.rth_sink ? `${sig(sinkRec.value.rth_sink, 2)} K/W or lower` : "See below", [`${watts(r.loss)} to remove at the design point${motion ? `, ${watts(motion.summary.mean_loss!)} averaged over the motion` : ""}.`, ...(sinkRec ? sinkRec.lines.slice(0, 2).map((l) => `${sentence(l)}.`) : [])])}
+${section("DC-link capacitor", "bolt", rms > 0 ? `${sig(rms, 2)} A rms ripple` : "See below", cap)}
+${section("Gate drive", "adjustments", c.gate.kind === "built in" ? "Built in" : `${state.conditions.parallel > 1 ? `${state.conditions.parallel} gates a channel` : "One gate a channel"}`, gate)}
+${section("Protection", "alert-triangle", trip ? { ok: "A trip is harmless", caution: "A trip charges the link", fail: "A trip exceeds the rating" }[trip.level] : "Overcurrent and stall", protect.length ? protect : ["Set an overcurrent trip above the peak current and below the device's limit."])}`;
+}
+
+/** The question turned round: with this device, this motor and this cooling, what can be
+ *  driven? The torque it holds at each speed, how that moves, and how much heavier the load
+ *  of step 4 could be. */
+function capabilityTab(): string {
+  const c = focused();
+  if (!c?.result) return `<p class="empty">${icon("settings")}Choose a device in step 1 first.</p>`;
+  if (loading.has("capability") || capable === null) return waiting("Finding what this device can hold. About ten seconds.");
+  if (capable instanceof Refused) return refusal(capable);
+  const d = capable.design;
+  const k = state.conditions;
+  const room = d.share === null ? "" : d.share <= 1
+    ? `Your design torque of ${sig(d.torque === 0 ? 0 : k.torque)} N·m is ${percent(d.share, 0)} of that.`
+    : `Your design torque of ${sig(k.torque)} N·m is above it.`;
+  const load = (() => {
+    if (biggest === "working") return waiting("Making the load heavier until something gives.");
+    if (biggest instanceof Refused) return refusal(biggest);
+    if (!biggest) return `<p><button type="button" class="ghost" data-largest>${icon("plus")}Find the largest load</button></p>`;
+    if (biggest.scale < 1) return `<p class="fact warn">${icon("alert-triangle")}<span>The load of step 4 is already too much: it would have to be ${sig(biggest.scale, 2)} times what it is. ${escape(sentence(biggest.why))}.</span></p>`;
+    if (biggest.open) return `<p class="fact">${icon("circle-check")}<span>The load could be more than ${sig(biggest.scale, 2)} times heavier and still pass every check: something other than this device will limit it first.</span></p>`;
+    return `<p class="fact">${icon("circle-check")}<span>The load of step 4 could be <b>${sig(biggest.scale, 2)} times</b> as heavy (its inertia, friction, steady torque and mass together) before a check fails. What gives first: ${escape(sentence(biggest.why))}.</span></p>`;
+  })();
+  return `<h3>What ${escape(c.name)} can drive</h3>
+<p class="quiet">On this motor, at ${sig(k.v_dc)} V, ${sig(k.f_khz)} kHz and a ${sig(k.t_sink)} °C heatsink, held without end.</p>
+<dl class="facts"><div><dt>Torque at ${sig(d.rpm)} rpm</dt><dd>${sig(d.torque)} N·m</dd></div><div><dt>Shaft power there</dt><dd>${watts(d.power)}</dd></div><div><dt>Motor current there</dt><dd>${d.current === null ? "n/a" : `${sig(d.current)} A peak`}</dd></div><div><dt>What stops it</dt><dd class="words">${escape(sentence(d.why))}</dd></div></dl>
+<p class="quiet">${room}${d.current !== null && d.current > d.rated ? ` At that limit the current is above the device's ${sig(d.rated)} A rating: check what case temperature that rating assumes.` : ""}</p>
+<h4>Across the speed range</h4>
+${limitChart(capable.rpm, capable.edge.map((x) => x.torque), "speed, rpm", "torque it can hold, N·m", { x: d.rpm, y: k.torque, label: "your design point" })}
+<p class="quiet small">Below the line every junction stays within its rating. At standstill one switch carries the current without rest, so the limit is lower there.</p>
+<div class="read-grid"><div class="read-item"><h4>Against switching frequency</h4>${limitChart(capable.f_sw.map((v) => v / 1000), capable.by_f_sw.map((x) => x.torque), "switching frequency, kHz", "torque, N·m")}</div>
+<div class="read-item"><h4>Against heatsink temperature</h4>${limitChart(capable.t_sink, capable.by_t_sink.map((x) => x.torque), "heatsink, °C", "torque, N·m")}</div></div>
+<h4>How much heavier could the load be?</h4>${load}`;
+}
+
 function settingsTab(): string {
   if (!focused()?.result) return `<p class="empty">${icon("settings")}Choose a device in step 1 first.</p>`;
   if (loading.has("recommend") || advised === null) return waiting("Working out starting values.");
@@ -767,19 +841,58 @@ function settingsTab(): string {
     if (r.topic === "modulation") return v.saving ? `${sig(v.saving)} W to save` : "Keep the usual scheme";
     return "Needs more from you";
   };
-  return `<h3>Starting values for ${escape(focused()!.name)}</h3><p class="quiet">For a first prototype. Settle them on the bench, with a probe on the switch.</p>
+  return `${buildSpec()}<h3>Starting values for ${escape(focused()!.name)}</h3><p class="quiet">For a first prototype. Settle them on the bench, with a probe on the switch.</p>
 ${advised.map((r) => `<section class="rec${Object.keys(r.value).length ? "" : " open-question"}"><h4>${icon(icons[r.topic] ?? "settings")}${names[r.topic] ?? sentence(r.topic)}<span class="rec-value">${escape(value(r))}</span></h4><ul class="plain small">${r.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul></section>`).join("")}`;
 }
 
 /** What is being compared: up to five devices on the load of step 4, or up to five loads
  *  on the device under test. One or the other; both at once is too much to read. */
-interface Series { key: string; name: string; candidate: Candidate | null; item: LoadItem | null }
+interface Series {
+  key: string; name: string; candidate: Candidate | null; item: LoadItem | null;
+  // For a motor or a setting compared: what differs from the request of the page.
+  over?: { motor?: Record<string, string | number>; conditions?: Record<string, number> };
+}
+
+/** The settings that can be tried at several values, and how each reaches the engine. */
+const SWEEPS: Record<string, { label: string; unit: string; field: string; scale: number }> = {
+  f_khz: { label: "Switching frequency", unit: "kHz", field: "f_sw", scale: 1000 },
+  v_dc: { label: "Supply voltage", unit: "V", field: "v_dc", scale: 1 },
+  t_sink: { label: "Heatsink temperature", unit: "°C", field: "t_sink", scale: 1 },
+  parallel: { label: "Devices in parallel", unit: "a switch", field: "parallel", scale: 1 },
+};
+
+/** The values a setting is tried at: the user's, or the present one with half and double. */
+function sweepValues(): number[] {
+  const typed = state.sweep.values.split(/[\s,;]+/).map(Number).filter((v) => Number.isFinite(v) && v > 0);
+  const now = Number((state.conditions as Record<string, any>)[state.sweep.key]) || 1;
+  const usual = state.sweep.key === "parallel" ? [1, 2, 3] : state.sweep.key === "t_sink" ? [now - 20, now, now + 20] : [now / 2, now, now * 2];
+  return [...new Set(typed.length ? typed : usual.map((v) => Number(v.toPrecision(3))))].slice(0, MOST);
+}
+
+/** The request for one thing compared: the page's own, with what differs laid over it. */
+function requestOf(x: Series) {
+  const base = request(state);
+  if (!x.over) return base;
+  return { ...base, motor: x.over.motor ?? base.motor, conditions: { ...base.conditions, ...x.over.conditions } };
+}
+
+/** Results for the motors and settings compared, each worked out with its own request. */
+const variants = new Map<string, Candidate | Refused>();
+const resultOf = (x: Series): Candidate | null => (x.over ? ((v) => (v instanceof Refused || !v ? null : v))(variants.get(x.key)) : x.candidate);
 
 function series(): Series[] {
   if (state.compare === "loads") {
     const now = state.mission ? state.mission.name : state.loadTouched ? "Your load" : presets?.list.find((p) => p.id === state.loadKind)?.label ?? "Your load";
     return [{ key: "now", name: `${now} (step 4)`, candidate: focused(), item: null },
       ...state.loadSet.slice(0, MOST - 1).map((item) => ({ key: item.id, name: item.label, candidate: focused(), item }))];
+  }
+  if (state.compare === "motors") {
+    return [{ key: "now", name: `${setup.motors[state.kind].label} (step 2)`, candidate: focused(), item: null },
+      ...state.motorSet.slice(0, MOST - 1).map((m) => ({ key: m.id, name: m.label, candidate: focused(), item: null, over: { motor: m.motor, conditions: m.conditions } }))];
+  }
+  if (state.compare === "sweep") {
+    const sweep = SWEEPS[state.sweep.key] ?? SWEEPS.f_khz;
+    return sweepValues().map((v) => ({ key: `${state.sweep.key}=${v}`, name: `${sig(v)} ${sweep.unit}`, candidate: focused(), item: null, over: { conditions: { [sweep.field]: v * sweep.scale } } }));
   }
   return (proposal?.candidates ?? []).filter((c) => c.result).slice(0, MOST).map((c) => ({ key: c.id, name: c.name, candidate: c, item: null }));
 }
@@ -792,16 +905,19 @@ function compareTable(): string {
   const list = series();
   const head = `<thead><tr><th scope="col"><span class="sr">Figure</span></th>${list.map((x, k) => `<th scope="col"><span class="key line s${k}"></span>${escape(x.name)}</th>`).join("")}</tr></thead>`;
   const line = (label: string, cells: string[], best = -1) => `<tr><th scope="row">${label}</th>${cells.map((v, k) => `<td class="${k === best ? "best" : ""}">${v}</td>`).join("")}</tr>`;
-  if (state.compare === "devices") {
-    const rs = list.map((x) => x.candidate!.result!);
-    const least = rs.map((r) => r.loss).indexOf(Math.min(...rs.map((r) => r.loss)));
+  if (state.compare !== "loads") {
+    const got = list.map((x) => (x.over && variants.get(x.key) instanceof Refused ? "refused" : resultOf(x)?.result ?? null));
+    const cell = (pick: (r: NonNullable<Candidate["result"]>, k: number) => string) => got.map((g, k) => (g === null ? "…" : g === "refused" ? "cannot run" : pick(g, k)));
+    const losses = got.map((g) => (g && g !== "refused" ? g.loss : Infinity));
+    const least = losses.some(Number.isFinite) ? losses.indexOf(Math.min(...losses)) : -1;
+    const foot = state.compare === "devices" ? "At your design point." : state.compare === "motors" ? `Each motor at its own design point, on ${escape(focused()?.name ?? "the device under test")}.` : `At your design point, on ${escape(focused()?.name ?? "the device under test")}, with one setting changed.`;
     return `<table class="data wide">${head}<tbody>
-${line("Power-stage loss", rs.map((r) => watts(r.loss)), least)}
-${line("Conduction", rs.map((r) => `${watts(r.conduction)} <span class="quiet">${percent(r.conduction / Math.max(r.loss, 1e-9), 0)}</span>`))}
-${line("Switching", rs.map((r) => `${watts(r.switching)} <span class="quiet">${percent(r.switching / Math.max(r.loss, 1e-9), 0)}</span>`))}
-${line("Hottest junction", rs.map((r) => `<span class="${r.tj_peak > r.tj_max ? "fail" : ""}">${degrees(r.tj_peak)}</span>`))}
-${line("Shaft over DC power", list.map((x) => (x.candidate!.efficiency != null ? percent(x.candidate!.efficiency) : "n/a")))}
-</tbody></table><p class="quiet small">At your design point. The lowest loss is marked.</p>`;
+${line("Power-stage loss", cell((r) => watts(r.loss)), least)}
+${line("Conduction", cell((r) => `${watts(r.conduction)} <span class="quiet">${percent(r.conduction / Math.max(r.loss, 1e-9), 0)}</span>`))}
+${line("Switching", cell((r) => `${watts(r.switching)} <span class="quiet">${percent(r.switching / Math.max(r.loss, 1e-9), 0)}</span>`))}
+${line("Hottest junction", cell((r) => `<span class="${r.tj_peak > r.tj_max ? "fail" : ""}">${degrees(r.tj_peak)}</span>`))}
+${line("Shaft over DC power", list.map((x) => { const e = resultOf(x)?.efficiency; return e != null ? percent(e) : resultOf(x) ? "n/a" : "…"; }))}
+</tbody></table><p class="quiet small">${foot} The lowest loss is marked.</p>`;
   }
   const got = list.map((x) => cycles.get(x.key));
   const cell = (pick: (c: Cycle) => string) => got.map((g) => (g === undefined ? "…" : g instanceof Refused ? "cannot run" : pick(g)));
@@ -830,14 +946,22 @@ function compareBar(): string {
     add = chosen.length >= MOST ? `<span class="quiet small">Five devices is the most.</span>`
       : reading && !reading.outcome && !reading.refused ? `<span class="quiet small">Adding ${escape(reading.name)}…</span>`
       : `<label class="ghost add-part"><input type="file" data-part-file accept="${canRead ? "application/pdf," : ""}.yaml,.yml,.json" class="sr"/>${icon("plus")}Add a device</label>`;
+  } else if (mode === "motors") {
+    items = all.map((x) => `<li class="chip-item">${escape(x.name)}${x.over ? `<button type="button" class="chip-x" data-drop-motor="${escape(x.key)}" aria-label="Take ${escape(x.name)} out of the comparison">${icon("x")}</button>` : ""}</li>`).join("");
+    add = full ? `<span class="quiet small">Five motors is the most.</span>`
+      : `<button type="button" class="ghost add-part" data-add-motor>${icon("plus")}Keep the motor of step 2 to compare</button><span class="quiet small">Then change the motor in step 2: the one kept stays here beside it.</span>`;
+  } else if (mode === "sweep") {
+    const sweep = SWEEPS[state.sweep.key] ?? SWEEPS.f_khz;
+    items = all.map((x) => `<li class="chip-item">${escape(x.name)}</li>`).join("");
+    add = `<div class="fields sweep">${select("sweep.key", "Setting", state.sweep.key, Object.entries(SWEEPS).map(([k, v]) => [k, v.label]))}${field("sweep.values", "Values to try", state.sweep.values, sweep.unit, "Up to five, with commas between. Empty: the present value, half of it and double.")}</div>`;
   } else {
     items = all.map((x) => `<li class="chip-item">${escape(x.name)}${x.item ? `<button type="button" class="chip-x" data-drop-load="${escape(x.key)}" aria-label="Take ${escape(x.name)} out of the comparison">${icon("x")}</button>` : ""}</li>`).join("");
     const offered = (presets?.list ?? []).filter((p) => p.id !== state.loadKind && !state.loadSet.some((x) => x.id === p.id));
     add = full ? `<span class="quiet small">Five loads is the most.</span>`
       : `<label class="add-load"><span class="sr">Add a load to compare</span><select data-add-load><option value="">Add a load…</option><option value="own">Your own: the load of step 4 as it is now</option>${offered.map((p) => `<option value="${p.id}">${escape(p.label)}</option>`).join("")}</select></label>`;
   }
-  return `<div class="compare-bar"><div class="segmented" role="group" aria-label="What is compared"><button type="button" data-compare="devices" aria-pressed="${mode === "devices"}" class="${mode === "devices" ? "is-on" : ""}">Compare devices</button><button type="button" data-compare="loads" aria-pressed="${mode === "loads"}" class="${mode === "loads" ? "is-on" : ""}">Compare loads</button></div>
-<p class="quiet small">${mode === "devices" ? "Up to five devices, each on the motor and load you set." : `Up to five loads, each on ${escape(focused()?.name ?? "the device under test")}.`}</p>
+  return `<div class="compare-bar"><div class="segmented" role="group" aria-label="What is compared"><button type="button" data-compare="devices" aria-pressed="${mode === "devices"}" class="${mode === "devices" ? "is-on" : ""}">Compare devices</button><button type="button" data-compare="loads" aria-pressed="${mode === "loads"}" class="${mode === "loads" ? "is-on" : ""}">Compare loads</button><button type="button" data-compare="motors" aria-pressed="${mode === "motors"}" class="${mode === "motors" ? "is-on" : ""}">Compare motors</button><button type="button" data-compare="sweep" aria-pressed="${mode === "sweep"}" class="${mode === "sweep" ? "is-on" : ""}">Try a setting</button></div>
+<p class="quiet small">${{ devices: "Up to five devices, each on the motor and load you set.", loads: `Up to five loads, each on ${escape(focused()?.name ?? "the device under test")}.`, motors: `Up to five motors, each at its own design point, on ${escape(focused()?.name ?? "the device under test")}.`, sweep: `One setting at up to five values, everything else as you set it, on ${escape(focused()?.name ?? "the device under test")}.` }[mode]}</p>
 <ul class="chip-list">${items}</ul>${add}${reading?.refused && mode === "devices" ? refusal(reading.refused) : ""}</div>`;
 }
 
@@ -845,7 +969,7 @@ function compareBar(): string {
 const legendOf = (names: string[]) => `<ul class="legend inline series-legend">${names.map((n, k) => `<li><span class="key line s${k}"></span>${escape(n)}</li>`).join("")}</ul>`;
 
 function resultsPanel(): string {
-  const body = { proposal: proposalTab, losses: lossesTab, motion: motionTab, map: mapTab, settings: settingsTab }[state.tab]();
+  const body = { proposal: proposalTab, losses: lossesTab, motion: motionTab, map: mapTab, settings: settingsTab, capability: capabilityTab }[state.tab]();
   return `<h2 tabindex="-1">Results</h2>${compareBar()}<div class="tabs" role="tablist" aria-label="Results">${TABS.map(([t, name]) => `<button type="button" role="tab" id="tab-${t}" aria-selected="${state.tab === t}" aria-controls="tab-body" tabindex="${state.tab === t ? 0 : -1}" data-tab="${t}">${name}</button>`).join("")}</div>
 <div id="tab-body" role="tabpanel" aria-labelledby="tab-${state.tab}" tabindex="0">${body}</div>
 <div class="actions"><button type="button" class="ghost" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button><button type="button" class="ghost" data-report ${focused()?.result ? "" : "disabled"}>${icon("file-text")}Save a report</button></div>`;
@@ -939,7 +1063,8 @@ async function compute(): Promise<void> {
     }
   }
   cycle = grid = advised = null;
-  cycles.clear(); grids.clear();
+  capable = null; biggest = null;
+  cycles.clear(); grids.clear(); variants.clear();
   refreshOutputs();
   if (fault) renderPanel(true);
   void deep();
@@ -963,15 +1088,21 @@ async function deep(): Promise<void> {
   // What is compared: each one's motion, and for devices each one's map.
   const list = series();
   const wide = list.length > 1;
+  for (const x of wide ? list : []) {
+    if (!x.over || variants.has(x.key)) continue;
+    if (state.step !== RESULTS) return;
+    await run(`variant:${x.key}`, () => api.proposal({ ...requestOf(x), devices: [c.id] }).then((p) => p.candidates[0]), (v) => { variants.set(x.key, v); });
+    renderStage();
+  }
   if (wide && (state.compare === "loads" || state.tab === "motion")) {
     for (const x of list) {
       if (state.step !== RESULTS) return;
       if (cycles.has(x.key) || !x.candidate) continue;
       const motion = x.item ? motionRequest({ ...state, load: x.item.load, segments: x.item.segments, mission: x.item.mission ?? null }) : motionRequest(state);
-      await run(`cycle:${x.key}`, () => api.cycle({ ...request(state), device: x.candidate!.id, ...motion }), (v) => { cycles.set(x.key, v); });
+      await run(`cycle:${x.key}`, () => api.cycle({ ...requestOf(x), device: x.candidate!.id, ...motion }), (v) => { cycles.set(x.key, v); });
       if (state.compare === "loads") renderStage();
     }
-    const mine = cycles.get(state.compare === "loads" ? "now" : c.id);
+    const mine = cycles.get(state.compare === "devices" ? c.id : state.compare === "sweep" ? "" : "now");
     if (mine && cycle !== mine) { cycle = mine; if (state.step === RESULTS) renderPanel(true); }
   }
   if (wide && state.compare === "devices" && state.tab === "map") {
@@ -988,7 +1119,25 @@ async function deep(): Promise<void> {
     const cc = state.conditions;
     await run("map", () => api.map({ ...req, rpm_max: Number(state.map.rpm_max) || cc.rpm * 2, torque_max: Number(state.map.torque_max) || cc.torque * 2, n: 8 }), (v) => (grid = v));
   }
+  if (state.tab === "capability" && capable === null) await run("capability", () => api.capability(req), (v) => (capable = v));
+  // The sheet of what to build draws on the motion too: the capacitor is sized by braking.
+  if (state.tab === "settings" && cycle === null) await run("cycle", () => api.cycle({ ...req, ...motionRequest(state) }), (v) => (cycle = v));
   if (state.tab === "settings" && advised === null) await run("recommend", () => api.recommend({ ...req, t_ambient: Number(state.sink.t_ambient) || 40 }).then((x) => x.items), (v) => (advised = v));
+}
+
+/** Open a setup saved from this page: everything entered comes back as it was. */
+async function openSetup(file: File): Promise<void> {
+  try {
+    const data = JSON.parse(await file.text());
+    if (data?.app !== "MotionSim" || !data.state || !setup.motors[data.state.kind]) throw new Error("not a setup file");
+    const missing = (data.state.devices as string[]).filter((id) => !setup.devices.some((d) => d.id === id));
+    save(data.state as State);
+    if (missing.length) window.alert(`This setup names ${missing.length === 1 ? "a part" : "parts"} that this page does not hold. Add ${missing.length === 1 ? "it" : "them"} again in step 1: the rest of the setup is in place.`);
+    location.reload();
+  } catch {
+    reading = { name: file.name, refused: new Refused("that file is not a setup saved from this page", "choose a file made by \"Save this setup to a file\"", "") };
+    renderPanel(true);
+  }
 }
 
 /** Take in whatever the user dropped: a datasheet, a device file, or their own measurements. */
@@ -1056,6 +1205,7 @@ function wire(): void {
   app.addEventListener("input", (e) => {
     const el = e.target as HTMLInputElement;
     if (!el.dataset.bind || el.tagName === "SELECT") return;
+    if (el.dataset.bind.startsWith("sweep.")) return; // taken when the field is left: see the change handler
     setPath(el.dataset.bind, el.value);
     if (el.dataset.bind.startsWith("motors.")) renderStage(); // the drawing follows the motor's figures as they are typed
     if (el.dataset.bind.startsWith("segments")) renderPreview();
@@ -1108,6 +1258,13 @@ function wire(): void {
         state.loadSet.push(itemOf(picked));
         save(state); renderPanel(true); renderStage(); void deep();
       }
+    } else if (el.dataset.bind?.startsWith("sweep.")) {
+      if (el.dataset.bind === "sweep.key") state.sweep = { key: el.value, values: "" };
+      else state.sweep.values = el.value;
+      variants.clear(); cycles.clear();
+      save(state); renderPanel(true); renderStage(); void deep();
+    } else if (el.dataset.setupFile !== undefined && el.files?.[0]) {
+      void openSetup(el.files[0]);
     } else if (el.tagName === "SELECT" && el.dataset.bind) {
       setPath(el.dataset.bind, el.value);
       if (el.dataset.bind.startsWith("motors.")) renderStage();
@@ -1127,7 +1284,7 @@ function wire(): void {
     if (el.classList?.contains("pwm-fold")) pwmOpen = el.open;
   }, true);
   app.addEventListener("click", (e) => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-step],[data-tab],[data-focus],[data-metric],[data-add],[data-remove],[data-example],[data-review],[data-forget-device],[data-start-over],[data-compare],[data-drop-device],[data-drop-load],[data-drop-mission],[data-resize-load],[data-report],[data-zoom],[data-equations],[data-map-at]");
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-step],[data-tab],[data-focus],[data-metric],[data-add],[data-remove],[data-example],[data-review],[data-add-motor],[data-drop-motor],[data-save-setup],[data-largest],[data-forget-device],[data-start-over],[data-compare],[data-drop-device],[data-drop-load],[data-drop-mission],[data-resize-load],[data-report],[data-zoom],[data-equations],[data-map-at]");
     if (!el) return;
     if (el.dataset.zoom) {
       const at = ZOOMS.indexOf(state.pwmPeriods);
@@ -1137,6 +1294,27 @@ function wire(): void {
       return;
     }
     if (el.dataset.equations !== undefined) { openEquations(); return; }
+    if (el.dataset.saveSetup !== undefined) {
+      // Everything entered on the page, as one file to keep, share or open again. Device
+      // models are named, not carried: they are added on the page that opens it.
+      const blob = new Blob([JSON.stringify({ app: "MotionSim", setup: 1, state }, null, 1)], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "motionsim-setup.json";
+      link.click();
+      URL.revokeObjectURL(link.href);
+      return;
+    }
+    if (el.dataset.largest !== undefined) {
+      const c = focused();
+      if (!c) return;
+      biggest = "working";
+      renderPanel(true);
+      api.largest({ ...request(state), device: c.id, ...motionRequest(state) })
+        .then((v) => { biggest = v; }, (e) => { biggest = e instanceof Refused ? e : new Refused((e as Error).message, "", ""); })
+        .then(() => { if (state.step === RESULTS && state.tab === "capability") renderPanel(true); });
+      return;
+    }
     if (el.dataset.forgetDevice !== undefined) {
       const id = el.dataset.forgetDevice;
       state.added = state.added.filter((d) => d !== id);
@@ -1144,6 +1322,7 @@ function wire(): void {
       if (review?.id === id) review = null;
       if (reading?.outcome?.device.id === id) reading = null;
       focusPicked = false;
+      void suggestFor();
       renderPanel(true); renderRail(); renderStage(); schedule();
       return;
     }
@@ -1161,8 +1340,17 @@ function wire(): void {
       return;
     }
     if (el.dataset.mapAt) { state.mapAt = el.dataset.mapAt as "motor" | "load"; save(state); renderPanel(true); document.querySelector<HTMLElement>(`[data-map-at="${state.mapAt}"]`)?.focus(); return; }
-    if (el.dataset.compare) { state.compare = el.dataset.compare as "devices" | "loads"; cycles.clear(); save(state); renderPanel(true); renderStage(); void deep(); document.querySelector<HTMLElement>(`[data-compare="${state.compare}"]`)?.focus(); return; }
-    if (el.dataset.dropDevice !== undefined) { state.devices = state.devices.filter((d) => d !== el.dataset.dropDevice); focusPicked = false; renderPanel(true); schedule(); return; }
+    if (el.dataset.addMotor !== undefined && series().length < MOST) {
+      const k = state.conditions;
+      const n = state.motorSet.length + 1;
+      state.motorSet.push({ id: `motor-${Date.now()}`, label: `${setup.motors[state.kind].label} ${n} (${sig(k.rpm)} rpm, ${sig(k.torque)} N·m, as set)`,
+        motor: { type: state.kind, ...state.motors[state.kind] }, conditions: { v_dc: k.v_dc, rpm: k.rpm, torque: k.torque } });
+      save(state); renderPanel(true); renderStage(); void deep();
+      return;
+    }
+    if (el.dataset.dropMotor !== undefined) { state.motorSet = state.motorSet.filter((m) => m.id !== el.dataset.dropMotor); variants.delete(el.dataset.dropMotor!); cycles.delete(el.dataset.dropMotor!); save(state); renderPanel(true); renderStage(); return; }
+    if (el.dataset.compare) { state.compare = el.dataset.compare as State["compare"]; cycles.clear(); variants.clear(); save(state); renderPanel(true); renderStage(); void deep(); document.querySelector<HTMLElement>(`[data-compare="${state.compare}"]`)?.focus(); return; }
+    if (el.dataset.dropDevice !== undefined) { state.devices = state.devices.filter((d) => d !== el.dataset.dropDevice); focusPicked = false; void suggestFor(); renderPanel(true); schedule(); return; }
     if (el.dataset.dropLoad !== undefined) { state.loadSet = state.loadSet.filter((x) => x.id !== el.dataset.dropLoad); cycles.delete(el.dataset.dropLoad!); save(state); renderPanel(true); renderStage(); return; }
     if (el.dataset.review !== undefined) { void openReview(el.dataset.review); return; }
     if (el.dataset.example !== undefined) { state.devices = [...new Set([...state.devices, "example"])]; state.added = [...new Set([...state.added, "example"])]; save(state); void suggestFor(); renderPanel(true); renderRail(); renderStage(); schedule(); return; }

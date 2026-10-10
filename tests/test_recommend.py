@@ -134,3 +134,18 @@ def test_a_device_with_measured_energy_points_to_the_datasheets_resistor() -> No
     op = OperatingPoint(v_dc=300.0, i_rms=10.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=60.0)
     kept = choose_gate_drive(device, op, 15.0)
     assert kept.kind == "datasheet" and kept.op is op and "measured switching energy" in kept.lines[0]
+
+
+def test_a_chosen_gate_resistor_is_never_below_the_transistors_own() -> None:
+    from dataclasses import replace
+
+    device = fet()
+    op = replace(fet_op(), l_loop=20e-9)
+    free = recommend.gate_resistors(device, op, 20.0)
+    device.switch.rg_internal = 10 * max(free.value["rg_on"], free.value["rg_off"])
+    held = recommend.gate_resistors(device, op, 20.0)
+    assert held.value["rg_on"] == device.switch.rg_internal and held.value["rg_off"] == device.switch.rg_internal
+    assert any("transistor's own gate resistance" in line for line in held.lines)
+    device.switch.rg_internal = 0.5 * min(free.value["rg_on"], free.value["rg_off"])
+    part = recommend.gate_resistors(device, op, 20.0)
+    assert part.value == free.value and any("leaving" in line for line in part.lines)

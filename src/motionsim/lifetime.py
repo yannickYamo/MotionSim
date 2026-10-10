@@ -85,14 +85,31 @@ class Life:
     swing_mean: float  # °C
     swing_share: float  # of the damage, 0 to 1
     swings: int  # counted in one motion
+    within_turn: bool = False  # the swing that does the damage comes once a turn of the motor
+    chip: str = ""  # which chip this is the life of
 
 
-def estimate(tj: np.ndarray) -> Life:
-    """Life of a device whose hottest junction follows this trace, over and over."""
-    found = rainflow(tj)
+def estimate(tj: np.ndarray, fast: list[tuple[float, float, float]] | None = None, chip: str = "") -> Life:
+    """Life of one chip whose junction follows this trace, over and over.
+
+    fast holds the swings the trace is too slow to show: those that come once a turn of
+    the motor, as (size, mean, how many). They are added to the count as they are.
+    """
+    slow = rainflow(tj)
+    quick = [(s, m, c) for s, m, c in (fast or []) if s >= SMALLEST and c > 0]
+    found = slow + quick
     if not found:
-        return Life(float("inf"), 0.0, float(np.mean(tj)), 0.0, 0)
+        return Life(float("inf"), 0.0, float(np.mean(tj)), 0.0, 0, chip=chip)
     damage = [count / cycles_to_failure(size, mean) for size, mean, count in found]
     total = sum(damage)
     worst = int(np.argmax(damage))
-    return Life(1.0 / total, found[worst][0], found[worst][1], damage[worst] / total, len(found))
+    return Life(
+        1.0 / total, found[worst][0], found[worst][1], damage[worst] / total, len(found),
+        within_turn=worst >= len(slow), chip=chip,
+    )
+
+
+def worst_of(chips: dict, swings: dict) -> Life | None:
+    """The shortest life among the chips of a stage, each from its own trace."""
+    lives = [estimate(np.asarray(trace), swings.get(label), label) for label, trace in chips.items() if len(trace)]
+    return min(lives, key=lambda life: life.repeats) if lives else None

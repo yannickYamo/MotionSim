@@ -19,18 +19,23 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 
 ## 4. Simplifications in the model
 
-- Motors are solved from steady-state equations at each instant. There is no control loop, no current ripple at the switching frequency, and no iron loss.
+- Motors are solved from steady-state equations at each instant. There is no control loop.
+- Iron loss and saturation are modelled only if you give them: a no-load loss at a speed, split evenly between its two kinds and taken at full flux; and one saturation current for both axes. Without them the result says they are left out.
+- Current ripple at the switching frequency is worked out where the motor's inductance is known. It adds to conduction loss and moves the current at the switching instants. The distortion dead time adds to the current at low speed is not modelled.
 - Motor inverters only: no DC-DC, power-factor correction, three-level or soft-switching stages.
 - Losses use each chip's average temperature over the output period.
-- Measured switching energy is scaled in proportion to voltage. It follows your gate resistor only where the datasheet has a figure of energy against gate resistance, and that figure, measured at one current, is applied at every current.
-- Gate resistors chosen by the tool are totals. A transistor's internal gate resistance is not read, so a very small chosen value may not be reachable.
-- Devices in parallel are taken to share current equally. Real parts do not.
+- Measured switching energy follows the supply voltage along the datasheet's own figure where it has one. Without one it is scaled in proportion to voltage, which above the test voltage is the least a real device does; the result says how much more it could be. It follows your gate resistor only where the datasheet has a figure for that. Either figure, measured at one current, is applied at every current.
+- Gate resistors chosen by the tool are totals. Where the datasheet gives the transistor's own gate resistance the choice is never below it; where it does not, a very small chosen value may not be reachable.
+- Devices in parallel share as unevenly as the datasheet's maximum over typical allows, with the typical part among maximum ones carrying the most. That ignores how a hot transistor's rising resistance pushes current back to the others, so it is on the cautious side. Where the datasheet gives no maximum, sharing is taken as equal.
 - An open-loop start is modelled by raising the current, not by simulating the controller.
+- The usable voltage loses dead time, the shortest pulse you give, and the devices' drop at the peak current, taken at the heatsink temperature.
+- A motor's working temperature is used only if you give it. The magnet coefficient is that of neodymium.
+- The trip check assumes nothing shorts the motor or burns the energy. Short-circuit behaviour itself is not modelled: the withstand time is passed on where the datasheet gives it.
 - Through time, heating between neighbouring chips and through the package-to-heatsink interface responds at once.
 
 ## 5. Life under thermal cycling is generic
 
-The life estimate uses a model fitted to modules with aluminium bond wires. A real part may last several times longer or shorter. Use the manufacturer's power-cycling data where there is any.
+The life estimate counts each chip's own temperature swings, those of every turn of the motor included, and uses a model fitted to modules with aluminium bond wires. It is applied to discrete parts too, which it was not fitted on. A real part may last several times longer or shorter. Use the manufacturer's power-cycling data where there is any.
 
 ## 6. The page
 
@@ -42,3 +47,4 @@ The life estimate uses a model fitted to modules with aluminium bond wires. A re
 
 - Export of a device model to other simulators.
 - A hosted version. The page needs a local install to read datasheets with your own key.
+- The page can also be opened as plain files, with the engine running in the browser. In that mode the Python runtime is fetched once from cdn.jsdelivr.net; nothing you enter is sent anywhere. `motionsim serve` fetches nothing.

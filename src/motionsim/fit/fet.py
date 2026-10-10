@@ -22,6 +22,9 @@ from motionsim.fit.sparse import (
     _curve_source,
     _energy,
     _recovery_energy,
+    extra_ratings,
+    internal_gate,
+    spread_of,
     _single,
     _thermal,
     _timing,
@@ -278,13 +281,15 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
             v_max=v_rated,
             i_nominal=i_rated,
             tj_max=_single(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
+            **extra_ratings(obs, a),
         ),
         package=Package(
             topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline
         ),
         switch=Chip(
             kind="mosfet",
-            conduction=_conduction(obs, a, i_rated),
+            conduction=_conduction(obs, a, i_rated).model_copy(update={"spread": spread_of(obs, Quantity.rds_on, a)}),
+            rg_internal=internal_gate(obs, a),
             e_on=e_on,
             e_off=e_off,
             e_rr=e_rr,

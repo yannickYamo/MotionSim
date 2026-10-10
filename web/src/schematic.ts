@@ -262,7 +262,7 @@ export function schematic(input: SchematicInput): string {
   const built = (outline ? packageName(pack!, outline.count) : `${legs.length * 2} switches`) + beside;
   const caption = `<text class="plate-title" x="34" y="32">${label} · ${built}</text><text class="plate-title part" x="34" y="52">${input.deviceName ? escape(input.deviceName.length > 64 ? `${input.deviceName.slice(0, 63)}…` : input.deviceName) : "no device chosen yet"}</text>`;
   const what = motorName(input.rotor);
-  const scheme = `<text class="plate-note" x="34" y="${H - 28}">${stage ? escape(stage.scheme) : ""}</text><text class="plate-note" x="${W - 34}" y="${H - 28}" text-anchor="end">${input.motorKnown ? `Motor: ${what}` : ""}${stage ? ` · ${sig(stage.i_peak)} A peak` : ""}</text>`;
+  const scheme = `<text class="plate-note" x="34" y="${H - 44}">${stage ? escape(stage.scheme) : ""}</text><text class="plate-note" x="${W - 34}" y="${H - 28}" text-anchor="end">${input.motorKnown ? `Motor: ${what}` : ""}${stage ? ` · ${sig(stage.i_peak)} A peak` : ""}</text>`;
   const stop = blocked
     ? `<g class="blocked"><rect x="26" y="46" width="${W - 52}" height="${H - 92}"/><text x="${W / 2}" y="${MID + 6}" text-anchor="middle">This combination cannot run</text></g>`
     : "";

@@ -70,3 +70,25 @@ def test_verdicts() -> None:
     coasting = Profile(segments=[Segment(duration=1, speed_start=2000, speed_end=2000)])
     none = run_cycle(lossless(), MOTOR, Load(constant_torque=1.0), coasting, BASE)
     assert dclink.check(dclink.returned(none, V_REF, 600.0), V_REF, 600.0, supply="one-way") == []
+
+
+def _motion(steps):
+    """A motion as the link sees it: (seconds, watts drawn from the link) for each instant."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        solved=[SimpleNamespace(sample=SimpleNamespace(duration=dt)) for dt, _ in steps],
+        dc_power=[p for _, p in steps],
+    )
+
+
+def test_a_short_stretch_of_motoring_does_not_empty_the_link() -> None:
+    """Brake, motor briefly, brake again: the capacitor holds what the two brakings put in
+    less what the motoring took out, not just the larger braking."""
+    brake, motor = (0.4, -100.0), (0.01, 50.0)
+    found = dclink.returned(_motion([brake, motor, brake]), 48.0, 100.0, capacitance=1e-3)
+    assert found.burst_energy == pytest.approx(40.0 - 0.5 + 40.0)
+    assert found.energy == pytest.approx(80.0) and found.peak_power == 100.0
+    # A long stretch of motoring empties it: the two brakings are then separate.
+    apart = dclink.returned(_motion([brake, (2.0, 50.0), (0.3, -100.0)]), 48.0, 100.0, capacitance=1e-3)
+    assert apart.burst_energy == pytest.approx(40.0)

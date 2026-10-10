@@ -33,6 +33,7 @@ class Motor(BaseModel):
     lq: float = Field(gt=0, description="q-axis inductance, H")
     rs: float = Field(ge=0, description="phase resistance, ohm")
     i_max: float | None = Field(default=None, gt=0, description="phase current limit, A rms")
+    i_sat: float | None = Field(default=None, gt=0, description="saturation current, A peak")
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,25 @@ def _voltages(motor: Motor, w: float, i_d: float, i_q: float) -> tuple[float, fl
 
 
 def operating_state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
-    """Currents and voltages for a speed and torque, within a peak phase voltage v_max."""
+    """Currents and voltages for a speed and torque, within a peak phase voltage v_max.
+
+    With a saturation current given, each axis's inductance follows its own current,
+    L = L0 / sqrt(1 + (i / i_sat)^2), and the point is found again until it settles.
+    """
+    if not motor.i_sat:
+        return _state(motor, rpm, torque, v_max)
+    now = motor
+    for _ in range(12):
+        s = _state(now.model_copy(update={"i_max": None}), rpm, torque, v_max)
+        now = motor.model_copy(update={
+            "ld": motor.ld / float(np.sqrt(1 + (s.i_d / motor.i_sat) ** 2)),
+            "lq": motor.lq / float(np.sqrt(1 + (s.i_q / motor.i_sat) ** 2)),
+        })
+    return _state(now, rpm, torque, v_max)
+
+
+def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
+    """The point for inductances taken as they stand."""
     w = motor.pole_pairs * 2 * np.pi * rpm / 60
     # Most negative id that keeps flux positive: beyond it the magnet is fully opposed.
     floor = -0.999 * motor.flux_linkage / motor.ld
@@ -99,12 +118,20 @@ def operating_state(motor: Motor, rpm: float, torque: float, v_max: float) -> Dr
         def excess(x: float) -> float:
             return float(np.hypot(*_voltages(motor, w, x, _iq_for(motor, torque, x))) - v_max)
 
-        if excess(floor) > 0:
+        # Along the line of constant torque the voltage falls as id goes negative, reaches a
+        # least value, and rises again: that least value is the most torque the voltage can
+        # give at this speed. With magnets on the surface it sits where the magnet is fully
+        # opposed. With buried magnets, whose reluctance torque needs current of its own, it
+        # lies further out, and the search goes on to find it.
+        lowest = floor if motor.ld >= motor.lq else -4.0 * motor.flux_linkage / motor.ld
+        least = minimize_scalar(excess, bounds=(lowest, i_d), method="bounded")
+        deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
+        if excess(deepest) > 0:
             raise Unreachable(
                 f"{torque:g} N·m at {rpm:g} rpm needs more voltage than {v_max:.4g} V peak "
                 "even with full field weakening"
             )
-        i_d = float(brentq(excess, floor, i_d))
+        i_d = float(brentq(excess, deepest, i_d))
         i_q = _iq_for(motor, torque, i_d)
         v_d, v_q = _voltages(motor, w, i_d, i_q)
 

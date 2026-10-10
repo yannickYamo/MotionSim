@@ -48,6 +48,13 @@ current and voltage
 - v_rated: blocking voltage rating
 - i_rated: rated continuous output or collector current
 - tj_max: maximum operating junction temperature
+- i_pulsed: pulsed or peak collector or drain current rating (ICM, ICpuls, IDM). \
+Give the digits in printed_max.
+- t_sc: short-circuit withstand time (tSC, tPSC), where one is given. Give the \
+digits in printed_max.
+- rg_internal: the device's internal gate resistance (RG(int), Rg, RGint), \
+where one is given. Give the digits in printed_typ, or printed_max if only a \
+maximum is printed.
 - rg_on_test, rg_off_test: the external gate resistance the switching \
 energies or switching times were measured with, from their test conditions \
 (RG, RG(on), RG(off), RGon, RGoff). Give the digits in printed_typ. Where one \
@@ -76,7 +83,9 @@ Give each one a kind: output_characteristic (switch current against on-state \
 voltage, with one curve per temperature at the normal gate voltage; a family \
 of curves at different gate voltages is "other"), diode_forward, \
 switching_energy_vs_current, switching_energy_vs_gate_resistance (switching \
-energy against gate resistance at one current), \
+energy against gate resistance at one current), switching_energy_vs_voltage \
+(switching energy against the collector-emitter or drain-source voltage \
+switched, at one current), \
 thermal_impedance_switch, thermal_impedance_diode, normalized_on_resistance \
 (on-resistance against temperature, normalised to 25 °C), gate_charge \
 (gate-source voltage against gate charge), capacitance (input, output and \
@@ -109,8 +118,8 @@ green, blue or purple), or null when it is none of these.
 its title or conditions give (for example VCC, VDC or VPN = 300 V). Null \
 when none is stated.
 
-- test_current_a: for a figure of switching energy against gate resistance, \
-the collector or drain current its conditions give. Null when none is stated.
+- test_current_a: for a figure of switching energy against gate resistance or \
+against voltage, the collector or drain current its conditions give. Null when none is stated.
 
 A request may name one plot of a figure that has several, as "(plot 1 of 2, \
 left to right)". Report that plot alone, under the label exactly as given.

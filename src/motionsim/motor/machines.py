@@ -33,6 +33,23 @@ SLOW = 0.1  # Hz; a stopped or creeping motor is treated as turning this slowly
 class _Machine(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = "motor"
+    # Share of the ideal output voltage the stage can really give: dead time takes some.
+    # Set by the solver from the conditions; a motor file does not carry it.
+    usable_voltage: float = Field(default=1.0, gt=0, le=1, exclude=True)
+    # Said in every result when the motor's figures were moved to a working temperature.
+    temperature_note: str = Field(default="", exclude=True)
+    # Iron loss, as a catalogue or a no-load test gives it: so many watts at such a speed.
+    p_iron: float | None = Field(default=None, ge=0, description="iron loss at n_iron, W; optional")
+    n_iron: float | None = Field(default=None, gt=0, description="speed that iron loss was measured at, rpm")
+
+    def iron_loss(self, rpm: float) -> float:
+        """Loss in the motor's iron at a speed, W. Half of it is taken to rise with speed
+        (hysteresis) and half with speed squared (eddy currents), which is the usual split
+        when nothing better is known. Taken at full flux: in field weakening it is less."""
+        if not self.p_iron or not self.n_iron:
+            return 0.0
+        x = abs(rpm) / self.n_iron
+        return self.p_iron * (0.5 * x + 0.5 * x * x)
 
     # The modulation used when the user names none, and what it is called for this motor.
     default_pwm: ClassVar[Pwm] = Pwm.sine
@@ -43,6 +60,38 @@ class _Machine(BaseModel):
         return self.fixed_scheme or f"{pwm.value} PWM"
 
 
+COPPER = 0.00393  # per kelvin: how copper's resistance rises with temperature
+MAGNET = -0.0011  # per kelvin: how a neodymium magnet's flux falls; ferrite falls about twice as fast
+CATALOGUE = 25.0  # °C the motor's figures are taken to be given at
+
+
+def at_temperature(machine, t_c: float):
+    """The same motor at a working temperature: its windings resist more and its magnets
+    give less, so the same torque takes more current and more copper loss."""
+    dt = t_c - CATALOGUE
+    changed = {}
+    for key in ("rs", "rr", "r"):
+        if getattr(machine, key, None) is not None:
+            changed[key] = getattr(machine, key) * (1 + COPPER * dt)
+    magnets = [k for k in ("flux_linkage", "kt") if getattr(machine, k, None) is not None]
+    if machine.type in ("pmsm", "bldc", "dc"):
+        for key in magnets:
+            changed[key] = getattr(machine, key) * (1 + MAGNET * dt)
+    changed["temperature_note"] = (
+        f"motor taken at {t_c:g} °C: winding resistance {1 + COPPER * dt:.2f} times its {CATALOGUE:g} °C value"
+        + (f", magnet flux {1 + MAGNET * dt:.2f} times (neodymium; ferrite loses about twice as much)"
+           if machine.type in ("pmsm", "bldc", "dc") and magnets else "")
+    )
+    return machine.model_copy(update=changed)
+
+
+def replace_notes(stage: Stage, old: str, new: str) -> Stage:
+    """The stage with one of its notes reworded."""
+    from dataclasses import replace
+
+    return replace(stage, notes=[new if n.startswith(old) else n for n in stage.notes])
+
+
 def _rad_s(rpm: float) -> float:
     return 2 * np.pi * rpm / 60
 
@@ -50,7 +99,7 @@ def _rad_s(rpm: float) -> float:
 def _sinusoidal_stage(
     *, i_rms: float, v_peak: float, power_factor: float, f_out: float, v_dc: float, pwm: Pwm,
     legs: int, p_shaft: float, p_loss: float, summary: list, notes: list[str],
-    leg_voltage: float,
+    leg_voltage: float, l_phase: float | None = None,
 ) -> Stage:
     """Stage for sinusoidal currents. leg_voltage is the DC voltage one leg's swing spans:
     half the link for a three-phase inverter, the full link for an H-bridge."""
@@ -67,7 +116,7 @@ def _sinusoidal_stage(
     return Stage(
         roles=phase_leg_roles(wave, 2 * legs, pwm),
         period=1.0 / max(abs(f_out), SLOW),
-        stalled=abs(f_out) < SLOW,
+        stalled=abs(f_out) < SLOW, l_phase=l_phase,
         p_electrical=phases * (v_peak / np.sqrt(2)) * i_rms * power_factor,
         p_shaft=p_shaft,
         p_motor_loss=p_loss,
@@ -90,6 +139,7 @@ class Pmsm(_Machine):
     lq: float = Field(gt=0, description="H")
     rs: float = Field(ge=0, description="ohm per phase")
     i_max: float | None = Field(default=None, gt=0, description="A rms")
+    i_sat: float | None = Field(default=None, gt=0, description="current at which an inductance has fallen to 71% of its value, A peak; optional")
 
     @model_validator(mode="before")
     @classmethod
@@ -137,13 +187,13 @@ class Pmsm(_Machine):
         return self
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
-        motor = pmsm.Motor(**self.model_dump(exclude={"type", "magnets"}))
-        s = pmsm.operating_state(motor, rpm, torque, pwm.max_modulation_index * v_dc / 2)
+        motor = pmsm.Motor(**self.model_dump(exclude={"type", "magnets", "usable_voltage", "p_iron", "n_iron", "temperature_note"}))
+        s = pmsm.operating_state(motor, rpm, torque, self.usable_voltage * pwm.max_modulation_index * v_dc / 2)
         return _sinusoidal_stage(
             i_rms=s.i_rms, v_peak=s.v_peak, power_factor=s.power_factor, f_out=s.f_out,
             v_dc=v_dc, pwm=pwm, legs=3, p_shaft=s.p_shaft, p_loss=s.p_copper,
             summary=[("field weakening", float(s.field_weakening), "yes/no")], notes=[],
-            leg_voltage=v_dc / 2,
+            leg_voltage=v_dc / 2, l_phase=(self.ld + self.lq) / 2,
         )
 
 
@@ -170,6 +220,7 @@ class SynRm(_Machine):
     lq: float = Field(gt=0, description="q-axis inductance, H")
     rs: float = Field(ge=0, description="ohm per phase")
     i_max: float | None = Field(default=None, gt=0, description="A rms")
+    i_sat: float | None = Field(default=None, gt=0, description="current at which an inductance has fallen to 71% of its value, A peak; optional")
 
     @model_validator(mode="after")
     def _check_saliency(self) -> SynRm:
@@ -178,7 +229,22 @@ class SynRm(_Machine):
         return self
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
-        v_max = pwm.max_modulation_index * v_dc / 2
+        """With a saturation current given, the inductances follow the current: each axis by
+        its own, L = L0 / sqrt(1 + (i / i_sat)^2). The easy axis carries the magnetising
+        current and saturates first, which is what limits a reluctance motor's torque."""
+        if not self.i_sat:
+            return self._solve(rpm, torque, v_dc, pwm)[0]
+        motor = self
+        for _ in range(12):
+            _, i_d, i_q = motor._solve(rpm, torque, v_dc, pwm)
+            ld = self.ld / float(np.sqrt(1 + (i_d / self.i_sat) ** 2))
+            lq = self.lq / float(np.sqrt(1 + (i_q / self.i_sat) ** 2))
+            motor = self.model_copy(update={"ld": max(ld, 1.02 * lq), "lq": lq})
+        stage, _, _ = motor._solve(rpm, torque, v_dc, pwm)
+        return replace_notes(stage, "reluctance motor: inductances taken as constant", f"reluctance motor: inductances follow the current, saturating about {self.i_sat:g} A")
+
+    def _solve(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> tuple[Stage, float, float]:
+        v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
         w = self.pole_pairs * _rad_s(rpm)
         k = 1.5 * self.pole_pairs * (self.ld - self.lq)
         product = abs(torque) / k  # id * |iq|
@@ -221,8 +287,8 @@ class SynRm(_Machine):
             p_shaft=torque * _rad_s(rpm), p_loss=1.5 * self.rs * i_pk**2,
             summary=[("field weakening", float(weakening), "yes/no")],
             notes=["reluctance motor: inductances taken as constant, so saturation is not modelled"],
-            leg_voltage=v_dc / 2,
-        )
+            leg_voltage=v_dc / 2, l_phase=(self.ld + self.lq) / 2,
+        ), i_d, abs(i_q)
 
 
 class Induction(_Machine):
@@ -242,6 +308,7 @@ class Induction(_Machine):
     lls: float = Field(ge=0, description="stator leakage inductance, H")
     llr: float = Field(ge=0, description="rotor leakage inductance, H")
     i_magnetising: float = Field(gt=0, description="rated magnetising current, A peak")
+    i_max: float | None = Field(default=None, gt=0, description="A rms")
 
     def _state(self, rpm: float, torque: float, i_d: float):
         ls, lr = self.lm + self.lls, self.lm + self.llr
@@ -253,7 +320,7 @@ class Induction(_Machine):
         return i_q, w, v_d, v_q
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
-        v_max = pwm.max_modulation_index * v_dc / 2
+        v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
         i_d = self.i_magnetising
         weakening = False
 
@@ -275,6 +342,11 @@ class Induction(_Machine):
         i_q, w, v_d, v_q = self._state(rpm, torque, i_d)
         lr = self.lm + self.llr
         i_pk, v_pk = np.hypot(i_d, i_q), np.hypot(v_d, v_q)
+        if self.i_max is not None and i_pk / np.sqrt(2) > self.i_max:
+            raise Unreachable(
+                f"{torque:g} N·m at {rpm:g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
+                f"{self.i_max:g} A limit"
+            )
         power = 1.5 * (v_d * i_d + v_q * i_q)
         stator = 1.5 * self.rs * i_pk**2
         rotor = 1.5 * self.rr * (self.lm / lr * i_q) ** 2
@@ -288,6 +360,8 @@ class Induction(_Machine):
                 ("slip frequency", float((w - self.pole_pairs * _rad_s(rpm)) / (2 * np.pi)), "Hz"),
             ],
             notes=[], leg_voltage=v_dc / 2,
+            # What the switching sees is the leakage: the magnetising branch is far slower.
+            l_phase=self.lls + self.lm * self.llr / (self.lm + self.llr),
         )
 
 
@@ -324,6 +398,7 @@ class Bldc(_Machine):
     fixed_scheme: ClassVar[str | None] = "block (trapezoidal) commutation, high side chopping"
     pole_pairs: int = Field(gt=0)
     kt: float = Field(gt=0, description="torque constant, N·m per A of DC-link current")
+    l: float | None = Field(default=None, gt=0, description="phase-to-phase inductance, H; optional")
     r: float = Field(ge=0, description="phase-to-phase resistance, ohm")
     i_max: float | None = Field(default=None, gt=0, description="A")
 
@@ -361,6 +436,7 @@ class Bldc(_Machine):
         f_out = self.pole_pairs * abs(rpm) / 60
         return Stage(
             roles=roles, period=1.0 / max(f_out, SLOW), stalled=f_out < SLOW,
+            l_phase=None if self.l is None else self.l / 2,
             p_electrical=drive * current, p_shaft=torque * _rad_s(rpm),
             p_motor_loss=self.r * current**2,
             summary=[
@@ -388,6 +464,7 @@ class BrushedDc(_Machine):
     type: Literal["dc"]
     kt: float = Field(gt=0, description="torque constant, N·m/A")
     r: float = Field(ge=0, description="armature resistance, ohm")
+    l: float | None = Field(default=None, gt=0, description="armature inductance, H; optional")
     i_max: float | None = Field(default=None, gt=0, description="A")
     drive: Literal["unipolar", "bipolar"] = Field(
         default="unipolar",
@@ -408,12 +485,13 @@ class BrushedDc(_Machine):
         voltage = self.kt * _rad_s(rpm) + self.r * current  # leg A minus leg B
         return _h_bridge_stage(
             current, voltage, v_dc, self.drive, torque=torque, rpm=rpm, loss=self.r * current**2,
+            inductance=self.l,
         )
 
 
 def _h_bridge_stage(
     current: float, voltage: float, v_dc: float, drive: str, *, torque: float, rpm: float,
-    loss: float, notes: list[str] | None = None,
+    loss: float, notes: list[str] | None = None, inductance: float | None = None,
 ) -> Stage:
     """What each of an H-bridge's four positions does for a signed current and voltage.
 
@@ -460,7 +538,7 @@ def _h_bridge_stage(
         for leg in ("A", "B") for side in ("high", "low")
     ]
     return Stage(
-        roles=roles, period=1.0,
+        roles=roles, period=1.0, l_phase=None if inductance is None else inductance / 2,
         p_electrical=voltage * current, p_shaft=torque * _rad_s(rpm), p_motor_loss=loss,
         summary=[("armature current", current, "A"), ("duty cycle", duty, "")],
         notes=(notes or []) + _braking_notes(torque * rpm >= 0, along),
@@ -484,6 +562,7 @@ class SeriesDc(_Machine):
     type: Literal["dc_series"]
     k: float = Field(gt=0, description="torque per current squared, N·m/A^2")
     r: float = Field(ge=0, description="armature plus field resistance, ohm")
+    l: float | None = Field(default=None, gt=0, description="armature plus field inductance, H; optional")
     i_max: float | None = Field(default=None, gt=0, description="A")
     drive: Literal["unipolar", "bipolar"] = "unipolar"
 
@@ -504,6 +583,7 @@ class SeriesDc(_Machine):
         voltage = self.k * current * _rad_s(rpm) + self.r * current
         return _h_bridge_stage(
             current, voltage, v_dc, self.drive, torque=torque, rpm=rpm, loss=self.r * current**2,
+            inductance=self.l,
             notes=["series-wound: torque taken as proportional to current squared, so "
                    "saturation of the field is not modelled"],
         )
@@ -622,6 +702,7 @@ lm: 0.32              # magnetising inductance, H
 lls: 0.015            # stator leakage inductance, H
 llr: 0.015            # rotor leakage inductance, H
 i_magnetising: 2.4    # magnetising current at rated flux, A peak (about the no-load current)
+i_max: 3.6            # optional: winding current limit, A rms
 """,
     "bldc": """\
 # Brushless DC motor driven with block (six-step, trapezoidal) commutation.
@@ -631,6 +712,7 @@ name: my motor
 pole_pairs: 7
 kt: 0.09              # torque constant, N·m per A  (= 9.55 / Kv in rpm per volt)
 r: 0.08               # phase-to-phase resistance, ohm
+l: 0.00012            # optional: phase-to-phase inductance, H. Sets the current ripple
 i_max: 40             # optional: winding current limit, A
 """,
     "dc": """\
@@ -639,6 +721,7 @@ type: dc
 name: my motor
 kt: 0.05              # torque constant, N·m per A
 r: 0.4                # armature resistance, ohm
+l: 0.0006             # optional: armature inductance, H. Sets the current ripple
 i_max: 20             # optional: current limit, A
 # drive: unipolar     # unipolar (default): one leg chops, lower loss
                       # bipolar: both legs switch every period

@@ -40,6 +40,11 @@ class Quantity(str, Enum):
     e_rr_curve = "e_rr_curve"
     e_on_rg_curve = "e_on_rg_curve"  # energy against gate resistance, at one current
     e_off_rg_curve = "e_off_rg_curve"
+    e_on_v_curve = "e_on_v_curve"  # energy against the voltage switched, at one current
+    e_off_v_curve = "e_off_v_curve"
+    i_pulsed = "i_pulsed"
+    rg_internal = "rg_internal"
+    t_sc = "t_sc"
     rds_on = "rds_on"
     v_sd = "v_sd"
     v_th = "v_th"
@@ -77,6 +82,7 @@ class FigureKind(str, Enum):
     diode_forward = "diode_forward"
     switching_energy_vs_current = "switching_energy_vs_current"
     switching_energy_vs_gate_resistance = "switching_energy_vs_gate_resistance"
+    switching_energy_vs_voltage = "switching_energy_vs_voltage"
     thermal_impedance_switch = "thermal_impedance_switch"
     thermal_impedance_diode = "thermal_impedance_diode"
     normalized_on_resistance = "normalized_on_resistance"

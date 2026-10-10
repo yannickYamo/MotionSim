@@ -2,10 +2,12 @@
 
 import type { Segment, Setup } from "./api";
 
-export type Tab = "proposal" | "losses" | "motion" | "map" | "settings";
+export type Tab = "proposal" | "losses" | "motion" | "map" | "settings" | "capability";
 
 /** A load set beside the one of step 4, to compare what different loads ask of one device. */
 export interface LoadItem { id: string; label: string; loadKind: string; load: State["load"]; segments: Segment[]; mission?: Mission | null }
+/** A motor kept as it was set, with the supply and design point that went with it. */
+export interface MotorItem { id: string; label: string; motor: Record<string, string | number>; conditions: Record<string, number> }
 /** Motor speed and torque against time, as measured or planned. */
 export interface Mission { name: string; time: number[]; rpm: number[]; torque: number[] }
 
@@ -17,7 +19,7 @@ export interface State {
   conditions: {
     v_dc: number; rpm: number; torque: number; f_khz: number; t_sink: number; pwm: string;
     v_drive: string; rg_on: string; rg_off: string; t_dead_ns: string; l_loop_nh: string;
-    parallel: number;
+    parallel: number; t_motor: string; t_min_ns: string;
   };
   mission: Mission | null; // a mission profile brought as a file, in place of the load and motion
   supply: "one-way" | "battery";
@@ -29,7 +31,9 @@ export interface State {
   };
   mapAt: "" | "motor" | "load"; // which side of the gearbox the map's axes are on; empty: the tool picks
   pwmPeriods: number; // how many switching periods the drawing under the result shows
-  compare: "devices" | "loads"; // what the results set side by side
+  compare: "devices" | "loads" | "motors" | "sweep"; // what the results set side by side
+  motorSet: MotorItem[]; // motors compared with the one of step 2
+  sweep: { key: string; values: string }; // one setting, tried at several values
   loadSet: LoadItem[]; // loads compared with the one of step 4
   loadKind: string; // which kind of load the figures describe
   loadTouched: boolean; // the user has picked a load or edited one
@@ -45,7 +49,7 @@ export interface State {
   map: { rpm_max: string; torque_max: string };
 }
 
-const KEY = "motionsim.bench.v9";
+const KEY = "motionsim.bench.v10";
 
 export function initial(setup: Setup): State {
   const kind = "pmsm";
@@ -59,7 +63,7 @@ export function initial(setup: Setup): State {
     conditions: {
       v_dc: start.v_dc, rpm: start.rpm, torque: start.torque, f_khz: start.f_sw / 1000, t_sink: 60, pwm: "",
       v_drive: "", rg_on: "", rg_off: "", t_dead_ns: "", l_loop_nh: "",
-      parallel: 1,
+      parallel: 1, t_motor: "", t_min_ns: "",
     },
     mission: null,
     supply: "one-way",
@@ -74,6 +78,8 @@ export function initial(setup: Setup): State {
     },
     loadKind: "",
     compare: "devices",
+    motorSet: [],
+    sweep: { key: "f_khz", values: "" },
     loadSet: [],
     pwmPeriods: 5,
     mapAt: "",
@@ -129,11 +135,12 @@ const number = (text: string, scale = 1): number | null => (text === "" || text 
 export function request(state: State) {
   const c = state.conditions;
   return {
-    motor: { type: state.kind, ...state.motors[state.kind] },
+    motor: { type: state.kind, ...state.motors[state.kind], t_motor: number(c.t_motor) },
     conditions: {
       v_dc: c.v_dc, rpm: c.rpm, torque: c.torque, f_sw: c.f_khz * 1000, t_sink: c.t_sink,
       pwm: c.pwm || null, v_drive: number(c.v_drive), rg_on: number(c.rg_on), rg_off: number(c.rg_off),
       t_dead: number(c.t_dead_ns, 1e-9) ?? 0, l_loop: number(c.l_loop_nh, 1e-9),
+      t_min_pulse: number(c.t_min_ns, 1e-9) ?? 0,
       parallel: Math.max(1, Math.round(Number(c.parallel) || 1)),
     },
     supply: state.supply,

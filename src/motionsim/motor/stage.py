@@ -20,6 +20,9 @@ class Stage:
     p_motor_loss: float  # W of winding loss
     summary: list[tuple[str, float, str]]  # label, value, unit: what the motor asked for
     notes: list[str] = field(default_factory=list)
+    # Inductance of one phase to the star point, H, where the motor's figures give it: what
+    # sets the current ripple at the switching frequency.
+    l_phase: float | None = None
     stalled: bool = False  # the rotor is not turning: the period spans rotor positions, not time
 
     @property

@@ -181,6 +181,21 @@ ${frame(box, ticks(0, xMax, 4), yt, sx, sy, "current, A", `${title}, ${unit}`)}$
 <ul class="legend inline">${legend}</ul></figure>`;
 }
 
+/** One line of a limit against one condition, with a point marked on it where there is one. */
+export function limitChart(xs: number[], ys: number[], xLabel: string, yLabel: string, mark?: { x: number; y: number; label: string }): string {
+  const box = { x: 46, y: 26, w: 286, h: 150 };
+  const x0 = Math.min(...xs, mark?.x ?? Infinity);
+  const x1 = Math.max(...xs, mark?.x ?? -Infinity);
+  const top = Math.max(...ys, mark?.y ?? 0, 1e-9);
+  const yt = ticks(0, top * 1.08, 4);
+  const yMax = Math.max(yt[yt.length - 1], top);
+  const sx = (v: number) => box.x + ((v - x0) / Math.max(x1 - x0, 1e-9)) * box.w;
+  const sy = (v: number) => box.y + box.h - (v / yMax) * box.h;
+  const dot = mark ? `<circle class="mark hot" cx="${sx(mark.x).toFixed(1)}" cy="${sy(mark.y).toFixed(1)}" r="4"/><text class="tick" x="${(sx(mark.x) + 8).toFixed(1)}" y="${(sy(mark.y) + 4).toFixed(1)}">${escape(mark.label)}</text>` : "";
+  return `<svg class="chart small" viewBox="0 0 356 212" role="img" aria-label="${escape(yLabel)} against ${escape(xLabel)}">
+${frame(box, ticks(x0, x1, 4), yt, sx, sy, xLabel, yLabel)}<path class="series read-hot" d="${line(xs, ys, sx, sy)}"/>${dot}</svg>`;
+}
+
 /** Junction temperature through the motion for up to five things compared, on one chart. */
 export function overlayChart(list: { name: string; time: number[]; tj: (number | null)[] }[], limit: number): string {
   const box = { x: 46, y: 26, w: 470, h: 200 };

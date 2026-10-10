@@ -300,3 +300,27 @@ def test_charging_the_link_costs_as_much_as_it_stores() -> None:
     assert found.energy == pytest.approx(0.5 * 470e-6 * 400**2)
     assert found.peak == pytest.approx(400 / 47) and found.time == pytest.approx(3 * 47 * 470e-6)
     assert inrush(400.0, 470e-6, None).peak is None
+
+
+def test_what_a_device_can_drive_and_how_much_heavier_the_load_could_be(workspace) -> None:
+    motors = server.setup(workspace)["motors"]
+    start = page.STARTING["pmsm"]
+    request_ = {"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "conditions": {**start, "t_sink": 60},
+                "supply": "battery", "device": "example"}
+    can = page.capability(request_, workspace)
+    here = can["design"]
+    assert here["torque"] > 0 and here["why"]
+    assert len(can["edge"]) == len(can["rpm"]) and can["edge"][0]["torque"] > 0  # at standstill too
+    by_f = [x["torque"] for x in can["by_f_sw"]]
+    assert by_f == sorted(by_f, reverse=True)
+    fan = next(p for p in page.load_presets("pmsm", start["rpm"], start["torque"]) if p["id"] == "conveyor")
+    found = page.largest({**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, workspace)
+    assert found["scale"] >= 1.0 and (found["open"] or found["why"])
+    # Just past the limit the same request fails; at it, it does not.
+    if not found["open"]:
+        over = page._scaled({**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, 1.05 * found["scale"])
+        try:
+            failing = [c for c in server.cycle(over, workspace)["checks"] if c["level"] == "fail"]
+        except server.Refused:
+            failing = ["refused"]
+        assert failing

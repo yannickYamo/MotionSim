@@ -333,3 +333,21 @@ def test_switching_energy_follows_the_gate_resistor_along_the_datasheets_figure(
     slow = solve(device, replace(op, rg_on=40.0, rg_off=40.0))
     assert slow.switch.turn_on == pytest.approx(2.2 * base.switch.turn_on)
     assert slow.switch.turn_off == pytest.approx(base.switch.turn_off)
+
+
+def test_devices_in_parallel_share_as_unevenly_as_the_datasheet_allows() -> None:
+    """With a maximum 1.5 times the typical drop, the typical part of a pair carries 60% of
+    the current: its temperature is that of 60%, and the stage loses what 60% and 40% lose."""
+    from dataclasses import replace
+
+    device = temperature_independent_device(rth_cs=0.3, topology=Topology.discrete)
+    op = OperatingPoint(v_dc=V_REF, i_rms=30.0, modulation_index=0.9, power_factor=0.85, f_sw=10000.0, t_sink=60.0)
+    equal = solve(device, replace(op, parallel=2))
+    device.switch.conduction = device.switch.conduction.model_copy(update={"spread": 1.5})
+    uneven = solve(device, replace(op, parallel=2))
+    hot = solve(device, replace(op, i_rms=0.6 * 30.0))
+    cold = solve(device, replace(op, i_rms=0.4 * 30.0))
+    assert uneven.tj_switch_peak == pytest.approx(hot.tj_switch_peak)
+    assert uneven.p_inverter == pytest.approx(hot.p_inverter + cold.p_inverter)
+    assert uneven.tj_switch_peak > equal.tj_switch_peak
+    assert any("60% of the current" in n for n in uneven.notes)

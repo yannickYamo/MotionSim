@@ -661,8 +661,10 @@ def _digitise_curves(pdf_path: str, obs) -> list:
         digitise_family,
         digitise_normalised_resistance,
         digitise_gate_resistance,
+        digitise_voltage,
         is_family,
         is_gate_resistance,
+        is_voltage,
         is_normalised_resistance,
     )
     from motionsim.observe.ingest import render_page
@@ -678,7 +680,7 @@ def _digitise_curves(pdf_path: str, obs) -> list:
         for number, listed in sorted(by_page.items()):
             wanted = [
                 f for f in listed
-                if is_thermal(f) or is_family(f) or is_normalised_resistance(f) or is_gate_resistance(f)
+                if is_thermal(f) or is_family(f) or is_normalised_resistance(f) or is_gate_resistance(f) or is_voltage(f)
                 or (fet and (is_gate_charge(f) or is_capacitance(f)))
             ]
             if not wanted:
@@ -728,6 +730,8 @@ def _digitise_curves(pdf_path: str, obs) -> list:
                     new = [digitise_normalised_resistance(page, frame, fig, claim)]
                 elif is_gate_resistance(fig):
                     new = digitise_gate_resistance(page, frame, fig, claim, obs.observations)
+                elif is_voltage(fig):
+                    new = digitise_voltage(page, frame, fig, claim, obs.observations)
                 elif is_thermal(fig):
                     new = [digitise_thermal(page, frame, fig, claim, obs.observations)]
                 elif is_gate_charge(fig):

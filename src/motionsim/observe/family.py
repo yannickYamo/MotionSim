@@ -296,8 +296,22 @@ def is_gate_resistance(figure: ReadFigure) -> bool:
     return figure.kind is FigureKind.switching_energy_vs_gate_resistance
 
 
+def is_voltage(figure: ReadFigure) -> bool:
+    return figure.kind is FigureKind.switching_energy_vs_voltage
+
+
+def digitise_voltage(
+    page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes, observations: list[Observation],
+) -> list[CurveObservation]:
+    """Turn-on and turn-off energy against the voltage switched, at one current. Tied to the
+    table the same way as the figure against gate resistance: each curve has to pass
+    through the tabulated energy at the table's own test voltage."""
+    return digitise_gate_resistance(page, frame, figure, axes, observations, against="voltage")
+
+
 def digitise_gate_resistance(
     page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes, observations: list[Observation],
+    against: str = "resistance",
 ) -> list[CurveObservation]:
     """Turn-on and turn-off energy against gate resistance, at the one current the figure
     was measured at.
@@ -308,18 +322,19 @@ def digitise_gate_resistance(
     curves are set aside: a curve that cannot be tied to the table cannot be trusted to
     scale it.
     """
-    names = {"e_on": (Quantity.e_on_rg_curve, Quantity.e_on, Quantity.rg_on_test),
-             "e_off": (Quantity.e_off_rg_curve, Quantity.e_off, Quantity.rg_off_test)}
+    by_voltage = against == "voltage"
+    names = {"e_on": (Quantity.e_on_v_curve if by_voltage else Quantity.e_on_rg_curve, Quantity.e_on, Quantity.rg_on_test),
+             "e_off": (Quantity.e_off_v_curve if by_voltage else Quantity.e_off_rg_curve, Quantity.e_off, Quantity.rg_off_test)}
     series = [s for s in axes.series if s.name in names]
 
     def failed(reason: str) -> list[CurveObservation]:
         return [CurveObservation(
-            quantity=Quantity.e_on_rg_curve, page=figure.page, label=figure.label, x=[], y=[],
+            quantity=names["e_on"][0], page=figure.page, label=figure.label, x=[], y=[],
             x_axis=axes.x, y_axis=axes.y, method="vector", status=ReviewStatus.flagged, flags=[reason],
         )]
 
     x_unit, y_unit = normalise_unit(axes.x_unit), normalise_unit(axes.y_unit)
-    if x_unit is None or y_unit is None or (x_unit[0], y_unit[0]) != ("ohm", "J"):
+    if x_unit is None or y_unit is None or (x_unit[0], y_unit[0]) != ("V" if by_voltage else "ohm", "J"):
         return failed(f"axis units {axes.x_unit!r}, {axes.y_unit!r} do not fit this kind of figure")
     if not axes.test_current_a:
         return failed("the figure does not state the current it was measured at")
@@ -340,12 +355,14 @@ def digitise_gate_resistance(
         tj = 25.0 if s.tj_c is None else s.tj_c
         rows = [o for o in observations if o.quantity is energy and o.typ and o.tj_c == tj
                 and o.current_a == axes.test_current_a and o.status is not ReviewStatus.flagged]
+        if by_voltage:  # the table's own test voltage is where the curve has to meet it
+            return (rows[0].voltage_v, rows[0].typ) if rows and rows[0].voltage_v else None
         at = [o for o in observations if o.quantity is resistor and o.typ and o.status is not ReviewStatus.flagged]
         return (at[0].typ, rows[0].typ) if rows and at else None
 
     anchors = [anchor(s) for s in series]
     if any(a is None for a in anchors):
-        return failed("no tabulated energy at this figure's current and temperature, with its gate resistor, to tie the curves to")
+        return failed("no tabulated energy at this figure's current and temperature to tie the curves to")
     best = None
     for order in permutations(range(len(curves)), len(series)):
         errors = []
@@ -358,7 +375,8 @@ def digitise_gate_resistance(
     if max(errors) > RG_TOLERANCE:
         worst = max(errors)
         return failed(
-            "the curves do not pass through the tabulated energy at the table's gate resistor"
+            "the curves do not pass through the tabulated energy at the table's own "
+            + ("test voltage" if by_voltage else "gate resistor")
             + ("" if worst == float("inf") else f" (off by {worst:.0%})")
         )
     out = []
@@ -369,7 +387,7 @@ def digitise_gate_resistance(
             x=[float(f"{v:.6g}") for v in r], y=[float(f"{v:.6g}") for v in e],
             x_axis=axes.x, y_axis=axes.y, test_voltage_v=axes.test_voltage_v,
             anchor_error=float(f"{error:.3g}"), method="vector", status=ReviewStatus.unverified, flags=[],
-            notes=[f"at {axes.test_current_a:g} A; passes through the tabulated energy at {rg:g} ohm"],
+            notes=[f"at {axes.test_current_a:g} A; passes through the tabulated energy at {rg:g} {'V' if by_voltage else 'ohm'}"],
         ))
     return out
 

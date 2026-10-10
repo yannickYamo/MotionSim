@@ -56,16 +56,19 @@ FIELDS = {
         ("lls", "Stator leakage", "H", "", None),
         ("llr", "Rotor leakage", "H", "", None),
         ("i_magnetising", "Magnetising current", "A peak", "About the no-load current", None),
+        ("i_max", "Current limit", "A rms", "The winding's rated current, if you know it", None),
     ],
     "bldc": [
         ("pole_pairs", "Pole pairs", "", "Number of magnet poles divided by two", None),
         ("kt", "Torque constant Kt", "N·m/A", "9.55 divided by Kv in rpm per volt", None),
         ("r", "Resistance", "Ω", "Phase to phase", None),
+        ("l", "Inductance", "H", "Phase to phase. Sets the current ripple; leave empty if unknown", None),
         ("i_max", "Current limit", "A", "", None),
     ],
     "dc": [
         ("kt", "Torque constant Kt", "N·m/A", "", None),
         ("r", "Armature resistance", "Ω", "", None),
+        ("l", "Armature inductance", "H", "Sets the current ripple; leave empty if unknown", None),
         ("i_max", "Current limit", "A", "", None),
         ("drive", "Drive", "", "unipolar: one leg chops, lower loss. bipolar: both legs switch", ["unipolar", "bipolar"]),
     ],
@@ -83,6 +86,15 @@ FIELDS = {
         ("holding_torque", "Holding torque", "N·m", "At the set current", None),
     ],
 }
+# Figures a motor may be given beyond its catalogue ones. All optional: left empty, the
+# effect they describe is left out, and the result says so.
+OPTIONAL = {
+    "p_iron": ("Iron loss", "W", "No-load loss in the motor's steel, at the speed below. From a no-load test or the maker."),
+    "n_iron": ("at speed", "rpm", "The speed that iron loss was measured at."),
+    "i_sat": ("Saturation current", "A peak", "Where an inductance has fallen to about 70% of its small-current value."),
+}
+OPTIONAL_FOR = {"pmsm": ["p_iron", "n_iron", "i_sat"], "synrm": ["p_iron", "n_iron", "i_sat"],
+                "induction": ["p_iron", "n_iron"], "bldc": ["p_iron", "n_iron"]}
 # Family, name and what it is, in the order the page lists them: the usual tree of motor
 # types, from machines fed with alternating current to those with brushes.
 MOTOR_NAMES = {
@@ -132,8 +144,15 @@ def _motor(data: dict):
     from pydantic import ValidationError
 
     cleaned = {k: v for k, v in data.items() if v not in ("", None)}
+    # A working temperature comes with the motor's figures and is not one of them.
+    hot = cleaned.pop("t_motor", None)
     try:
-        return _ADAPTER.validate_python(cleaned)
+        machine = _ADAPTER.validate_python(cleaned)
+        if hot is None:
+            return machine
+        from motionsim.motor.machines import at_temperature
+
+        return at_temperature(machine, _number(hot, "motor temperature", low=-40, high=250))
     except ValidationError as exc:
         first = exc.errors()[0]
         field = str(first["loc"][-1]) if first["loc"] else ""
@@ -171,6 +190,7 @@ def _conditions(data: dict, motor) -> OperatingPoint:
         f_sw=_number(data.get("f_sw"), "switching frequency", low=100, high=2e6),
         t_sink=_number(data.get("t_sink", 60), "heatsink temperature", low=-40, high=200),
         pwm=Pwm(pwm), t_dead=_number(data.get("t_dead", 0) or 0, "dead time", low=0, high=1e-4),
+        t_min_pulse=_number(data.get("t_min_pulse", 0) or 0, "shortest pulse", low=0, high=1e-4),
         v_drive=optional("v_drive"), rg_on=optional("rg_on"), rg_off=optional("rg_off"),
         l_loop=optional("l_loop"),
         parallel=int(_number(data.get("parallel") or 1, "devices in parallel", low=1, high=12)),
@@ -188,7 +208,10 @@ def _gate(device, op: OperatingPoint, motor, conditions: dict):
         i_peak = motor.stage(rpm, torque, op.v_dc, op.pwm).i_peak
     except (Unreachable, Refused, ValueError):
         i_peak = device.ratings.i_nominal
-    return choose_gate_drive(device, op, max(i_peak, 1e-3))
+    # Each device of those in parallel switches its own share in its own loop.
+    from motionsim.engine.solver import hot_share
+
+    return choose_gate_drive(device, op, max(i_peak * hot_share(device, op.parallel), 1e-3))
 
 
 def _switching_period(device, design, op: OperatingPoint) -> dict:
@@ -301,6 +324,7 @@ class Workspace:
             "id": key, "name": f"{device.vendor} {device.part_number}",
             "technology": device.technology, "v_max": device.ratings.v_max,
             "i_nominal": device.ratings.i_nominal, "tj_max": device.ratings.tj_max,
+            "i_pulsed": device.ratings.i_pulsed, "t_sc": device.ratings.t_sc,
             "positions": device.package.topology.positions,
             "integrated_driver": device.package.integrated_driver,
             "example": key == "example",
@@ -332,6 +356,8 @@ def setup(workspace: Workspace) -> dict:
                 for key, lab, unit, text_, options in FIELDS[kind]
             ],
             "fixed_scheme": motor.fixed_scheme, "default_pwm": motor.default_pwm.value,
+            "optional": [{"key": key, "label": OPTIONAL[key][0], "unit": OPTIONAL[key][1], "help": OPTIONAL[key][2]}
+                         for key in OPTIONAL_FOR.get(kind, [])],
         }
     return {
         "motors": motors, "pwm": [p.value for p in Pwm],
@@ -347,7 +373,7 @@ def setup(workspace: Workspace) -> dict:
 REWIND = {
     "kv": -1, "kt": 1, "ke": 1, "flux_linkage": 1, "k": 2,
     "l": 2, "ld": 2, "lq": 2, "lm": 2, "lls": 2, "llr": 2, "rs": 2, "rr": 2, "r": 2,
-    "i_max": -1, "i_magnetising": -1, "i_phase": -1,
+    "i_max": -1, "i_magnetising": -1, "i_phase": -1, "i_sat": -1,
 }
 
 
@@ -582,6 +608,7 @@ def proposal(data: dict, workspace: Workspace) -> dict:
             "checks": _checks(c.checks), "needs": c.needs,
             "gate": _gate_out(gates[id(c.device)]),
             "pwm": None if c.design is None else _switching_period(c.device, c.design, gates[id(c.device)].op),
+            "link": None if c.design is None else {"capacitor_rms": c.design.capacitor_rms, "ripple_pp": c.design.ripple_pp},
         })
     return {"candidates": out, "explain": explain(candidates)}
 
@@ -630,16 +657,18 @@ def _mission(given) -> list | None:
     return [Sample(t - time[0], dt, n * math.pi / 30, 0.0, 0.0, n, tq) for t, dt, n, tq in zip(time, spans, rpm, torque)]
 
 
-def _life(tj, duration: float) -> dict:
-    """Thermal-cycling life from the temperature trace, by a generic model."""
-    from motionsim.lifetime import estimate
+def _life(trace, tj, duration: float) -> dict:
+    """Thermal-cycling life of the chip that wears out first, from its own temperature
+    trace, by a generic model."""
+    from motionsim.lifetime import estimate, worst_of
 
-    life = estimate(np.asarray([v for v in tj if math.isfinite(v)]))
+    life = worst_of(trace.chips, trace.swings) or estimate(np.asarray([v for v in tj if math.isfinite(v)]))
     endless = not math.isfinite(life.repeats)
     return {
         "repeats": None if endless else life.repeats,
         "hours": None if endless else life.repeats * duration / 3600,
         "swing": life.swing, "swing_mean": life.swing_mean, "swing_share": life.swing_share, "swings": life.swings,
+        "chip": life.chip, "within_turn": life.within_turn,
     }
 
 
@@ -735,7 +764,7 @@ def cycle(data: dict, workspace: Workspace) -> dict:
     start, starting = _start(data, motor, op)
     try:
         run, trace = follow(device, motor, load, profile, op, heatsink=sink, repeats=repeats, start=start,
-                            samples=mission)
+                            samples=mission, per_segment=6 if data.get("coarse") else 12)
     except ValueError as exc:
         raise Refused(str(exc), "open Gate drive under Supply and point" if "gate" in str(exc) else "") from None
     if not run.solved:
@@ -760,6 +789,17 @@ def cycle(data: dict, workspace: Workspace) -> dict:
     link = dclink.returned(run, op.v_dc, device.ratings.v_max,
                            capacitance=_number(c_link, "DC-link capacitance", low=1e-9) if c_link else None)
     checks += dclink.check(link, op.v_dc, device.ratings.v_max, supply=data.get("supply", "one-way"))
+    # Over the motion: the instant with the most ripple, what the capacitor carries on
+    # average (which is what heats it), and a trip at the motion's top speed.
+    hardest = max(run.solved, key=lambda s: s.point.ripple_pp or 0.0).point
+    most = max(run.solved, key=lambda s: s.point.capacitor_rms or 0.0).point
+    checks += [c for c in guard.ripple_checks(hardest, op) if c.topic == "ripple"]
+    checks += [c for c in guard.ripple_checks(most, op) if c.topic == "link capacitor"]
+    lasting = sum(s.sample.duration for s in run.solved)
+    capacitor_mean = math.sqrt(sum((s.point.capacitor_rms or 0.0) ** 2 * s.sample.duration for s in run.solved) / lasting) if lasting else 0.0
+    tripped = guard.trip_check(motor, max(abs(s.sample.motor_rpm) for s in run.steps), op.v_dc, device.ratings.v_max)
+    if tripped is not None:
+        checks.append(tripped)
     failed = [s for s in run.steps if s.point is None]
     if failed:
         checks.append(guard.Check(guard.Level.fail, "motion",
@@ -774,7 +814,7 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         "p_stage": [None if s.point is None else s.point.result.p_inverter for s in run.steps],
         "i_peak": [None if s.point is None else s.point.stage.i_peak for s in run.steps],
         "start": starting,
-        "life": _life(trace.tj[start:], run.duration),
+        "life": _life(trace, trace.tj[start:], run.duration),
         "inrush": _inrush(data, op),
         "p_dc": [None if s.point is None else s.point.stage.p_electrical + s.point.result.p_inverter
                  for s in run.steps],
@@ -785,6 +825,8 @@ def cycle(data: dict, workspace: Workspace) -> dict:
             "rms_torque": run.rms_torque, "returned": link.energy, "returned_peak": link.peak_power,
             "v_link_peak": link.v_peak, "c_needed": link.capacitance_needed,
             "sink_peak": float(trace.t_sink.max()),
+            "capacitor_rms": capacitor_mean if most.capacitor_rms is not None else None,
+            "capacitor_rms_worst": most.capacitor_rms, "ripple_pp_worst": hardest.ripple_pp,
         },
         "checks": _checks(checks),
     }
@@ -810,6 +852,98 @@ def speed_torque(data: dict, workspace: Workspace) -> dict:
     return {"rpm": rpm.tolist(), "torque": torque.tolist(), "loss": grid(m.p_inverter),
             "tj": grid(m.tj_peak), "efficiency": grid(m.efficiency), "reason": m.reason,
             "tj_max": device.ratings.tj_max}
+
+
+def capability(data: dict, workspace: Workspace) -> dict:
+    """What this device can drive on this motor and cooling: the torque it holds at each
+    speed with every junction within its rating, and how that limit moves with the
+    switching frequency and the heatsink temperature."""
+    from motionsim.capability import against, envelope, torque_limit
+
+    motor = _motor(data["motor"])
+    op = _conditions(data["conditions"], motor)
+    device = workspace.device(data["device"])
+    op = _gate(device, op, motor, data["conditions"]).op
+    rpm = abs(_number(data["conditions"].get("rpm"), "speed")) or 1.0
+    torque = abs(_number(data["conditions"].get("torque"), "torque")) or 1.0
+    speeds = [rpm if k == 1.0 else float(f"{rpm * k:.4g}") for k in (0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)]
+    edge = envelope(device, motor, speeds, op, torque)
+    here = edge[speeds.index(rpm)] if rpm in speeds else torque_limit(device, motor, rpm, op, torque)
+    frequencies = [float(f"{op.f_sw * k:.3g}") for k in (0.25, 0.5, 1.0, 2.0, 4.0)]
+    sinks = [op.t_sink + k for k in (-20.0, 0.0, 20.0, 40.0)]
+    words = {"junction": "a junction reaches its rating", "motor": "the motor itself: its current limit, or its reach on this supply",
+             "current rating": "the device's current rating", "none found": "nothing within reach"}
+    row = lambda found: {"torque": found.torque, "why": words.get(found.reason, found.reason), "tj": found.tj, "current": found.current}  # noqa: E731
+    return {
+        "rpm": speeds, "edge": [row(x) for x in edge],
+        "design": {"rpm": rpm, "torque": torque, **row(here), "share": torque / here.torque if here.torque > 0 else None,
+                   "power": here.torque * rpm * math.pi / 30, "rated": device.ratings.i_nominal},
+        "f_sw": frequencies, "by_f_sw": [row(x) for x in against(device, motor, rpm, op, "f_sw", frequencies, torque)],
+        "t_sink": sinks, "by_t_sink": [row(x) for x in against(device, motor, rpm, op, "t_sink", sinks, torque)],
+    }
+
+
+GROWS = ("inertia", "friction_coulomb", "friction_viscous", "constant_torque", "fan_coefficient")
+
+
+def _scaled(data: dict, k: float) -> dict:
+    """The same request with the load made k times as heavy: what it asks of the motor
+    grows with it, the motion and the gearing stay."""
+    load = dict(data.get("load") or {})
+    for key in GROWS:
+        if load.get(key):
+            load[key] = load[key] * k
+    if load.get("gravity"):
+        load["gravity"] = {**load["gravity"], "mass": load["gravity"]["mass"] * k}
+    if load.get("vehicle"):
+        load["vehicle"] = {**load["vehicle"], "mass": load["vehicle"]["mass"] * k,
+                           "drag_area": (load["vehicle"].get("drag_area") or 0.0) * k}
+    out = {**data, "load": load}
+    if data.get("mission"):
+        out["mission"] = {**data["mission"], "torque": [t * k for t in data["mission"]["torque"]]}
+    return out
+
+
+def largest(data: dict, workspace: Workspace) -> dict:
+    """How much heavier the load could be before the device, the motor or the link gives:
+    the load is scaled up until a check fails, and what failed is named."""
+    def tried(k: float, coarse: bool = True) -> tuple[bool, str, dict | None]:
+        # The search steps through the motion in half as many instants; the answer it
+        # settles on is then worked out in full.
+        try:
+            out = cycle({**_scaled(data, k), "coarse": coarse}, workspace)
+        except Refused as exc:
+            return False, exc.reason, None
+        except ThermalRunaway:
+            return False, "no stable junction temperature", None
+        failing = [c["message"] for c in out["checks"] if c["level"] == "fail"]
+        return (not failing), (failing[0] if failing else ""), out
+
+    fine, why, at = tried(1.0)
+    if not fine:
+        low, high = 0.0, 1.0
+    else:
+        low, high = 1.0, 2.0
+        for _ in range(9):
+            fine, why_high, found = tried(high)
+            if not fine:
+                why = why_high
+                break
+            low, at, high = high, found, 2 * high
+        else:
+            return {"scale": low, "open": True, "why": "", "peak": at["summary"]["peak"], "tj_max": at["summary"]["tj_max"]}
+    for _ in range(6):  # to a part in sixty of the last doubling: finer says nothing more
+        middle = (low + high) / 2
+        fine, why_middle, found = tried(middle)
+        if fine:
+            low, at = middle, found
+        else:
+            high, why = middle, why_middle
+    if low > 0:
+        fine, _, full = tried(low, coarse=False)
+        at = full if fine else at
+    return {"scale": low, "open": False, "why": why,
+            "peak": None if at is None else at["summary"]["peak"], "tj_max": None if at is None else at["summary"]["tj_max"]}
 
 
 def recommendations(data: dict, workspace: Workspace) -> dict:
@@ -950,6 +1084,8 @@ def _reading(key: str, workspace: Workspace) -> dict | None:
 ROUTES = {
     "/api/stage": lambda data, ws: stage(data),
     "/api/proposal": proposal,
+    "/api/capability": capability,
+    "/api/largest": largest,
     "/api/suggest": suggest,
     "/api/loads": lambda data, ws: loads(data),
     "/api/cycle": cycle,

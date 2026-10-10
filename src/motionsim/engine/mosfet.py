@@ -81,11 +81,14 @@ def mosfet_losses(
     else:
         p_dead = np.zeros_like(mag)
 
+    mag_on = mag if role.current_on is None else role.current_on
+    mag_off = mag if role.current_off is None else role.current_off
     if chip.e_on is not None and chip.e_off is not None:
-        e_on = _energy(chip.e_on, mag, tj, op.v_dc, op.rg_on)
-        e_off = _energy(chip.e_off, mag, tj, op.v_dc, op.rg_off)
+        e_on = _energy(chip.e_on, mag_on, tj, op.v_dc, op.rg_on)
+        e_off = _energy(chip.e_off, mag_off, tj, op.v_dc, op.rg_off)
     else:
-        e_on, e_off = _charge_energies(chip, mag, op)
+        e_on = _charge_energies(chip, mag_on, op)[0]
+        e_off = _charge_energies(chip, mag_off, op)[1]
     p_on = role.switch_events * e_on * op.f_sw
     p_off = role.switch_events * e_off * op.f_sw
     # A tabulated recovery energy is lost in the body diode of the device that was conducting

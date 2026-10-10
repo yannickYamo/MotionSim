@@ -566,6 +566,12 @@ def spanning(curves: list[np.ndarray], frame: Frame, share: float = 0.25) -> lis
     def border(c: np.ndarray) -> bool:
         if len(c) <= 6 and np.ptp(c[:, 0]) > 0.97 * width and np.ptp(c[:, 1]) > 0.97 * height:
             return True
+        # A box drawn inside the plot, round a legend or the test conditions: a few points,
+        # every side upright or level, and both a width and a height.
+        if 4 <= len(c) <= 6 and np.ptp(c[:, 0]) > 5 and np.ptp(c[:, 1]) > 5:
+            steps = np.abs(np.diff(c, axis=0))
+            if np.all((steps[:, 0] < STRAIGHT) | (steps[:, 1] < STRAIGHT)):
+                return True
         # One side of the border, drawn on its own.
         upright = np.ptp(c[:, 0]) < STRAIGHT and min(abs(c[0, 0] - frame.x0), abs(c[0, 0] - frame.x1)) < 2
         level = np.ptp(c[:, 1]) < STRAIGHT and min(abs(c[0, 1] - frame.top), abs(c[0, 1] - frame.bottom)) < 2
