@@ -267,7 +267,7 @@ class SynRm(_Machine):
 
             if excess(least) > 0:
                 raise Unreachable(
-                    f"{torque:g} N·m at {rpm:g} rpm needs more voltage than {v_max:.4g} V peak "
+                    f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
                     "at any current angle"
                 )
             i_d = float(brentq(excess, least, i_d))
@@ -275,7 +275,7 @@ class SynRm(_Machine):
         i_pk = float(np.hypot(i_d, i_q))
         if self.i_max is not None and i_pk / np.sqrt(2) > self.i_max:
             raise Unreachable(
-                f"{torque:g} N·m at {rpm:g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
+                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
                 f"motor's {self.i_max:g} A limit"
             )
         v_pk = float(np.hypot(v_d, v_q))
@@ -335,7 +335,7 @@ class Induction(_Machine):
             below = [x for x in grid if excess(x) <= 0]
             if not below:
                 raise Unreachable(
-                    f"{torque:g} N·m at {rpm:g} rpm needs more voltage than {v_max:.4g} V peak "
+                    f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
                     "at any flux level"
                 )
             i_d = float(brentq(excess, below[0], grid[list(grid).index(below[0]) - 1]))
@@ -344,7 +344,7 @@ class Induction(_Machine):
         i_pk, v_pk = np.hypot(i_d, i_q), np.hypot(v_d, v_q)
         if self.i_max is not None and i_pk / np.sqrt(2) > self.i_max:
             raise Unreachable(
-                f"{torque:g} N·m at {rpm:g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
+                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
                 f"{self.i_max:g} A limit"
             )
         power = 1.5 * (v_d * i_d + v_q * i_q)
@@ -413,7 +413,7 @@ class Bldc(_Machine):
         duty = abs(drive) / v_dc
         if duty > 1:
             raise Unreachable(
-                f"{torque:g} N·m at {rpm:g} rpm needs {abs(drive):.4g} V, more than the DC link"
+                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {abs(drive):.4g} V, more than the DC link"
             )
         positive, negative = _window(30, 120), _window(210, 120)
         chopping = float(0 < duty < 1)
@@ -499,7 +499,7 @@ def _h_bridge_stage(
     """
     if abs(voltage) > v_dc:
         raise Unreachable(
-            f"{torque:g} N·m at {rpm:g} rpm needs {abs(voltage):.4g} V, more than the DC link"
+            f"{torque:.3g} N·m at {rpm:.4g} rpm needs {abs(voltage):.4g} V, more than the DC link"
         )
     first, second = ("A", "B") if current >= 0 else ("B", "A")
     along = voltage if current >= 0 else -voltage  # along the current

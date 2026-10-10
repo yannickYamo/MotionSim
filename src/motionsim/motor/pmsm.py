@@ -128,7 +128,7 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
         deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
         if excess(deepest) > 0:
             raise Unreachable(
-                f"{torque:g} N·m at {rpm:g} rpm needs more voltage than {v_max:.4g} V peak "
+                f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
                 "even with full field weakening"
             )
         i_d = float(brentq(excess, deepest, i_d))
@@ -144,7 +144,7 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
     )
     if motor.i_max is not None and state.i_rms > motor.i_max:
         raise Unreachable(
-            f"{torque:g} N·m at {rpm:g} rpm needs {state.i_rms:.3g} A rms, above the motor's "
+            f"{torque:.3g} N·m at {rpm:.4g} rpm needs {state.i_rms:.3g} A rms, above the motor's "
             f"{motor.i_max:g} A limit"
         )
     return state

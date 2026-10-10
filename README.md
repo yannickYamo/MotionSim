@@ -2,13 +2,13 @@
 
 Bring a power transistor's datasheet, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
 
-MotionSim is a local web page with a loss and temperature engine behind it. It works from any vendor's datasheet, shows the equations it uses, and says in every result what the data supports and what it leaves out.
+MotionSim is a web page with a loss and temperature engine behind it. It works from any vendor's datasheet, shows the equations it uses, and says in every result what the data supports and what it leaves out. It answers two questions: what inverter a load needs, and what load a device can drive.
 
 Live page: https://yannickyamo.github.io/MotionSim/
 
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature, the verdict and its checks on the right](docs/images/page.png)
 
-The live page runs the engine in your browser, with a made-up part to try. It does not read datasheets: that needs your own key and a local install, as below.
+The live page runs the engine in your browser, with a made-up part to try and room for your own device files. Nothing you enter leaves your browser. It does not read datasheet PDFs: that needs your own key and a local install, as below.
 
 **Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). It has not been checked against a measured loss. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
 
@@ -40,21 +40,23 @@ Five steps on one page, with the power stage drawn on screen the whole time:
    - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values.
    - A setup you can save to a file, and a report you can save as a PDF.
 
+![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
+
 An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away.
 
 ## Install and run
 
-MotionSim runs on your own machine. There is no hosted version and no account.
+To read your own datasheets, run MotionSim on your own machine. There is no account, and nothing is sent to this project.
 
 ```
-git clone <this repository>
+git clone https://github.com/yannickYamo/MotionSim.git
 cd MotionSim
 python -m venv .venv && . .venv/bin/activate
 pip install .
 motionsim serve
 ```
 
-The page opens at `http://127.0.0.1:4310/`. It answers only requests from your own machine.
+The page opens at `http://127.0.0.1:4310/`. It answers only requests from your own machine. It needs Python 3.11 or later.
 
 ### Reading datasheets needs your own API key, and that is why it is local
 
@@ -107,6 +109,8 @@ Everything the page does is also a command: `motionsim --help` lists them.
 
 ## How it works
 
+![How MotionSim is put together: what you bring goes through a reader and checks into a device model; the engine takes that with your motor and load and gives the results](docs/images/architecture.svg)
+
 1. A language model copies the datasheet's tabulated values exactly as printed and says what each plot's axes mean. It produces no model values.
 2. Deterministic code checks that every number appears on the page it was cited from, converts units, reads curve coordinates from the PDF's own drawing commands (or traces them when a figure is a picture), and checks each curve against the tables. What fails a check is set aside and shown.
 3. The device model is built from what passed. Where a datasheet gives single points, the assumed shape is written into the model.
@@ -126,7 +130,8 @@ Choosing a power semiconductor usually means trusting each vendor's calculator f
 | Model source | Not shown | Entered by hand | Recorded per value, with its page |
 | Assumptions and gaps | Not shown | Not shown | Listed in each result |
 | Accuracy | Calibrated on the vendor's own measurements | As good as your model | Unproven against measurement; a range where data is missing |
-| Control loop, ripple, other topologies | Some | Yes | No: motor inverters, steady state at each instant |
+| Control loop, other topologies | Some | Yes | No: motor inverters, steady state at each instant, with ripple at the switching frequency worked out from the switching sequence |
+| Both directions | The load is given | The load is given | What a load needs, and what a device can drive |
 | Lifetime | Vendor's own cycling data | With your own model | A generic model, named as such |
 
 The vendors' tools and the circuit simulators are ahead on accuracy and breadth. What MotionSim adds is the path from any datasheet to a result, in the open.
