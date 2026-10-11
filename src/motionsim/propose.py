@@ -8,8 +8,74 @@ from math import ceil
 from motionsim import guard
 from motionsim.device.schema import Device
 from motionsim.drivers import MotorPoint, at_speed_and_torque
+from motionsim.engine.limits import hottest
 from motionsim.engine.solver import OperatingPoint, ThermalRunaway
 from motionsim.motor.stage import Unreachable
+
+
+LEVEL = 0.05  # two losses closer than this share of the lower one are not told apart
+
+
+@dataclass(frozen=True)
+class Footing:
+    """What a device's switching loss rests on, so that two devices can be seen to be like
+    for like or not."""
+
+    kind: str  # "measured", "from charge" or "none"
+    text: str  # one line: the test conditions, and how they were brought to these
+    stretched: bool = False  # brought to a higher voltage than tested, in proportion
+
+
+def _ohms(on: float | None, off: float | None) -> str:
+    if on is None:
+        return ""
+    return f"{on:g} Ω" if off in (None, on) else f"{on:g} Ω on, {off:g} Ω off"
+
+
+def switching_footing(device: Device, op: OperatingPoint) -> Footing:
+    """One line on where this device's switching loss comes from at these conditions."""
+    sw = device.switch
+    if sw.e_on is None or sw.e_off is None:
+        if sw.charge is None:
+            return Footing("none", "no switching data")
+        drive = "" if op.v_drive is None else f" at {op.v_drive:g} V drive"
+        gate = _ohms(op.rg_on, op.rg_off)
+        return Footing(
+            "from charge",
+            "estimated from gate and output charge" + (f", with {gate}{drive}" if gate else ""),
+        )
+    table = sw.e_on
+    test = [f"{table.v_ref:g} V"]
+    tested = _ohms(table.rg, sw.e_off.rg)
+    if tested:
+        test.append(tested)
+    if table.gate_voltage is not None:
+        test.append(f"{table.gate_voltage:g} V gate")
+    text = "measured at " + ", ".join(test)
+    stretched = False
+    if abs(op.v_dc - table.v_ref) > 0.01 * table.v_ref:
+        if table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]:
+            text += f"; brought to {op.v_dc:g} V along the datasheet's figure"
+        else:
+            stretched = op.v_dc > table.v_ref
+            text += f"; brought to {op.v_dc:g} V in proportion"
+    if device.package.integrated_driver:
+        return Footing("measured", text + "; gate drive built in", stretched)
+    if op.rg_on is not None and table.rg is not None and abs(op.rg_on - table.rg) > 0.01 * table.rg:
+        if table.rg_values and table.rg_factor:
+            text += f"; brought to {_ohms(op.rg_on, op.rg_off)} along the datasheet's figure"
+        else:
+            text += "; your gate resistor is not applied, for want of a figure against it"
+    return Footing("measured", text, stretched)
+
+
+def _room(device: Device, point: MotorPoint | None) -> float | None:
+    """K left to the junction limit, counted from the top of the range where there is one."""
+    if point is None:
+        return None
+    r = point.result
+    top = r.tj_peak_range[1] if r.tj_peak_range is not None else hottest(r)
+    return device.ratings.tj_max - top
 
 
 @dataclass(frozen=True)
@@ -20,6 +86,22 @@ class Candidate:
     checks: list[guard.Check]  # design point and stall together
     problem: str | None  # why it could not be evaluated at all
     needs: list[str] = field(default_factory=list)  # what else the design must provide
+    op: OperatingPoint | None = None  # the conditions it was run at, gate drive included
+    footing: Footing | None = None
+
+    @property
+    def name(self) -> str:
+        return f"{self.device.vendor} {self.device.part_number}"
+
+    @property
+    def margin(self) -> float | None:
+        """K left to the junction limit at the design point."""
+        return _room(self.device, self.design)
+
+    @property
+    def stall_margin(self) -> float | None:
+        """K left to the junction limit holding the same torque at standstill."""
+        return _room(self.device, self.stall)
 
     @property
     def level(self) -> guard.Level:
@@ -109,8 +191,48 @@ def propose(
         needs = [] if design is None else requirements(
             device, sum(r.count for r in design.stage.roles), base
         )
-        out.append(Candidate(device, design, stall, checks, problem, needs))
+        out.append(Candidate(
+            device, design, stall, checks, problem, needs, base, switching_footing(device, base)
+        ))
     return sorted(out, key=lambda c: (c.level is guard.Level.fail, c.loss))
+
+
+def level_with_best(candidates: list[Candidate]) -> list[Candidate]:
+    """The candidates that pass and lose so nearly what the best one loses that the model does
+    not tell them apart. The best is among them; alone, when it leads clearly."""
+    usable = [c for c in candidates if c.level is not guard.Level.fail]
+    if not usable:
+        return []
+    least = min(c.loss for c in usable)
+    return [c for c in usable if c.loss <= least * (1 + LEVEL)]
+
+
+def _unlike(usable: list[Candidate]) -> list[str]:
+    """Sentences on where the candidates' switching figures are not like for like."""
+    lines = []
+    kinds = {c.footing.kind for c in usable if c.footing is not None}
+    if {"measured", "from charge"} <= kinds:
+        measured = [c.name for c in usable if c.footing.kind == "measured"]
+        charge = [c.name for c in usable if c.footing.kind == "from charge"]
+        lines.append(
+            f"The switching loss of {_and(measured)} is measured and that of {_and(charge)} is "
+            "estimated from charge: the order between them rests on unlike data."
+        )
+    stretched = [c.name for c in usable if c.footing is not None and c.footing.stretched]
+    if stretched and len(stretched) < len(usable):
+        lines.append(
+            f"The switching loss of {_and(stretched)} is brought in proportion to a higher voltage "
+            "than it was measured at, and is likely stated low against the others."
+        )
+    return lines
+
+
+def _span(low: float, high: float) -> str:
+    return f"{low:.1f}" if f"{low:.1f}" == f"{high:.1f}" else f"{low:.1f} to {high:.1f}"
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def explain(candidates: list[Candidate]) -> list[str]:
@@ -121,28 +243,48 @@ def explain(candidates: list[Candidate]) -> list[str]:
         lines.append("None of these devices passes every check at this operating point.")
     else:
         best = usable[0]
-        name = f"{best.device.vendor} {best.device.part_number}"
-        lines.append(
-            f"{name} has the lowest power-stage loss among the devices that pass: "
-            f"{best.loss:.1f} W."
-        )
+        name = best.name
+        level = [c for c in level_with_best(candidates) if c is not best]
+        if level:
+            lines.append(
+                f"{_and([name] + [c.name for c in level])} lose within {LEVEL:.0%} of each other "
+                f"({_span(best.loss, max(c.loss for c in level))} W): on loss they are level, "
+                "and something else has to decide."
+            )
+        else:
+            lines.append(
+                f"{name} has the lowest power-stage loss among the devices that pass: "
+                f"{best.loss:.1f} W."
+            )
         if best.level is guard.Level.caution:
-            lines.append("It passes with cautions, listed below; read them before relying on it.")
+            lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
         if not best.device.package.integrated_driver:
             built_in = [c for c in usable[1:] if c.device.package.integrated_driver]
             if built_in:
                 other = built_in[0]
                 lines.append(
-                    f"It needs separate gate drivers. {other.device.vendor} "
-                    f"{other.device.part_number} has them built in, for "
+                    f"It needs separate gate drivers. {other.name} has them built in, for "
                     f"{other.loss - best.loss:.1f} W more loss."
                 )
         for other in usable[1:]:
+            if other in level:
+                continue
             extra = other.loss - best.loss
             share = f" ({extra / best.loss:.0%})" if best.loss > 0 else ""
-            lines.append(
-                f"{other.device.vendor} {other.device.part_number} loses {extra:.1f} W more{share}."
-            )
+            lines.append(f"{other.name} loses {extra:.1f} W more{share}.")
+        # Loss is not the only thing to choose on: the room left to the junction limit is
+        # what a hot day, a blocked fan or a harder load is paid from.
+        for what, room in (("at the design point", lambda c: c.margin), ("holding the torque at standstill", lambda c: c.stall_margin)):
+            known = [c for c in usable if room(c) is not None]
+            if len(known) < 2 or room(best) is None:
+                continue
+            roomiest = max(known, key=room)
+            if roomiest is not best and room(roomiest) - room(best) >= 5:
+                lines.append(
+                    f"{roomiest.name} has {room(roomiest) - room(best):.0f} °C more margin to its junction "
+                    f"limit {what} ({room(roomiest):.0f} °C against {room(best):.0f} °C)."
+                )
+        lines += _unlike(usable)
     for c in candidates:
         if c.level is guard.Level.fail:
             reason = c.problem or "; ".join(k.message for k in c.checks if k.level is guard.Level.fail)

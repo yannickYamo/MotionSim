@@ -5,6 +5,7 @@ import sys
 
 import numpy as np
 
+from motionsim import __version__
 from motionsim.device import load_device, save_device
 from motionsim.engine import OperatingPoint, Pwm, ThermalRunaway, solve
 from motionsim.engine.limits import max_current
@@ -36,7 +37,19 @@ def _operating_point(args: argparse.Namespace, i_rms: float) -> OperatingPoint:
         rg_on=args.rgon,
         rg_off=args.rgoff,
         l_loop=args.lloop,
+        t_min_pulse=getattr(args, "tmin", 0.0),
+        parallel=getattr(args, "parallel", 1),
     )
+
+
+def _machine(args: argparse.Namespace):
+    """The motor file, at the winding temperature asked for where one is given."""
+    from motionsim.motor import load_machine
+    from motionsim.motor.machines import at_temperature
+
+    machine = load_machine(args.motor)
+    hot = getattr(args, "tmotor", None)
+    return machine if hot is None else at_temperature(machine, hot)
 
 
 def _simulate(args: argparse.Namespace) -> int:
@@ -70,7 +83,7 @@ def _motor(args: argparse.Namespace) -> int:
     from motionsim.drivers import at_speed_and_torque
     from motionsim.motor import Unreachable, load_machine
 
-    device, motor = load_device(args.device), load_machine(args.motor)
+    device, motor = load_device(args.device), _machine(args)
     try:
         point = at_speed_and_torque(
             device, motor, args.rpm, args.torque, _operating_point(args, 0.0)
@@ -111,27 +124,51 @@ def _print_checks(checks, indent: str = "  ") -> None:
 def _propose(args: argparse.Namespace) -> int:
     from motionsim import guard
     from motionsim.motor import Unreachable, load_machine
-    from motionsim.propose import explain, propose
+    from motionsim.propose import explain, level_with_best, propose
+
+    from motionsim.engine.solver import hot_share
+    from motionsim.recommend import choose_gate_drive
 
     devices = [load_device(path) for path in args.devices]
-    motor = load_machine(args.motor)
+    motor = _machine(args)
+    base = _operating_point(args, 0.0)
+
+    def gate(device):
+        # As the page does: a gate drive left open is chosen for each device, at the design
+        # point's peak current, so that a part with charge data only can be ranked at all.
+        try:
+            i_peak = motor.stage(args.rpm, args.torque, base.v_dc, base.pwm).i_peak
+        except (Unreachable, ValueError):
+            i_peak = device.ratings.i_nominal
+        return choose_gate_drive(device, base, max(i_peak * hot_share(device, base.parallel), 1e-3))
+
+    gates = {id(d): gate(d) for d in devices}
     try:
-        candidates = propose(devices, motor, args.rpm, args.torque, _operating_point(args, 0.0))
+        candidates = propose(devices, motor, args.rpm, args.torque, base, tune=lambda d: gates[id(d)].op)
     except Unreachable as exc:
         print(f"the motor cannot run at this point: {exc}", file=sys.stderr)
         return 1
     word = {guard.Level.ok: "ok", guard.Level.caution: "caution", guard.Level.fail: "FAIL"}
     print(f"{motor.name} ({motor.type}): {args.torque:g} N·m at {args.rpm:g} rpm from {args.vdc:g} V")
     print()
-    print(f"{'device':<28}{'loss W':>9}{'Tj peak':>9}{'at stall':>10}  verdict")
+    print(f"{'device':<28}{'loss W':>9}{'Tj peak':>9}{'margin':>8}{'at stall':>10}{'margin':>8}  verdict")
+    level = level_with_best(candidates)
     for c in candidates:
-        name = f"{c.device.vendor} {c.device.part_number}"[:27]
+        name = c.name[:27]
         if c.design is None:
-            print(f"{name:<28}{'-':>9}{'-':>9}{'-':>10}  FAIL")
+            print(f"{name:<28}{'-':>9}{'-':>9}{'-':>8}{'-':>10}{'-':>8}  FAIL")
             continue
         peak = max(c.design.result.tj_switch_peak, c.design.result.tj_diode_peak)
         stall = "-" if c.stall is None else f"{max(c.stall.result.tj_switch_peak, c.stall.result.tj_diode_peak):.0f}"
-        print(f"{name:<28}{c.loss:9.1f}{peak:9.0f}{stall:>10}  {word[c.level]}")
+        room = "-" if c.stall_margin is None else f"{c.stall_margin:.0f}"
+        tie = "  level on loss" if len(level) > 1 and c in level else ""
+        print(f"{name:<28}{c.loss:9.1f}{peak:9.0f}{c.margin:8.0f}{stall:>10}{room:>8}  {word[c.level]}{tie}")
+    print()
+    print("margin: °C left to the junction limit, from the top of the range where values are assumed")
+    for c in candidates:
+        chosen = gates[id(c.device)]
+        drive = " (gate drive chosen for the lowest loss within the limits)" if chosen.kind == "chosen" else ""
+        print(f"  {c.name}: switching loss {c.footing.text}{drive}.")
     print()
     for line in explain(candidates):
         print(line)
@@ -209,7 +246,7 @@ def _recommend(args: argparse.Namespace) -> int:
     from motionsim.engine.limits import hottest
     from motionsim.motor import Unreachable, load_machine
 
-    device, motor = load_device(args.device), load_machine(args.motor)
+    device, motor = load_device(args.device), _machine(args)
     base = _operating_point(args, 0.0)
     try:
         stage = motor.stage(args.rpm, args.torque, base.v_dc, base.pwm)
@@ -292,7 +329,7 @@ def _advise(args: argparse.Namespace) -> int:
     from motionsim.advise import advise
     from motionsim.motor import Unreachable, load_machine
 
-    motor = load_machine(args.motor)
+    motor = _machine(args)
     try:
         advice = advise(motor, args.rpm, args.torque, args.vdc, args.fsw, supply=args.supply)
     except Unreachable as exc:
@@ -320,7 +357,7 @@ def _map(args: argparse.Namespace) -> int:
     from motionsim.drivers import speed_torque_map
     from motionsim.motor import load_machine
 
-    device, motor = load_device(args.device), load_machine(args.motor)
+    device, motor = load_device(args.device), _machine(args)
     try:
         m = speed_torque_map(
             device, motor, _grid(args.rpm), _grid(args.torque), _operating_point(args, 0.0)
@@ -416,7 +453,7 @@ def _cycle(args: argparse.Namespace) -> int:
     from motionsim.motor import load_machine
     from motionsim.transient import Heatsink, follow
 
-    device, motor = load_device(args.device), load_machine(args.motor)
+    device, motor = load_device(args.device), _machine(args)
     load, profile = load_load(args.load), load_profile(args.profile)
     base = _operating_point(args, 0.0)
     heatsink = None
@@ -570,6 +607,11 @@ def _compare(args: argparse.Namespace) -> int:
     for row in rows:
         if row.result is not None and row.margin < 0:
             print(f"  {row.device.part_number}: over its junction temperature rating")
+    from motionsim.propose import switching_footing
+
+    print()
+    for row in rows:
+        print(f"  {row.device.vendor} {row.device.part_number}: switching loss {switching_footing(row.device, op).text}")
 
     if args.sweep_fsw:
         low, high = (float(v) for v in args.sweep_fsw.split(":"))
@@ -833,6 +875,7 @@ def main(argv: list[str] | None = None) -> int:
         epilog="Exploratory tool: results are estimates and can be wrong. Verify by measurement "
         "before building anything. No warranty and no liability; see DISCLAIMER.md.",
     )
+    parser.add_argument("--version", action="version", version=f"motionsim {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def conditions(p: argparse.ArgumentParser, *, many: bool = False, motor: bool = False) -> None:
@@ -861,6 +904,12 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--rgon", type=float, help="total turn-on gate resistance, ohm")
         p.add_argument("--rgoff", type=float, help="total turn-off gate resistance, ohm")
         p.add_argument("--lloop", type=float, help="commutation-loop inductance, H")
+        p.add_argument("--tmin", type=float, default=0.0, help="shortest pulse the gate drive passes, s")
+        p.add_argument(
+            "--parallel", type=int, default=1, help="devices side by side at each switch position"
+        )
+        if motor:
+            p.add_argument("--tmotor", type=float, help="winding temperature, °C (default: as the motor file gives)")
 
     sim = sub.add_parser("simulate", help="losses and temperatures at one operating point")
     conditions(sim)

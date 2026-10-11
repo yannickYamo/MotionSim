@@ -575,7 +575,7 @@ def stage(data: dict) -> dict:
 
 
 def proposal(data: dict, workspace: Workspace) -> dict:
-    from motionsim.propose import explain, propose
+    from motionsim.propose import LEVEL, explain, propose
 
     motor = _motor(data["motor"])
     op = _conditions(data["conditions"], motor)
@@ -604,13 +604,15 @@ def proposal(data: dict, workspace: Workspace) -> dict:
             "technology": c.device.technology, "level": word[c.level], "problem": problem, "fix": fix,
             "result": None if c.design is None else _result(c.design.result, c.device.ratings.tj_max, gates[id(c.device)].op.parallel),
             "stall_tj": None if c.stall is None else hottest(c.stall.result),
+            "margin": c.margin, "stall_margin": c.stall_margin,
+            "switching": None if c.footing is None else {"kind": c.footing.kind, "text": c.footing.text},
             "efficiency": None if c.design is None else c.design.system_efficiency,
             "checks": _checks(c.checks), "needs": c.needs,
             "gate": _gate_out(gates[id(c.device)]),
             "pwm": None if c.design is None else _switching_period(c.device, c.design, gates[id(c.device)].op),
             "link": None if c.design is None else {"capacitor_rms": c.design.capacitor_rms, "ripple_pp": c.design.ripple_pp},
         })
-    return {"candidates": out, "explain": explain(candidates)}
+    return {"candidates": out, "explain": explain(candidates), "level": LEVEL}
 
 
 def _inrush(data: dict, op: OperatingPoint) -> dict | None:

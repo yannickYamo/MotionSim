@@ -65,3 +65,67 @@ def test_the_pulsed_rating_is_a_hard_limit_and_the_short_circuit_time_is_passed_
     assert [c for c in rated if c.level is guard.Level.fail and "pulsed rating" in c.message]
     assert [c for c in rated if c.topic == "protection" and "5 µs" in c.message]
     assert not [c for c in guard.check(device, op, result, 50.0) if c.level is guard.Level.fail and c.topic == "current"]
+
+
+def test_what_the_motor_notes_about_its_own_model_is_not_a_data_caution() -> None:
+    """The stage always notes the voltage it loses; a block-commutated motor notes what it
+    leaves out. Neither says the device left its datasheet."""
+    from pathlib import Path
+
+    from motionsim import guard
+    from motionsim.device.io import load_device
+    from motionsim.drivers import at_speed_and_torque
+    from motionsim.engine.solver import Validity
+    from motionsim.motor import load_machine
+
+    examples = Path(__file__).parent.parent / "examples"
+    device = load_device(examples / "synthetic_igbt_600v_30a.yaml")
+    op = OperatingPoint(v_dc=300, i_rms=0, modulation_index=0, power_factor=1, f_sw=16000, t_sink=70)
+    for motor, rpm, torque in (("motor_appliance_pmsm.yaml", 3000, 6), ("motor_robot_joint_bldc.yaml", 500, -0.5)):
+        point = at_speed_and_torque(device, load_machine(examples / motor), rpm, torque, op)
+        assert point.result.notes and not point.result.outside
+        assert point.result.validity is Validity.interpolated
+        data = [c for c in guard.check(device, op, point.result, point.stage.i_peak) if c.topic == "data"]
+        assert [c.level for c in data] == [guard.Level.ok]
+
+
+def test_only_a_loss_term_that_matters_puts_a_result_outside_its_data() -> None:
+    from test_mosfet import fet
+    from test_mosfet import op as fet_op
+
+    from motionsim import guard
+    from motionsim.engine import solve
+    from motionsim.engine.solver import DRIFT, MINOR_SHARE, Validity, _shares
+
+    # Every table of this device is given at 25 °C only. Conduction is most of the loss, so
+    # a little way from 25 °C it is still within what the data supports, and far from it not.
+    device = fet(measured=True)
+    near, far = solve(device, fet_op(i_rms=5.0, t_sink=27.0)), solve(device, fet_op(t_sink=90.0))
+    for r, outside in ((near, False), (far, True)):
+        # Every term is in doubt by the same share, so together they are the whole loss.
+        assert (DRIFT * (r.tj_switch - 25.0) >= MINOR_SHARE) is outside
+        assert any("switch conduction: only characterised" in n for n in r.notes)
+        assert any("switch conduction" in n for n in r.outside) is outside
+    assert near.validity is not Validity.extrapolated and far.validity is Validity.extrapolated
+    # Reverse conduction with a short dead time is next to none of the loss: noted, and no more.
+    brief = solve(device, fet_op(t_sink=90.0, t_dead=2e-8))
+    assert _shares(brief.roles)["reverse conduction"] < MINOR_SHARE
+    assert any("reverse conduction: only characterised" in n for n in brief.notes)
+    assert not any("reverse conduction" in n for n in brief.outside)
+    data = [c for c in guard.check(device, fet_op(t_sink=90.0), far, 28.0) if c.topic == "data"]
+    assert data[0].level is guard.Level.caution and "outside the datasheet's data" in data[0].message
+
+
+def test_table_points_are_a_stated_footing_not_a_caution() -> None:
+    from test_mosfet import fet
+    from test_mosfet import op as fet_op
+
+    from motionsim import guard
+    from motionsim.engine import solve
+    from motionsim.engine.solver import Validity
+
+    # Switching worked out from charge, at the temperature the data was taken at.
+    result = solve(fet(), fet_op())
+    assert result.validity is Validity.assumed
+    data = [c for c in guard.check(fet(), fet_op(), result, 28.0) if c.topic == "data"]
+    assert data[0].level is guard.Level.ok and "estimate from charge" in data[0].message

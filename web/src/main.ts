@@ -236,7 +236,7 @@ function renderStage(): void {
       readout("Hottest junction", degrees(r.tj_peak), range, hot) +
       (c?.efficiency != null ? readout("Shaft over DC power", percent(c.efficiency), "motor windings included") : "");
   } else if (starting) {
-    cells = readout("Starting the engine", starting, "About 20 MB the first time, then kept by your browser. Carry on meanwhile.");
+    cells = readout("Starting the engine", starting, "About 20 MB the first time, fetched from cdn.jsdelivr.net and then kept by your browser. Nothing you enter leaves this page. Carry on meanwhile.");
   } else if (conditionsGiven() && c?.problem) {
     cells = readout("Power stage", "Cannot be worked out", `${sentence(c.problem)}. ${sentence(c.fix)}`);
   } else {
@@ -634,7 +634,7 @@ function devicesPanel(): string {
   if (canRead) {
     how = "";
   } else if (local) {
-    how = `<details class="more"><summary>${icon("info-circle")}How to get a device file from a datasheet</summary><p class="quiet">Reading a datasheet needs a language-model key, so it is done on your own machine, not on this page. With the tool installed:</p><p><code>motionsim extract part.pdf -o part.observations.yaml</code><br/><code>motionsim build part.observations.yaml -o part.device.yaml</code></p><p class="quiet">Then drop <code>part.device.yaml</code> above. It stays in this browser and is sent nowhere. Or run <code>motionsim serve</code> to drop the PDF straight onto the page.</p></details>`;
+    how = `<details class="more"><summary>${icon("info-circle")}How to get a device file from a datasheet</summary><p class="quiet">Reading a datasheet needs a language-model key, so it is done on your own machine, not on this page. With the tool installed:</p><p><code>motionsim extract part.pdf -o part.observations.yaml</code><br/><code>motionsim build part.observations.yaml -o part.device.yaml</code></p><p class="quiet">Then drop <code>part.device.yaml</code> above. It stays in this browser and is sent nowhere. Or run <code>motionsim serve</code> to drop the PDF straight onto the page.</p></details><p class="quiet small local-note">The engine runs in this browser. Its Python runtime is fetched once from cdn.jsdelivr.net, and nothing you enter is sent anywhere. To work offline, install it as the README says.</p>`;
   } else {
     how = `<details class="more" open><summary>${icon("info-circle")}To read a datasheet PDF here<span class="quiet">it needs your own key, on your own machine</span></summary><p class="quiet">Reading a datasheet is done by a language model, and that is a paid call. It is made from this machine with your own Anthropic API key, straight to Anthropic: this tool has no server of its own, keeps no key and sees none of your files. That is why it runs on your machine.</p><p class="quiet">Set the key in the terminal, then start the page again:</p><p><code>export ANTHROPIC_API_KEY=your-key</code><br/><code>motionsim serve</code></p><p class="quiet">Without a key everything else works: device files, your own measurements, and the made-up part.</p></details>`;
   }
@@ -904,27 +904,37 @@ const comparing = () => series().length > 1;
 function compareTable(): string {
   const list = series();
   const head = `<thead><tr><th scope="col"><span class="sr">Figure</span></th>${list.map((x, k) => `<th scope="col"><span class="key line s${k}"></span>${escape(x.name)}</th>`).join("")}</tr></thead>`;
-  const line = (label: string, cells: string[], best = -1) => `<tr><th scope="row">${label}</th>${cells.map((v, k) => `<td class="${k === best ? "best" : ""}">${v}</td>`).join("")}</tr>`;
+  const line = (label: string, cells: string[], best: number[] = [], name = "") => `<tr${name ? ` class="${name}"` : ""}><th scope="row">${label}</th>${cells.map((v, k) => `<td class="${best.includes(k) ? "best" : ""}">${v}</td>`).join("")}</tr>`;
   if (state.compare !== "loads") {
     const got = list.map((x) => (x.over && variants.get(x.key) instanceof Refused ? "refused" : resultOf(x)?.result ?? null));
     const cell = (pick: (r: NonNullable<Candidate["result"]>, k: number) => string) => got.map((g, k) => (g === null ? "…" : g === "refused" ? "cannot run" : pick(g, k)));
+    // What a candidate carries beside its result: its verdict, its margins, its data.
+    const whole = (pick: (c: Candidate) => string) => got.map((g, k) => { const c = resultOf(list[k]); return g === null || !c ? "…" : g === "refused" ? "cannot run" : pick(c); });
     const losses = got.map((g) => (g && g !== "refused" ? g.loss : Infinity));
-    const least = losses.some(Number.isFinite) ? losses.indexOf(Math.min(...losses)) : -1;
+    // Losses closer than the engine can tell apart are marked together, not one as the winner.
+    const least = Math.min(...losses);
+    const level = Number.isFinite(least) ? losses.flatMap((v, k) => (v <= least * (1 + (proposal?.level ?? 0.05)) ? [k] : [])) : [];
+    const room = (m: number | null) => (m == null ? "" : ` <span class="room ${m < 0 ? "fail" : ""}">${m < 0 ? `${sig(-m, 2)} °C over the limit` : `${sig(m, 2)} °C to the limit`}</span>`);
+    const said = { ok: "Passes", caution: "Passes, with cautions", fail: "Does not pass" };
     const foot = state.compare === "devices" ? "At your design point." : state.compare === "motors" ? `Each motor at its own design point, on ${escape(focused()?.name ?? "the device under test")}.` : `At your design point, on ${escape(focused()?.name ?? "the device under test")}, with one setting changed.`;
+    const marked = level.length > 1 ? `These losses are within ${percent(proposal?.level ?? 0.05, 0)} of each other, closer than the model tells apart: they are marked together.` : "The lowest loss is marked.";
     return `<table class="data wide">${head}<tbody>
-${line("Power-stage loss", cell((r) => watts(r.loss)), least)}
+${line("Verdict", whole((c) => `<span class="${c.level === "fail" ? "fail" : ""}">${said[c.level]}</span>`))}
+${line("Power-stage loss", cell((r) => watts(r.loss)), level, "loss")}
 ${line("Conduction", cell((r) => `${watts(r.conduction)} <span class="quiet">${percent(r.conduction / Math.max(r.loss, 1e-9), 0)}</span>`))}
 ${line("Switching", cell((r) => `${watts(r.switching)} <span class="quiet">${percent(r.switching / Math.max(r.loss, 1e-9), 0)}</span>`))}
-${line("Hottest junction", cell((r) => `<span class="${r.tj_peak > r.tj_max ? "fail" : ""}">${degrees(r.tj_peak)}</span>`))}
+${line("Hottest junction", whole((c) => `<span class="${c.result!.tj_peak > c.result!.tj_max ? "fail" : ""}">${degrees(c.result!.tj_peak)}</span>${room(c.margin)}`))}
+${line("Held at standstill", whole((c) => (c.stall_tj == null ? "n/a" : `<span class="${c.stall_tj > c.result!.tj_max ? "fail" : ""}">${degrees(c.stall_tj)}</span>${room(c.stall_margin)}`)))}
 ${line("Shaft over DC power", list.map((x) => { const e = resultOf(x)?.efficiency; return e != null ? percent(e) : resultOf(x) ? "n/a" : "…"; }))}
-</tbody></table><p class="quiet small">${foot} The lowest loss is marked.</p>`;
+${state.compare === "devices" ? line("Switching data", whole((c) => `<span class="basis">${escape(sentence(c.switching?.text ?? "not given"))}</span>`)) : ""}
+</tbody></table><p class="quiet small">${foot} ${marked} The margin is counted from the top of the temperature range where values are assumed.</p>`;
   }
   const got = list.map((x) => cycles.get(x.key));
   const cell = (pick: (c: Cycle) => string) => got.map((g) => (g === undefined ? "…" : g instanceof Refused ? "cannot run" : pick(g)));
   const means = got.map((g) => (g && !(g instanceof Refused) ? g.summary.mean_loss ?? Infinity : Infinity));
   const least = means.some(Number.isFinite) ? means.indexOf(Math.min(...means)) : -1;
   return `<table class="data wide">${head}<tbody>
-${line("Mean loss", cell((c) => watts(c.summary.mean_loss!)), least)}
+${line("Mean loss", cell((c) => watts(c.summary.mean_loss!)), [least], "loss")}
 ${line("Hottest junction reached", cell((c) => `<span class="${c.summary.peak! > c.summary.tj_max! ? "fail" : ""}">${degrees(c.summary.peak!)}</span>`))}
 ${line("Peak motor current", cell((c) => `${sig(Math.max(...c.i_peak.map((v) => v ?? 0)))} A`))}
 ${line("Energy lost", cell((c) => `${sig(c.summary.loss_energy!)} J`))}

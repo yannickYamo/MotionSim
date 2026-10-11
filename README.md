@@ -31,13 +31,13 @@ Five steps on one page, with the power stage drawn on screen the whole time:
 3. **The supply and the design point.** Voltage, speed, torque, switching frequency, devices in parallel.
 4. **The load.** Pick a kind (fan, compressor, robot joint, vehicle, washer drum, positioning axis, power tool) sized to your motor, or bring a mission profile as a CSV file. Choose how the drive starts the motor.
 5. **The results.**
-   - A verdict with plain-language checks, and what the part needs around it.
+   - A verdict with plain-language checks, and what the part needs around it. A caution on the data means the operating point is outside what the datasheet gives, for a loss that matters there.
    - Conduction and switching loss, and junction temperature as a range where values are assumed.
    - Temperature through the whole motion, the motor current, and a life estimate under thermal cycling.
    - A speed-torque map, in the motor's units or the load's.
    - **What to build**: the heatsink, the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
    - **What it can drive**: the question turned round. The torque the device holds at each speed, how that moves with switching frequency and heatsink temperature, and how much heavier your load could be.
-   - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values.
+   - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values. Each device shows its verdict, its margin to the junction limit running and held still, and what its switching loss rests on. Losses too close to tell apart are marked level, and devices compared on unlike data are said to be.
    - A setup you can save to a file, and a report you can save as a PDF.
 
 ![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
@@ -105,7 +105,14 @@ motionsim build my_part.observations.yaml -o my_part.device.yaml
 motionsim serve --devices .
 ```
 
-Everything the page does is also a command: `motionsim --help` lists them.
+Everything the page does is also a command: `motionsim --help` lists them. To rank several parts on one motor from the command line:
+
+```
+motionsim propose a.device.yaml b.device.yaml --vdc 48 --motor examples/motor_robot_joint_pmsm.yaml \
+    --fsw 20000 --tsink 50 --tdead 2e-7 --rpm 1000 --torque 1
+```
+
+A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature.
 
 ## How it works
 
@@ -132,6 +139,7 @@ Choosing a power semiconductor usually means trusting each vendor's calculator f
 | Accuracy | Calibrated on the vendor's own measurements | As good as your model | Unproven against measurement; a range where data is missing |
 | Control loop, other topologies | Some | Yes | No: motor inverters, steady state at each instant, with ripple at the switching frequency worked out from the switching sequence |
 | Both directions | The load is given | The load is given | What a load needs, and what a device can drive |
+| Comparing parts | Within one vendor | Any, model by model | Any vendors, with each part's test conditions beside it and a tie called a tie |
 | Lifetime | Vendor's own cycling data | With your own model | A generic model, named as such |
 
 The vendors' tools and the circuit simulators are ahead on accuracy and breadth. What MotionSim adds is the path from any datasheet to a result, in the open.

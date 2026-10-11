@@ -91,7 +91,9 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
     await page.click('#rail [data-step="2"]');
     await page.fill('[data-bind="conditions.rpm"]', "3000");
     await page.click('#rail [data-step="3"]');
-    await page.waitForFunction(() => /3,000 rpm/.test(document.querySelector("#motion-preview .fact")?.textContent ?? ""), null, { timeout: 30000 }).catch(() => {});
+    // The load is sized again by the engine a moment after the new speed shows: wait for the
+    // motion itself to follow, not only for the sentence that quotes the design speed.
+    await page.waitForFunction(() => { const text = document.querySelector("#motion-preview .fact")?.textContent ?? ""; const at = Number((text.match(/reaches ([\d,]+) rpm/)?.[1] ?? "0").replace(/,/g, "")); return /3,000 rpm/.test(text) && at >= 1200; }, null, { timeout: 30000 }).catch(() => {});
     const now = await reach();
     if (now > 3000 * 1.01 || now < 3000 * 0.4) failures.push(`${label}: after the design speed became 3000 rpm the motion still reaches ${now} rpm at the motor`);
     if ((await page.$eval("[data-load]:checked", (e) => e.value)) !== kindOf) failures.push(`${label}: changing the design speed changed the kind of load picked`);
@@ -171,7 +173,13 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.waitForSelector("#compare-table table", { timeout: 60000 });
   await measure(page, `${label}-6-devices`);
   if ((await page.$$("#compare-table thead th")).length !== 3) failures.push(`${label}: the table does not have a column for each of the two devices`);
-  if ((await page.$$("#compare-table td.best")).length !== 1) failures.push(`${label}: exactly one device should be marked lowest loss`);
+  // The second part is the first under another name: the same loss, so neither is the winner.
+  if ((await page.$$("#compare-table td.best")).length !== 2) failures.push(`${label}: two parts with the same loss should be marked together`);
+  if (!/marked together/.test(await page.$eval("#compare-table", (e) => e.textContent))) failures.push(`${label}: the table does not say the two losses are level`);
+  for (const row of ["Verdict", "Held at standstill", "Switching data"]) {
+    if (!(await page.$$eval("#compare-table tbody th", (cells, name) => cells.some((c) => c.textContent === name), row))) failures.push(`${label}: the device comparison has no row "${row}"`);
+  }
+  if (!(await page.$$eval("#compare-table .room", (cells) => cells.length >= 4 && cells.every((c) => /°C to the limit/.test(c.textContent))))) failures.push(`${label}: the margins to the junction limit are not shown for both devices`);
   for (const tab of ["losses", "motion", "map"]) {
     await page.click(`[data-tab="${tab}"]`);
     await page.waitForFunction(() => !document.querySelector(".waiting"), null, { timeout: 120000 });
@@ -185,7 +193,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.waitForSelector("#readouts .readout", { timeout: 60000 });
   await page.click('[data-compare="loads"]');
   await page.selectOption("[data-add-load]", { index: 1 });
-  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr:first-child td")]; return cells.length === 2 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
+  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr.loss td")]; return cells.length === 2 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
   await page.click('[data-tab="motion"]');
   await page.waitForFunction(() => !document.querySelector(".waiting"), null, { timeout: 120000 });
   await measure(page, `${label}-7-loads`);
@@ -194,15 +202,16 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   // Compare motors: the motor of step 2 is kept, and stands beside the one on the page.
   await page.click('[data-compare="motors"]');
   await page.click("[data-add-motor]");
-  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr:first-child td")]; return cells.length === 2 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
+  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr.loss td")]; return cells.length === 2 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
   await measure(page, `${label}-8-motors`);
   await page.click("[data-drop-motor]");
   // Try a setting: the switching frequency at half, as set, and double.
   await page.click('[data-compare="sweep"]');
-  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr:first-child td")]; return cells.length === 3 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
+  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr.loss td")]; return cells.length === 3 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
   await page.click('[data-tab="losses"]');
   await measure(page, `${label}-9-sweep`);
-  const swept = await page.$$eval("#compare-table tbody tr:first-child td", (cells) => cells.map((c) => parseFloat(c.textContent)));
+  const swept = await page.$$eval("#compare-table tbody tr.loss td", (cells) => cells.map((c) => parseFloat(c.textContent)));
+  if ((await page.$$("#compare-table td.best")).length !== 1) failures.push(`${label}: with losses well apart exactly one value should be marked lowest`);
   if (!(swept[0] < swept[1] && swept[1] < swept[2])) failures.push(`${label}: loss does not rise with switching frequency across the values tried (${swept.join(", ")})`);
   await page.click('[data-compare="devices"]');
   await page.click('[data-tab="proposal"]');

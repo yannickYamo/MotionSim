@@ -563,6 +563,9 @@ table.data td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var
 .compare-table td .quiet { font-weight: 400; }
 .compare-table td.best { color: var(--orange); }
 .compare-table .fail { color: var(--fail); }
+.compare-table td .room { display: block; font-weight: 400; font-size: 0.88rem; color: var(--ink-3); }
+.compare-table td .basis { display: block; min-width: 150px; max-width: 30ch; font-weight: 400; font-size: 0.88rem; color: var(--ink-2); }
+.compare-table td .room.fail { color: var(--fail); }
 .compare-table thead .key { display: block; margin-bottom: 6px; }
 .compare-table p { margin: 6px 0 0; }
 .key.line { width: 26px; height: 0; border-radius: 0; background: none; border-top: 2px solid var(--ink); }

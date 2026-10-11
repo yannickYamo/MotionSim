@@ -43,8 +43,15 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - On a phone the drawing is wider than the screen and slides sideways.
 - The report is laid out by your browser's print function.
 
-## 7. Not yet
+## 7. Comparing parts from different datasheets
+
+- Each part's switching energy was measured by its own vendor, on that vendor's fixture, at its own gate resistor, gate voltage and test voltage. The comparison shows those conditions beside each part and says when one part's figure is measured and another's is estimated from charge, or when one is brought in proportion to a higher voltage than it was measured at. It cannot remove the difference.
+- Losses within 5% of each other are marked level: the model does not tell them apart. There is no range on loss beyond that.
+- A caution on the data is raised when the operating point is outside what the datasheet gives for a loss term, and that could move the stage's loss by 5% or more: the term's share of the loss, times how much of the term is in doubt. A table measured at one temperature is taken to drift by up to 0.5% a kelvin away from it. Below that the note is still listed and the verdict does not change.
+- Table points with an assumed shape between them, and switching loss estimated from charge, are stated under data support and are not a caution by themselves.
+
+## 8. Not yet
 
 - Export of a device model to other simulators.
-- A hosted version. The page needs a local install to read datasheets with your own key.
+- Reading a datasheet on the hosted page. That needs your own key and a local install.
 - The page can also be opened as plain files, with the engine running in the browser. In that mode the Python runtime is fetched once from cdn.jsdelivr.net; nothing you enter is sent anywhere. `motionsim serve` fetches nothing.

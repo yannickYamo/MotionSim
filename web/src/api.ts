@@ -46,8 +46,13 @@ export interface Candidate {
   link: { capacitor_rms: number | null; ripple_pp: number | null } | null;
   id: string; name: string; technology: string; level: Level; problem: string | null; fix: string;
   result: Result | null; stall_tj: number | null; efficiency: number | null; checks: Check[]; needs: string[];
+  /** °C left to the junction limit, at the design point and holding the torque at standstill. */
+  margin: number | null; stall_margin: number | null;
+  /** What the switching loss rests on, so that two devices can be seen to be like for like. */
+  switching: { kind: "measured" | "from charge" | "none"; text: string } | null;
 }
-export interface Proposal { candidates: Candidate[]; explain: string[] }
+/** level: losses closer than this share of the lowest are not told apart. */
+export interface Proposal { candidates: Candidate[]; explain: string[]; level: number }
 export interface Cycle {
   time: number[]; tj: (number | null)[]; steady: (number | null)[]; t_sink: number[];
   rpm: number[]; torque: number[]; p_stage: (number | null)[]; p_dc: (number | null)[];

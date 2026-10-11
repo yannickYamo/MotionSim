@@ -32,8 +32,8 @@ class PeakBasis(str, Enum):
 
 class Validity(str, Enum):
     interpolated = "interpolated"  # inside measured or digitised curves
-    extrapolated = "extrapolated"  # beyond them, or scaled from other test conditions
-    assumed = "assumed"  # rests on table points and a stated shape assumption
+    extrapolated = "extrapolated"  # a loss term that matters is beyond its data
+    assumed = "assumed"  # inside the data, part of it table points or an estimate from charge
 
 
 @dataclass(frozen=True)
@@ -122,6 +122,7 @@ class Result:
     iterations: int
     validity: Validity
     notes: list[str] = field(default_factory=list)
+    outside: list[str] = field(default_factory=list)  # the notes that put the point outside the data
     limits: list[str] = field(default_factory=list)
     rating_warnings: list[str] = field(default_factory=list)
     roles: list[RoleResult] = field(default_factory=list)
@@ -348,11 +349,29 @@ def _assumptions(device: Device, peak_basis: PeakBasis) -> list[str]:
     return out
 
 
+MINOR_SHARE = 0.05  # a share of the stage's loss below which nothing changes a verdict
+DRIFT = 0.005  # per K: the most a loss term measured at one temperature moves away from it
+
+
+class _Notes(list):
+    """Notes on the data behind a result. Those that say the operating point is outside the
+    data of a loss term are also kept in outside, with the name of that term and how much of
+    the term is in doubt (1 where it cannot be said)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.outside: list[tuple[str, str, float]] = []
+
+    def leaves(self, term: str, text: str, doubt: float = 1.0) -> None:
+        self.append(text)
+        self.outside.append((term, text, min(doubt, 1.0)))
+
+
 def _envelope_notes(
     device: Device, op: OperatingPoint, i_pk: float, tj_switch: float, tj_diode: float
-) -> list[str]:
-    """Where the operating point leaves the characterised data."""
-    notes: list[str] = []
+) -> _Notes:
+    """What the result rests on, and where the operating point leaves the characterised data."""
+    notes = _Notes()
     sw, d = device.switch, device.diode
     tables = [("switch conduction", sw.conduction, tj_switch, None)]
     if sw.e_on is not None and sw.e_off is not None:
@@ -367,9 +386,10 @@ def _envelope_notes(
             scaling = sw.charge.q_oss_scaling
             if scaling == "table":
                 if op.v_dc > sw.charge.oss_voltage[-1]:
-                    notes.append(
+                    notes.leaves(
+                        "turn-on energy",
                         f"output charge: {op.v_dc:.0f} V is beyond the capacitance curve "
-                        f"({sw.charge.oss_voltage[-1]:.0f} V)"
+                        f"({sw.charge.oss_voltage[-1]:.0f} V)",
                     )
             else:
                 rule = "as the square root of voltage" if scaling == "sqrt" else "linearly"
@@ -388,22 +408,25 @@ def _envelope_notes(
         curves = table.curves
         i_min, i_max = lookup.current_range(curves)
         if table.basis is Basis.curve and i_pk < i_min:
-            notes.append(
-                f"{name}: peak current {i_pk:.3g} A is below the lowest data point ({i_min:.3g} A)"
+            notes.leaves(
+                name, f"{name}: peak current {i_pk:.3g} A is below the lowest data point ({i_min:.3g} A)"
             )
         if table.basis is Basis.point:
             notes.append(f"{name}: built from table points up to {i_max:.3g} A; {table.assumption}")
             if i_pk > i_max:
-                notes.append(f"{name}: peak current {i_pk:.3g} A is above the last table point")
+                notes.leaves(name, f"{name}: peak current {i_pk:.3g} A is above the last table point")
         elif i_pk > i_max:
-            notes.append(f"{name}: peak current {i_pk:.3g} A is above the data ({i_max:.3g} A)")
+            notes.leaves(name, f"{name}: peak current {i_pk:.3g} A is above the data ({i_max:.3g} A)")
         t_min, t_max = lookup.temperature_range(curves)
         if len(curves) == 1:
             if abs(tj - t_min) > 1.0:
-                notes.append(f"{name}: only characterised at {t_min:.0f} °C, used at {tj:.0f} °C")
+                notes.leaves(
+                    name, f"{name}: only characterised at {t_min:.0f} °C, used at {tj:.0f} °C",
+                    DRIFT * abs(tj - t_min),
+                )
         elif not t_min <= tj <= t_max:
-            notes.append(
-                f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)"
+            notes.leaves(
+                name, f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)"
             )
         if v_ref is not None and abs(op.v_dc - v_ref) > 0.01 * v_ref:
             followed = (
@@ -418,9 +441,10 @@ def _envelope_notes(
                 # In proportion is the least a real device does. Silicon IGBTs rise about as
                 # the power 1.4 of the voltage: how much that could add is said, not applied.
                 more = (op.v_dc / v_ref) ** 0.4 - 1
-                notes.append(
+                notes.leaves(
+                    name,
                     f"{name}: scaled linearly from {v_ref:.0f} V test voltage to {op.v_dc:.0f} V; above "
-                    f"the test voltage real devices rise faster, by up to {more:.0%} more here"
+                    f"the test voltage real devices rise faster, by up to {more:.0%} more here",
                 )
             else:
                 notes.append(
@@ -440,10 +464,47 @@ def _uses_point_tables(device: Device) -> bool:
     return not measured or any(t is not None and t.basis is Basis.point for t in tables)
 
 
-def _validity(device: Device, notes: list[str]) -> Validity:
-    if _uses_point_tables(device):
-        return Validity.assumed
-    return Validity.extrapolated if notes else Validity.interpolated
+def _shares(roles: list[RoleResult]) -> dict[str, float]:
+    """Each loss term's share of the stage's loss, under the names the data notes use."""
+    terms = {
+        "switch conduction": lambda r: r.switch.conduction,
+        "turn-on energy": lambda r: r.switch.turn_on,
+        "turn-off energy": lambda r: r.switch.turn_off,
+        "reverse conduction": lambda r: r.switch.dead_time,
+        "recovery energy": lambda r: r.switch.recovery + r.diode.recovery,
+        "diode conduction": lambda r: r.diode.conduction,
+    }
+    total = sum(r.count * (r.switch.total + r.diode.total) for r in roles)
+    if total <= 0:
+        return dict.fromkeys(terms, 0.0)
+    return {name: sum(r.count * pick(r) for r in roles) / total for name, pick in terms.items()}
+
+
+def _outside(marks: _Notes, roles: list[RoleResult]) -> list[str]:
+    """The notes that say the point is outside the data, where together they could move the
+    stage's loss by enough to matter. Each counts for its term's share of the loss, times how
+    much of the term is in doubt. A table measured at one temperature and used a little way
+    from it, or a term that carries next to none of the loss, is still noted and decides
+    nothing. The heaviest comes first."""
+    share = _shares(roles)
+    weighed = sorted(
+        ((share.get(term, 1.0) * doubt, text) for term, text, doubt in marks.outside),
+        key=lambda pair: -pair[0],
+    )
+    by_term: dict[str, float] = {}
+    for term, _, doubt in marks.outside:
+        by_term[term] = max(by_term.get(term, 0.0), share.get(term, 1.0) * doubt)
+    if sum(by_term.values()) < MINOR_SHARE:
+        return []
+    return [text for weight, text in weighed if weight >= MINOR_SHARE / 10]
+
+
+def _validity(device: Device, outside: list[str]) -> Validity:
+    """How far the data supports the result. What the motor or the stage notes about its own
+    model says nothing on that, so only the device's data counts."""
+    if outside:
+        return Validity.extrapolated
+    return Validity.assumed if _uses_point_tables(device) else Validity.interpolated
 
 
 HIGH_VOLTAGE_USE = 0.8  # share of the voltage rating above which little is left for overshoot
@@ -581,6 +642,7 @@ def solve_roles(
     period: float,
     p_out: float,
     extra_notes: list[str] | None = None,
+    extra_outside: list[str] | None = None,  # notes that put the point outside what is characterised
     tolerance: float = 0.01,
     max_iterations: int = 200,
     variant: str = "typical",
@@ -703,9 +765,9 @@ def solve_roles(
                 ends.append(float("inf"))
         tj_range = (min(ends + [worst.hottest]), max(ends + [worst.hottest]))
     i_pk = float(max(r.current.max() for r in roles))
-    notes = list(extra_notes or []) + _envelope_notes(
-        device, op, i_pk, worst.tj_switch, worst.tj_diode
-    )
+    envelope = _envelope_notes(device, op, i_pk, worst.tj_switch, worst.tj_diode)
+    outside = list(extra_outside or []) + _outside(envelope, role_results)
+    notes = list(extra_outside or []) + list(extra_notes or []) + list(envelope)
     if not converged:
         notes.append(f"temperature iteration did not settle in {max_iterations} steps")
     stage_loss = total * n
@@ -740,8 +802,9 @@ def solve_roles(
         p_out=p_out,
         converged=converged,
         iterations=iterations,
-        validity=_validity(device, notes),
+        validity=_validity(device, outside),
         notes=notes,
+        outside=outside,
         limits=_model_limits(device, peak_basis),
         rating_warnings=_rating_warnings(device, op, i_pk),
         roles=role_results,
@@ -768,7 +831,7 @@ def solve(device: Device, op: OperatingPoint, **kwargs) -> Result:
         op,
         period=1.0 / max(abs(op.f_out), SLOWEST_OUTPUT),
         p_out=float(3 * v_phase_rms * op.i_rms * np.clip(op.power_factor, -1.0, 1.0)),
-        extra_notes=notes,
+        extra_outside=notes,
         stalled=abs(op.f_out) < SLOWEST_OUTPUT,
         **kwargs,
     )

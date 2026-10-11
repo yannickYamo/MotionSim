@@ -168,12 +168,21 @@ def check(
             "the fault and turn it off inside that",
         ))
 
-    if result.validity is Validity.assumed:
-        out.append(Check(Level.caution, "data", "part of this result rests on assumed data, listed under data support"))
-    elif result.validity is Validity.extrapolated:
-        out.append(Check(Level.caution, "data", "the operating point is outside some of the datasheet data"))
+    if result.validity is Validity.extrapolated:
+        first, more = result.outside[0], len(result.outside) - 1
+        out.append(Check(
+            Level.caution, "data",
+            f"the operating point is outside the datasheet's data: {first}"
+            + (f" (and {more} more, under data support)" if more else ""),
+        ))
+    elif result.validity is Validity.assumed:
+        out.append(Check(
+            Level.ok, "data",
+            "inside the data given; part of it is table points or an estimate from charge, with the "
+            "shape between them assumed: listed under data support",
+        ))
     else:
-        out.append(Check(Level.ok, "data", "inside the datasheet data"))
+        out.append(Check(Level.ok, "data", "inside the datasheet's own curves"))
 
     if device.switch.kind is ChipKind.mosfet and op.t_dead == 0:
         out.append(Check(Level.caution, "dead time", "no dead time given, so its loss is not counted; every half-bridge needs one"))

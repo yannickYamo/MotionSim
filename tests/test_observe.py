@@ -155,7 +155,9 @@ def test_built_device_reproduces_the_table_points() -> None:
         v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80
     )
     r = solve(device, op)
-    assert r.validity is Validity.assumed
+    # The diode's drop is given at 25 °C only and carries a fifth of the loss here.
+    assert r.validity is Validity.extrapolated
+    assert any("diode conduction: only characterised at 25 °C" in n for n in r.outside)
     assert any("table points up to 7.5 A" in n for n in r.notes)
     assert any("heating between chips computed for a generic module" in a for a in r.assumptions)
     assert any("no transient thermal data" in a for a in r.assumptions)

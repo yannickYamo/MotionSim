@@ -363,3 +363,16 @@ No device data ships with this project and it favours no vendor. You bring the d
 | Rectifier (diode) bridge | not supported | | |
 
 Each row is one run checked by hand. The reader uses a language model and its output can differ between runs.
+
+## Ranking
+
+A comparison has to put parts in the right order, not only give each a plausible loss. Level A, in `tests/test_ranking.py`:
+
+- Two made-up parts alike but for this: one drops 0.9 V more when conducting and switches with a quarter of the energy. The frequency at which their losses are equal follows from the closed forms for conduction and switching loss. The comparison puts the slower part first at 0.8 of that frequency and the faster one first at 1.2, and the crossing found by sweeping the frequency is within 1% of the closed form.
+- Parts whose losses are within 5% are returned as level, and the part beyond that is not.
+- The margin to the junction limit is the rating less the top of the temperature range, at the design point and holding the torque at standstill; when the part that loses least is not the one with the most margin, the explanation says so with the figures.
+- A part with measured switching energy beside one estimated from charge, and a part brought in proportion to a higher voltage than tested beside one that is not, are each said to be compared on unlike data.
+
+In `tests/test_limits.py`: what the motor and the stage note about their own model does not make a data caution; a loss term outside its data does, once it could move the stage's loss by 5%; table points and an estimate from charge are a stated footing.
+
+No ranking has been checked against measured parts.
