@@ -79,6 +79,11 @@ for (let walk = 0; walk < walks; walk++) {
       if (!/detached|not visible|not attached|intercepts|not enabled/.test(String(e))) failures.push(`walk ${walk}: could not ${move.text} after [${trail.slice(-4, -1).join(" > ")}]: ${String(e).split("\n")[0]}`);
       continue;
     }
+    // The page works out a change a moment after it is made, so that typing does not ask
+    // for a result at every key. The walk waits that moment out: otherwise it lists the
+    // next control while the last press has not begun to redraw, and then presses a
+    // control that is being replaced under it.
+    await page.waitForTimeout(400);
     // Nothing may stay waiting: every result the press asked for has to arrive.
     const settled = await page.waitForFunction(() => !document.querySelector(".waiting") && ![...document.querySelectorAll("#compare-table td")].some((c) => c.textContent === "…"), null, { timeout: 150000 }).then(() => true, () => false);
     if (!settled) { failures.push(`walk ${walk}: still waiting 150 s after [${trail.slice(-4).join(" > ")}]`); break; }

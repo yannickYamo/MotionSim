@@ -55,6 +55,14 @@ class OperatingPoint:
     l_loop: float | None = None
     t_min_pulse: float = 0.0  # s, the shortest pulse the gate drive passes
     parallel: int = 1  # devices side by side at each switch position, sharing its current
+    # Cooling to air. With either of these, t_sink is the temperature of the air, and what
+    # the packages sit on is worked out from the loss. With neither, t_sink is a heatsink
+    # held at that temperature whatever the loss.
+    rth_sink: float | None = None  # K/W, heatsink to air, with every package on it
+    rth_free: float | None = None  # K/W, case to air of one package with no heatsink
+    # K/W, with rth_free: the packages share a board, and each watt lost anywhere on it
+    # warms every package by this much (see cooling.py)
+    rth_board: float | None = None
     n_steps: int = 2048
 
 
@@ -128,6 +136,7 @@ class Result:
     roles: list[RoleResult] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)  # thermal values assumed, not given
     tj_peak_range: tuple[float, float] | None = None  # hottest junction across those assumptions
+    t_sink: float | None = None  # °C, what the packages sit on: the heatsink, or the air without one
 
     @property
     def efficiency(self) -> float | None:
@@ -311,7 +320,9 @@ def _peak(
     return t_case + float(periodic_rise(network, power, period).max()), basis
 
 
-def _assumptions(device: Device, peak_basis: PeakBasis) -> list[str]:
+def _assumptions(device: Device, peak_basis: PeakBasis, in_air: bool = False) -> list[str]:
+    """Thermal values that were computed, not given. With no heatsink there is no layer
+    between case and heatsink to assume: the path to the air is the user's figure."""
     out = []
     package = device.package
     if package.rth_mutual is None and package.topology.positions > 1:
@@ -325,13 +336,13 @@ def _assumptions(device: Device, peak_basis: PeakBasis) -> list[str]:
             f"heating between chips computed for {kind}: {typical:.2f} K/W "
             f"({low:.2f} to {high:.2f}) per watt in each other chip"
         )
-    if package.rth_case_sink is None and package.outline is None and package.topology.positions > 1:
+    if not in_air and package.rth_case_sink is None and package.outline is None and package.topology.positions > 1:
         low, typical, high = (_case_sink(device, v) for v in assumed.VARIANTS)
         out.append(
             f"case-to-heatsink resistance computed for the interface layer under a generic module on "
             f"{package.interface}: {typical:.3f} K/W ({low:.3f} to {high:.3f})"
         )
-    if package.rth_case_sink is None and package.outline is not None:
+    if not in_air and package.rth_case_sink is None and package.outline is not None:
         low, typical, high = (_case_sink(device, v) for v in assumed.VARIANTS)
         out.append(
             f"case-to-heatsink resistance computed for a {package.outline} on {package.interface}: "
@@ -628,10 +639,14 @@ def hot_share(device: Device, parallel: int) -> float:
     return rho / (rho + n - 1) if n > 1 and rho and rho > 1 else 1.0 / n
 
 
-def _one(op: OperatingPoint) -> OperatingPoint:
+def _one(op: OperatingPoint, t_sink: float | None = None) -> OperatingPoint:
+    """The conditions for one device of those in parallel. Its heatsink is shared with the
+    others, so it is held at the temperature the whole stage's loss brings it to."""
     from dataclasses import replace
 
-    return replace(op, parallel=1)
+    if t_sink is None or (op.rth_sink is None and op.rth_board is None):
+        return replace(op, parallel=1)
+    return replace(op, parallel=1, rth_sink=None, rth_board=None, t_sink=t_sink)
 
 
 def solve_roles(
@@ -702,11 +717,29 @@ def solve_roles(
             packages = _package_losses(roles, [sw.total + d.total for sw, d, _, _ in losses], together)
         return losses, total, packages
 
+    # Under the case: the user's own figure to the air where there is no heatsink, else the
+    # layer between the case and the heatsink.
+    under = op.rth_free if op.rth_free is not None else _case_sink(device, variant)
+
+    def sink_at(total: float) -> float:
+        # A heatsink in air warms with all the stage loses. The devices in parallel are
+        # counted as losing what the hardest-worked one does, which errs on the warm side.
+        return op.t_sink + (op.rth_sink * total * n if op.rth_sink is not None else 0.0)
+
+    def case_at(sink: float, package: float, total: float) -> float:
+        if op.rth_board is None:
+            return sink + under * package
+        # On a shared board: its own loss through its own path, plus what the others put
+        # into the board; and never cooler than the board as a whole.
+        everything = total * n
+        return sink + max(under * package + op.rth_board * max(everything - package, 0.0), op.rth_board * everything)
+
     for iterations in range(1, max_iterations + 1):
         losses, total, packages = evaluate(tj)
+        sink = sink_at(total)
         new = []
         for (sw, d, _, _), package in zip(losses, packages):
-            t_case = op.t_sink + _case_sink(device, variant) * package
+            t_case = case_at(sink, package, total)
             t_sw = t_case + steady_state_rise(device.switch.thermal, sw.total)
             t_sw += _neighbour_rise(device, sw.total, package, variant)
             if device.diode is None:
@@ -726,10 +759,11 @@ def solve_roles(
             break
 
     losses, total, packages = evaluate(tj)
+    sink = sink_at(total)
     role_results = []
     bases = []
     for role, (sw, d, p_sw, p_d), package, (t_sw, t_d) in zip(roles, losses, packages, tj):
-        t_case = op.t_sink + _case_sink(device, variant) * package
+        t_case = case_at(sink, package, total)
         peak_sw, basis = _peak(device, device.switch, p_sw, period, t_case, variant)
         peak_sw += _neighbour_rise(device, sw.total, package, variant)
         bases.append(basis)
@@ -748,7 +782,14 @@ def solve_roles(
         )
     peak_basis = PeakBasis.assumed if PeakBasis.assumed in bases else PeakBasis.transient
     worst = max(role_results, key=lambda r: r.hottest)
-    assumptions = _assumptions(device, peak_basis)
+    # For the solves of one device alone below: what it sits on is already settled, by all
+    # the stage loses. On a shared board that is the air plus the neighbours' share.
+    held = sink
+    if op.rth_board is not None:
+        # Its neighbours' share, and never cooler in all than the board as a whole.
+        everything, own = total * n, max(packages)
+        held = sink + max(op.rth_board * max(everything - own, 0.0), op.rth_board * everything - under * own)
+    assumptions = _assumptions(device, peak_basis, in_air=op.rth_free is not None)
     tj_range = None
     # The range across the thermal assumptions takes two more solves. A search that only
     # needs the typical value asks for it to be left out.
@@ -757,7 +798,7 @@ def solve_roles(
         for other in ("low", "high"):
             try:
                 alt = solve_roles(  # the roles here already carry one device's share
-                    device, roles, _one(op), period=period, p_out=p_out, tolerance=tolerance,
+                    device, roles, _one(op, held), period=period, p_out=p_out, tolerance=tolerance,
                     max_iterations=max_iterations, variant=other, stalled=stalled,
                 )
                 ends.append(max(alt.tj_switch_peak, alt.tj_diode_peak))
@@ -775,7 +816,7 @@ def solve_roles(
         # The temperatures above are the hardest-worked device's. The others carry what is
         # left between them, and the stage loses the sum.
         rest = solve_roles(
-            device, carrying((1 - share) / (n - 1)), _one(op), period=period, p_out=p_out,
+            device, carrying((1 - share) / (n - 1)), _one(op, held), period=period, p_out=p_out,
             tolerance=tolerance, max_iterations=max_iterations, variant=variant, stalled=stalled, spread=False,
         )
         stage_loss = total + (n - 1) * rest.p_inverter
@@ -810,6 +851,7 @@ def solve_roles(
         roles=role_results,
         assumptions=assumptions,
         tj_peak_range=tj_range,
+        t_sink=sink,
     )
 
 

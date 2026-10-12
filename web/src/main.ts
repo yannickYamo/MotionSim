@@ -36,9 +36,45 @@ let fault: string | null = null;
 let cycle: Cycle | Refused | null = null;
 let grid: MapGrid | Refused | null = null;
 let advised: Recommendation[] | Refused | null = null;
-let reading: { name: string; outcome?: ReadOutcome; refused?: Refused } | null = null;
+let reading: { name: string; outcome?: ReadOutcome; refused?: Refused; file?: string } | null = null;
+let typedRefused: Refused | null = null;
+let typedBusy = false;
+let typedOpen = false;
 /** What suits the device under test: the supply, and how each kind of motor fits it. */
 let suggestion: { id: string; data: Suggest } | null = null;
+// Whether the motor as described fits the part: asked of the engine at the motor step.
+let fit: { lines: { level: string; text: string }[] } | Refused | null = null;
+let fitTimer = 0;
+let fitAsked = 0;
+
+/** What the engine says of this motor on this part, before any design point is set. */
+function fitBlock(): string {
+  if (!fit) return "";
+  if (fit instanceof Refused) return `<p class="fact warn" role="alert">${icon("alert-triangle")}<span><b>This motor cannot be worked out yet.</b> ${escape(sentence(fit.reason))}.</span></p>`;
+  const raised = fit.lines.filter((x) => x.level !== "ok");
+  const fine = fit.lines.filter((x) => x.level === "ok");
+  return `${raised.length ? `<div class="fit-raised" role="alert"><h3>${icon("alert-triangle")}This motor does not fit the part as it is</h3>${raised.map((x) => `<p class="fact warn">${icon("alert-triangle")}<span>${escape(sentence(x.text))}.</span></p>`).join("")}</div>` : ""}${fine.map((x) => `<p class="fact fits">${icon("circle-check")}<span>${escape(sentence(x.text))}.</span></p>`).join("")}`;
+}
+
+/** Ask again a moment after the motor's figures stop changing, and draw only the note. */
+function fitFor(now = false): void {
+  clearTimeout(fitTimer);
+  fitTimer = window.setTimeout(async () => {
+    const device = state.devices[0];
+    if (state.step !== MOTOR || !device) return;
+    const mine = ++fitAsked;
+    const req = request(state);
+    try {
+      fit = await api.fit({ motor: req.motor, device, parallel: req.conditions.parallel, rpm: state.conditions.rpm, v_dc: state.conditions.v_dc });
+    } catch (e) {
+      fit = e instanceof Refused ? e : null;
+    }
+    if (mine !== fitAsked) return; // a later figure has been typed since
+    const box = document.querySelector<HTMLElement>("#motor-fit");
+    if (box) box.innerHTML = fitBlock();
+  }, now ? 0 : 350);
+}
+
 
 /** Ask what suits the device under test. Until the user has touched the motor or the
  *  conditions, start them where their device belongs: the recommended kind of motor, its
@@ -155,10 +191,43 @@ const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /* ---------- small pieces ---------- */
 
+/** The folds the user has opened, kept through redraws. */
+const openFolds = new Set<string>();
+
+/**
+ * Detail one press away. The face says what is inside as it stands now, so that nothing
+ * the tool assumed is hidden: only the means of changing it is folded.
+ * `holds`: the fields inside; a refusal about one of them opens the fold.
+ */
+function fold(id: string, glyph: string, title: string, face: string, body: string, holds: string[] = []): string {
+  const wrong = blocked?.field ? holds.some((h) => h === blocked!.field || h.endsWith(`.${blocked!.field}`)) : false;
+  return `<details class="more" data-fold="${id}"${openFolds.has(id) || wrong ? " open" : ""}><summary>${icon(glyph)}${escape(title)}<span class="quiet">${escape(face)}</span></summary>${body}</details>`;
+}
+
+/** The cooling as the user set it, in a few words. */
+function coolingWords(): string {
+  const k = state.conditions;
+  if (k.cooling === "heatsink") return `a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air`;
+  if (k.cooling === "none") return `no heatsink, in ${sig(k.t_ambient)} °C air`;
+  if (k.cooling === "board") return `no heatsink, on a ${k.board_area || "?"} cm² board in ${sig(k.t_ambient)} °C air`;
+  return `a ${sig(k.t_sink)} °C heatsink`;
+}
+
+/** A figure typed in a base unit, said the way it is spoken: 0.00833 H is "8.33 mH". Only
+ *  where the two differ enough to help; it follows the figure as it is typed. */
+const SPOKEN = new Set(["H", "Ω", "F", "Wb", "V·s/rad"]);
+function saidAs(raw: string | number, unit: string): string {
+  const v = Number(raw);
+  if (!SPOKEN.has(unit) || String(raw).trim() === "" || !Number.isFinite(v) || v === 0) return "";
+  return Math.abs(v) < 0.1 || Math.abs(v) >= 10000 ? `That is ${eng(v, unit)}. ` : "";
+}
+
 function field(path: string, label: string, value: string | number, unit: string, help = "", attrs = ""): string {
   const id = `f-${path.replace(/\W+/g, "-")}`;
   const marked = blocked && blocked.field && path.endsWith(blocked.field) ? " is-wrong" : "";
-  return `<div class="field${marked}"><label for="${id}">${escape(label)}</label><div class="control"><input id="${id}" data-bind="${path}" inputmode="decimal" autocomplete="off" value="${escape(String(value ?? ""))}" ${attrs} ${help ? `aria-describedby="${id}-h"` : ""}/>${unit ? `<span class="unit">${escape(unit)}</span>` : ""}</div>${help ? `<p class="help" id="${id}-h">${escape(help)}</p>` : ""}</div>`;
+  const spoken = SPOKEN.has(unit);
+  const below = help || spoken ? `<p class="help" id="${id}-h">${spoken ? `<span data-said="${escape(unit)}">${escape(saidAs(value, unit))}</span>` : ""}${escape(help)}</p>` : "";
+  return `<div class="field${marked}"><label for="${id}">${escape(label)}</label><div class="control"><input id="${id}" data-bind="${path}" inputmode="decimal" autocomplete="off" value="${escape(String(value ?? ""))}" ${attrs} ${below ? `aria-describedby="${id}-h"` : ""}/>${unit ? `<span class="unit">${escape(unit)}</span>` : ""}</div>${below}</div>`;
 }
 
 function select(path: string, label: string, value: string, options: [string, string][], help = ""): string {
@@ -201,7 +270,7 @@ function renderStage(): void {
   const shown = setup.devices.find((d) => d.id === (c?.id ?? chosen[0]?.id));
   $("#plate").innerHTML = schematic({
     kind: state.kind, stage: state.reached >= SUPPLY ? stage : null, result: r,
-    tSink: state.conditions.t_sink, vdc: state.reached >= SUPPLY ? state.conditions.v_dc : null,
+    tSink: state.conditions.cooling === "held" ? state.conditions.t_sink : state.conditions.t_ambient, vdc: state.reached >= SUPPLY ? state.conditions.v_dc : null,
     motorKnown: state.reached >= MOTOR,
     parallel: state.reached >= SUPPLY ? Math.max(1, Math.round(Number(state.conditions.parallel) || 1)) : 1,
     fet: shown ? !shown.technology.includes("IGBT") : false,
@@ -227,13 +296,14 @@ function renderStage(): void {
   } else if (blocked && state.reached >= SUPPLY) {
     cells = readout("Power stage", "No solution", "change an input on the right");
   } else if (r) {
-    const range = r.tj_range ? `${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : `${Math.round(r.tj_max - r.tj_peak)} °C under the rating`;
+    const range = r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : `${Math.round(r.tj_max - r.tj_peak)} °C under the rating`;
+    const settled = state.conditions.cooling === "heatsink" && r.t_sink != null ? `heatsink at ${Math.round(r.t_sink)} °C, ` : "";
     const hot = r.tj_peak > r.tj_max ? "fail" : r.tj_max - (r.tj_range?.[1] ?? r.tj_peak) < 25 ? "caution" : "";
     cells =
       readout("Power-stage loss", watts(r.loss), `${many ? "" : `${c!.name}, `}${sig(r.loss / (stage?.positions ?? 6))} W a switch on average`) +
       readout("Conduction", watts(r.conduction), percent(r.conduction / Math.max(r.loss, 1e-9), 0)) +
       readout("Switching", watts(r.switching), percent(r.switching / Math.max(r.loss, 1e-9), 0), "accent") +
-      readout("Hottest junction", degrees(r.tj_peak), range, hot) +
+      readout("Hottest junction", degrees(r.tj_peak), settled + range, hot) +
       (c?.efficiency != null ? readout("Shaft over DC power", percent(c.efficiency), "motor windings included") : "");
   } else if (starting) {
     cells = readout("Starting the engine", starting, "About 20 MB the first time, fetched from cdn.jsdelivr.net and then kept by your browser. Nothing you enter leaves this page. Carry on meanwhile.");
@@ -309,7 +379,7 @@ function renderRail(): void {
   $("#rail").innerHTML = `<ol>${STEPS.map((s, k) => {
     const st = stepState(k);
     const said = st === "blocked" ? "needs a change" : k === state.step ? "current step" : st === "done" ? "done" : "not opened yet";
-    return `<li class="${st}${k === state.step ? " is-current" : ""}"><button type="button" data-step="${k}" aria-label="Step ${k + 1}, ${s.name}: ${said}" title="${s.name}" ${k === state.step ? 'aria-current="step"' : ""}><span class="station">${st === "blocked" ? icon("x") : st === "done" && k !== state.step ? icon("check") : icon(s.icon)}<span class="station-number">${k + 1}</span></span><span class="step-text"><span class="step-name">${s.name}</span><span class="step-about">${st === "blocked" ? (k === DEVICE ? "Choose a part" : "Needs a change") : s.about}</span></span></button></li>`;
+    return `<li class="${st}${k === state.step ? " is-current" : ""}"><button type="button" data-step="${k}" aria-label="${k + 1} ${s.name} ${st === "blocked" ? (k === DEVICE ? "Choose a part" : "Needs a change") : s.about}, ${said}" title="${s.name}" ${k === state.step ? 'aria-current="step"' : ""}><span class="station">${st === "blocked" ? icon("x") : st === "done" && k !== state.step ? icon("check") : icon(s.icon)}<span class="station-number">${k + 1}</span></span><span class="step-text"><span class="step-name">${s.name}</span><span class="step-about">${st === "blocked" ? (k === DEVICE ? "Choose a part" : "Needs a change") : s.about}</span></span></button></li>`;
   }).join("")}</ol>`;
 }
 
@@ -326,7 +396,6 @@ function motorPanel(): string {
   const kinds = Object.entries(setup.motors);
   const m = setup.motors[state.kind];
   const v = state.motors[state.kind];
-  const hint = (key: string, unit: string) => (unit === "H" && Number(v[key]) ? `That is ${eng(Number(v[key]), "H")}. ` : "");
   const fits = suggestion && suggestion.id === state.devices[0] ? suggestion.data.motors : null;
   const unusual = (k: string) => fits?.[k]?.fit === "unusual";
   const option = ([k, x]: (typeof kinds)[number]) => {
@@ -345,11 +414,12 @@ function motorPanel(): string {
     : "");
   const device = setup.devices.find((d) => d.id === state.devices[0]);
   const suits = fits && device
-    ? ` Your device is rated ${Math.round(device.v_max)} V, which suits a supply of about ${Math.round(suggestion!.data.v_supply)} V; the kinds of motor usual at that voltage are listed first, and the example is wound for it.`
+    ? ` The example is wound for your ${Math.round(device.v_max)} V device, on about ${Math.round(suggestion!.data.v_supply)} V.`
     : "";
-  return `<h2 tabindex="-1">The motor it drives</h2><p class="lead">Pick the kind of motor, then put in its figures from the maker's data. The values shown are a made-up example to replace.${suits}</p>
+  return `<h2 tabindex="-1">The motor it drives</h2><p class="lead">Pick the motor and put in its catalogue figures.${suits}</p>
 <fieldset class="kinds"><legend>Kind of motor</legend>${list}</fieldset>
-<div class="fields">${m.fields.map((f) => (f.options ? select(`motors.${state.kind}.${f.key}`, f.label, String(v[f.key] ?? f.options[0]), f.options.map((o) => [o, o]), f.help) : field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, hint(f.key, f.unit) + f.help))).join("")}</div>
+<div class="fields">${m.fields.map((f) => (f.options ? select(`motors.${state.kind}.${f.key}`, f.label, String(v[f.key] ?? f.options[0]), f.options.map((o) => [o, o]), f.help) : field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, f.help))).join("")}</div>
+<div id="motor-fit" aria-live="polite">${fitBlock()}</div>
 ${m.optional?.length ? `<details class="more"${m.optional.some((f) => v[f.key] !== undefined && v[f.key] !== "") ? " open" : ""}><summary>${icon("adjustments")}More about this motor<span class="quiet">optional: iron loss${m.optional.some((f) => f.key === "i_sat") ? " and saturation" : ""}. Left empty, they are left out and the result says so</span></summary><div class="fields">${m.optional.map((f) => field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, f.help)).join("")}</div></details>` : ""}${nextButton(MOTOR)}`;
 }
 
@@ -375,6 +445,18 @@ function openEquations(): void {
 }
 
 /** The gate drive a result was worked out with: the headline value, then the reasons. */
+/** The checks that need reading stay in the open; those that passed are counted and folded. */
+function checksBlock(c: Candidate): string {
+  if (!c.checks.length) return "";
+  const raised = c.checks.filter((x) => x.level !== "ok");
+  const passed = c.checks.filter((x) => x.level === "ok");
+  const id = `passed-${c.id}`;
+  const rest = passed.length
+    ? `<details class="more" data-fold="${escape(id)}"${openFolds.has(id) ? " open" : ""}><summary>${icon("circle-check")}${passed.length} ${passed.length === 1 ? "check passes" : "checks pass"}<span class="quiet">${escape(passed.map((x) => x.topic).join(", "))}</span></summary>${checkList(passed)}</details>`
+    : "";
+  return `${raised.length ? `<h4>To read</h4>${checkList(raised)}` : ""}${rest}`;
+}
+
 function gateBlock(c: Candidate): string {
   const g = c.gate;
   if (!g || !c.result) return "";
@@ -384,7 +466,8 @@ function gateBlock(c: Candidate): string {
     : g.kind === "datasheet" ? (g.rg_on ? `${g.rg_off && g.rg_off !== g.rg_on ? `${ohm(g.rg_on)} on, ${ohm(g.rg_off)} off` : ohm(g.rg_on)}, as the datasheet measured with` : "As the datasheet measured with")
     : `${ohm(g.rg_on)} on, ${ohm(g.rg_off)} off, at ${sig(g.v_drive ?? 0, 2)} V drive`;
   const tag = g.kind === "chosen" ? '<span class="tag">chosen for lowest loss</span>' : g.kind === "given" ? '<span class="tag">yours</span>' : "";
-  return `<h4>Gate resistors</h4><p class="gate-used"><b>${head}</b> ${tag}</p><ul class="plain small">${g.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul>${g.kind === "chosen" ? '<p class="quiet small">To use your own, give them under Supply and point, Gate drive.</p>' : ""}`;
+  const id = `gate-${c.id}`;
+  return `<details class="more" data-fold="${escape(id)}"${openFolds.has(id) ? " open" : ""}><summary>${icon("adjustments")}Gate drive<span class="quiet">${head}${g.kind === "chosen" ? ", chosen for you" : g.kind === "given" ? ", yours" : ""}${g.t_dead ? `, ${eng(g.t_dead, "s", 2)} dead time` : ""}</span></summary><p class="gate-used"><b>${head}</b> ${tag}</p><ul class="plain small">${g.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul>${g.kind === "chosen" ? '<p class="quiet small">To use your own, give them under Supply and point, Gate drive.</p>' : ""}</details>`;
 }
 
 const needsGate = () => setup.devices.some((d) => state.devices.includes(d.id) && d.needs_gate_drive);
@@ -395,13 +478,32 @@ function supplyPanel(): string {
   const scheme = m.fixed_scheme
     ? `<p class="fact">${icon("wave-sine")}<span>Modulation: ${escape(m.fixed_scheme)}. This motor type decides it.</span></p>`
     : select("conditions.pwm", "Modulation", c.pwm, [["", `Usual for this motor (${m.default_pwm})`], ...setup.pwm.map((p) => [p, p] as [string, string])], "Leave this on the usual scheme unless you know your controller uses another.");
-  return `<h2 tabindex="-1">Supply and design point</h2><p class="lead">The voltage you feed the power stage from, and the hardest point the motor has to hold. The device is tested here.</p>
-<div class="fields">${field("conditions.v_dc", "Supply voltage", c.v_dc, "V")}${select("supply", "Supply", state.supply, [["one-way", "Power supply"], ["battery", "Battery"]], "A battery takes braking energy back. A power supply does not.")}
-${field("conditions.rpm", "Speed", c.rpm, "rpm")}${field("conditions.torque", "Torque", c.torque, "N·m")}
-${field("conditions.f_khz", "Switching frequency", c.f_khz, "kHz", "Above 20 kHz is inaudible. Lower loses less.")}${field("conditions.parallel", "Devices in parallel", c.parallel, "a switch", "1 unless you put several side by side to share the current.")}${field("conditions.t_motor", "Motor temperature", c.t_motor, "°C", "Empty: the motor's figures as given, at 25 °C. A warm motor (80 to 120) needs more current for the same torque.")}${field("conditions.t_sink", "Heatsink temperature", c.t_sink, "°C", "What the heatsink sits at when warm. 60 is a fair start.")}<div class="wide">${scheme}</div></div>
+  // What a drive designer sets first is in view: the bus, the point, how the stage switches,
+  // how many devices share a switch, and the cooling. Second-order settings (what the supply
+  // does with braking energy, the winding's temperature) are one press away, and so is the
+  // gate drive, which the tool chooses and states when it is left open.
+  const used = focused()?.gate;
+  const gateFace = used?.rg_on
+    ? `${sig(used.rg_on, 2)} Ω on, ${sig(used.rg_off ?? 0, 2)} Ω off${used.v_drive ? `, ${sig(used.v_drive, 2)} V` : ""}${used.t_dead ? `, ${eng(used.t_dead, "s", 2)} dead time` : ""}: ${used.kind === "given" ? "yours" : used.kind === "datasheet" ? "as the datasheet measured with" : "chosen for you, change them here"}`
+    : needsGate() ? "left empty, the gate resistors with the lowest loss within the limits are chosen for you" : "optional for your device";
+  return `<h2 tabindex="-1">Supply and design point</h2><p class="lead">The supply, and the hardest point the motor has to hold.</p>
+<div class="fields">${field("conditions.v_dc", "Supply voltage", c.v_dc, "V")}<div></div>
+${field("conditions.rpm", "Speed", c.rpm, "rpm")}${field("conditions.torque", "Torque", c.torque, "N·m")}</div>
+<h3>Switching</h3><div class="fields">${field("conditions.f_khz", "Switching frequency", c.f_khz, "kHz", "Above 20 kHz is inaudible. Lower loses less.")}${field("conditions.parallel", "Devices in parallel", c.parallel, "a switch", "1 unless you put several side by side to share the current.")}<div class="wide">${scheme}</div></div>
+<h3>Cooling</h3><div class="fields">${select("conditions.cooling", "What the devices sit on", c.cooling, [["held", "A heatsink, at a temperature I know"], ["heatsink", "A heatsink, in air"], ["none", "No heatsink: each part standing in the air"], ["board", "No heatsink: parts soldered to one board"]], c.cooling === "held" ? "Not sure? Pick one of the other two: they only ask for the air temperature." : "")}
+${c.cooling === "held" ? field("conditions.t_sink", "Heatsink temperature", c.t_sink, "°C", "What the heatsink sits at when warm. 60 is a fair start.")
+    : c.cooling === "heatsink" ? field("conditions.rth_sink", "Heatsink to air", c.rth_sink, "K/W", "From the heatsink's data, with every device on it. A smaller figure is a bigger heatsink.") + field("conditions.t_ambient", "Air temperature", c.t_ambient, "°C", "Around the heatsink, inside the enclosure if there is one.")
+    : c.cooling === "none" ? field("conditions.rth_ja", "Junction to air, one package", c.rth_ja, "K/W", "RthJA on the datasheet. Empty: the usual figure for a TO-220, TO-247 or TO-263, where the part is one of those.") + field("conditions.t_ambient", "Air temperature", c.t_ambient, "°C", "Around the devices, inside the enclosure if there is one.")
+    : field("conditions.rth_ja", "Junction to air, one package", c.rth_ja, "K/W", "RthJA on the datasheet, with the copper area its footnote gives.") + field("conditions.t_ambient", "Air temperature", c.t_ambient, "°C", "Around the board, inside the enclosure if there is one.")
+      + field("conditions.board_area", "Board area", c.board_area, "cm²", "Of the board the power stage is on. Everything the stage loses warms it, and it warms every part.")
+      + field("conditions.copper", "Copper for each part", c.copper, "cm²", "The pad each part is soldered to. Empty: what the datasheet's figure was taken on.")
+      + field("conditions.copper_ref", "Copper in the datasheet's figure", c.copper_ref, "cm²", "Empty: 6.45, one square inch, the usual footnote.")}</div>
+${fold("more-settings", "adjustments", "Supply kind and motor temperature", `${state.supply === "battery" ? "a battery, which takes braking energy back" : "a power supply, which does not take braking energy back"}; motor ${c.t_motor ? `at ${c.t_motor} °C` : "at 25 °C, as its figures are given"}`,
+    `<div class="fields">${select("supply", "Supply", state.supply, [["one-way", "Power supply"], ["battery", "Battery"]], "A battery takes braking energy back. A power supply does not.")}${field("conditions.t_motor", "Motor temperature", c.t_motor, "°C", "Empty: the motor's figures as given, at 25 °C. A warm motor (80 to 120) needs more current for the same torque.")}</div>`,
+    ["t_motor"])}
 ${driversBuiltIn()
     ? `<details class="more"><summary>${icon("adjustments")}Dead time<span class="quiet">the gate drive is inside this module, so there is no gate voltage or resistor to set</span></summary><div class="fields">${field("conditions.t_dead_ns", "Dead time", c.t_dead_ns, "ns")}</div></details>`
-    : `<details class="more"${c.v_drive || c.rg_on ? " open" : ""}><summary>${icon("adjustments")}Gate drive and layout<span class="quiet">${needsGate() ? "left empty, the gate resistors with the lowest loss within the limits are chosen for you" : "optional for your device"}</span></summary><div class="fields">
+    : `<details class="more" data-fold="gate"${c.v_drive || c.rg_on || openFolds.has("gate") || ["v_drive", "rg_on", "rg_off", "t_dead", "l_loop"].includes(blocked?.field ?? "") ? " open" : ""}><summary>${icon("adjustments")}Gate drive and layout<span class="quiet">${escape(gateFace)}</span></summary><div class="fields">
 ${field("conditions.v_drive", "Gate drive voltage", c.v_drive, "V", "Often 10 to 12 for silicon, 15 to 20 for SiC, 5 for GaN.")}${field("conditions.t_dead_ns", "Dead time", c.t_dead_ns, "ns")}${field("conditions.t_min_ns", "Shortest pulse", c.t_min_ns, "ns", "The shortest pulse your gate drive passes. It keeps the duty cycle off the rails.")}
 ${field("conditions.rg_on", "Turn-on gate resistance", c.rg_on, "Ω")}${field("conditions.rg_off", "Turn-off gate resistance", c.rg_off, "Ω")}
 ${field("conditions.l_loop_nh", "Loop inductance", c.l_loop_nh, "nH", "Of the switching loop on your board. 10 to 30 is typical for a careful layout.")}</div></details>`}
@@ -434,6 +536,28 @@ const LOAD_FIELDS: Record<string, [string, string, string]> = {
 
 /** The whole result as a document to print or save as a PDF: what went in, what came out,
  *  what it rests on and the equations behind it. Built when asked for, from what is on screen. */
+let savingMd = false;
+
+/** The whole design as a Markdown file: the same report the command line writes. The device
+ *  on the drawing comes first, so it is the one followed through the motion. */
+async function saveMarkdown(): Promise<void> {
+  const first = focused()?.id;
+  const devices = [...new Set([...(first ? [first] : []), ...state.devices])];
+  savingMd = true; renderPanel(true);
+  try {
+    const { markdown } = await api.report({ ...request(state), ...motionRequest(state), devices });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(new Blob([markdown], { type: "text/markdown;charset=utf-8" }));
+    link.download = `${(focused()?.name ?? "motionsim").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "motionsim"}-report.md`;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+  } catch (e) {
+    fault = `The report could not be written: ${(e as Error).message}`;
+  }
+  savingMd = false; renderPanel(true);
+  document.querySelector<HTMLElement>("[data-report-md]")?.focus();
+}
+
 async function printReport(): Promise<void> {
   const c = focused();
   const r = c?.result;
@@ -453,8 +577,8 @@ async function printReport(): Promise<void> {
     ? `<h2>Through the motion</h2>${rows([["Load", load], ["Lasts", `${sig(cycle.summary.duration!)} s`], ["Mean loss", watts(cycle.summary.mean_loss!)], ["Hottest junction reached", degrees(cycle.summary.peak!)], ["Energy lost", `${sig(cycle.summary.loss_energy!)} J`], ["Peak motor current", `${sig(Math.max(...cycle.i_peak.map((v) => v ?? 0)))} A`]])}<h3>Starting</h3>${list(cycle.start.lines)}${lifeBlock(cycle)}<h3>Checks over the motion</h3>${list(cycle.checks.map((x) => `${x.topic}: ${x.message}`))}`
     : "";
   const page = `<article class="report"><header><h1>${escape(c.name)}: power-stage estimate</h1><p>${new Date().toISOString().slice(0, 10)} · MotionSim, an exploratory tool. Results are estimates from datasheet values, stated assumptions and simplified models. Verify by measurement before building anything.</p></header>
-<h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", String(k.parallel || 1)], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Heatsink", `${sig(k.t_sink)} °C`], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
-<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["Shaft over DC power", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
+<h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", String(k.parallel || 1)], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Cooling", sentence(coolingWords())], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
+<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["Shaft over DC power", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
 <h3>Checks</h3>${list(c.checks.map((x) => `${x.topic}: ${x.message}`))}
 <h3>What it needs around it</h3>${list(c.needs)}
 ${compared}${motion}
@@ -531,20 +655,22 @@ function loadPanel(): string {
   const kinds = list.length
     ? `<fieldset class="kinds loads"><legend>Kind of load</legend><div class="family">${list.map((p, k) => `<label class="kind${p.id === state.loadKind ? " is-on" : ""}"><input type="radio" name="load-kind" value="${p.id}" data-load ${p.id === state.loadKind ? "checked" : ""}/><span class="kind-name">${escape(p.label)}${k === 0 ? '<span class="tag">usual for this motor</span>' : ""}</span><span class="kind-about">${escape(p.about)}</span></label>`).join("")}</div></fieldset>`
     : "";
-  return `<h2 tabindex="-1">What the motor moves</h2><p class="lead">Pick the kind of load, then change its figures to yours. Each starts sized to your motor's speed and torque, so it runs as it is, and the tool follows temperature through the whole motion.</p>
+  return `<h2 tabindex="-1">What the motor moves</h2><p class="lead">Pick what the motor drives. It starts sized to your motor, so it runs as it is.</p>
 ${missionBlock()}${state.mission ? "" : kinds}
 ${chosen && !state.mission && !state.loadTouched ? `<p class="fact">${icon("info-circle")}<span>${escape(chosen.link)}</span></p>` : ""}
 ${chosen && !state.mission && state.loadTouched ? `<p class="fact">${icon("info-circle")}<span>These are your own figures now: they stay as they are when the motor or the design point changes. <button type="button" class="link" data-resize-load>Size this load to the motor again</button></span></p>` : ""}
-<div class="fields">${shown.map(one).join("")}</div>
-<details class="more"><summary>${icon("adjustments")}Every load figure<span class="quiet">the ones this kind of load does not use</span></summary><div class="fields">${rest.map(one).join("")}</div></details>
-<h3>The motion</h3><p class="quiet">Load speed, in straight lines between the values you give.</p>
+${fold("load-figures", "adjustments", "Change the load's figures", state.loadTouched ? "yours" : "sized to your motor: put in your own",
+    `<div class="fields">${shown.map(one).join("")}</div><details class="more"><summary>${icon("adjustments")}Every load figure<span class="quiet">the ones this kind of load does not use</span></summary><div class="fields">${rest.map(one).join("")}</div></details>`,
+    Object.keys(LOAD_FIELDS))}
+<h3>The motion</h3>
 <div id="motion-preview"></div>
+<details class="more" data-fold="motion"${openFolds.has("motion") || blocked?.field === "motion" ? " open" : ""}><summary>${icon("adjustments")}Change the motion<span class="quiet">${state.segments.length} stretches, ${sig(state.segments.reduce((n, x) => n + Number(x.duration || 0), 0))} s: load speed in straight lines between the values you give</span></summary>
 <table class="segments"><thead><tr><th scope="col">Lasts</th><th scope="col">From</th><th scope="col">To</th><th scope="col"><span class="sr">Remove</span></th></tr></thead><tbody>${state.segments.map((s, k) => `<tr><td><div class="control"><input aria-label="Stretch ${k + 1} duration in seconds" data-bind="segments.${k}.duration" inputmode="decimal" value="${s.duration}"/><span class="unit">s</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} starting speed" data-bind="segments.${k}.speed_start" inputmode="decimal" value="${s.speed_start}"/><span class="unit">rpm</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} ending speed" data-bind="segments.${k}.speed_end" inputmode="decimal" value="${s.speed_end}"/><span class="unit">rpm</span></div></td><td><button type="button" class="icon-button" data-remove="${k}" aria-label="Remove stretch ${k + 1}" ${state.segments.length < 2 ? "disabled" : ""}>${icon("trash")}</button></td></tr>`).join("")}</tbody></table>
-<button type="button" class="ghost" data-add>${icon("plus")}Add a stretch</button>
+<button type="button" class="ghost" data-add>${icon("plus")}Add a stretch</button></details>
 ${startBlock()}
 <details class="more"${state.sink.rth || state.sink.c_link_uf ? " open" : ""}><summary>${icon("temperature")}Heatsink and DC link<span class="quiet">optional</span></summary><div class="fields">
-${field("sink.rth", "Heatsink to air", state.sink.rth, "K/W", "With its heat capacity, the heatsink warms up during the motion.")}${field("sink.capacity", "Heatsink heat capacity", state.sink.capacity, "J/K", "About 900 for each kilogram of aluminium.")}
-${field("sink.precharge", "Precharge resistance", state.sink.precharge, "Ω", "What limits the current when the link is first charged.")}${field("sink.t_ambient", "Air temperature", state.sink.t_ambient, "°C")}${field("sink.c_link_uf", "DC-link capacitance", state.sink.c_link_uf, "µF", "Braking energy charges it when the supply cannot take it back.")}
+${state.conditions.cooling === "held" ? field("sink.rth", "Heatsink to air", state.sink.rth, "K/W", "With its heat capacity, the heatsink warms up during the motion.") : ""}${state.conditions.cooling === "none" || state.conditions.cooling === "board" ? "" : field("sink.capacity", "Heatsink heat capacity", state.sink.capacity, "J/K", state.conditions.cooling === "heatsink" ? "About 900 for each kilogram of aluminium. Given, the heatsink is followed as it warms from the air's temperature. Empty, it is taken as already warm." : "About 900 for each kilogram of aluminium.")}
+${field("sink.precharge", "Precharge resistance", state.sink.precharge, "Ω", "What limits the current when the link is first charged.")}${state.conditions.cooling === "held" ? field("sink.t_ambient", "Air temperature", state.sink.t_ambient, "°C") : ""}${field("sink.c_link_uf", "DC-link capacitance", state.sink.c_link_uf, "µF", "Braking energy charges it when the supply cannot take it back.")}
 ${field("sink.repeats", "Repeat the motion", state.sink.repeats, "times")}</div></details>${nextButton(LOAD)}`;
 }
 
@@ -609,6 +735,59 @@ async function openReview(id: string): Promise<void> {
   document.querySelector("#review")?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
+/** A transistor typed in from its datasheet: the figures of its tables, in their own units. */
+function typedForm(): string {
+  const form = setup.typed;
+  const t = state.typed;
+  const wrong = typedRefused?.field ?? "";
+  const one = (key: string, label: string, unit: string, required: boolean, help: string, wide = false) => {
+    const id = `t-${key}`;
+    const bad = wrong === key && typedRefused ? `<p class="help said-wrong" id="${id}-w" role="alert">${escape(sentence(typedRefused.reason))}. ${escape(sentence(typedRefused.fix))}.</p>` : "";
+    const described = [bad ? `${id}-w` : "", help ? `${id}-h` : ""].filter(Boolean).join(" ");
+    return `<div class="field${wrong === key ? " is-wrong" : ""}${wide ? " wide" : ""}"><label for="${id}">${escape(label)}${required ? "" : ' <span class="quiet">optional</span>'}</label><div class="control"><input id="${id}" data-typed="${key}" ${unit ? 'inputmode="decimal"' : ""} autocomplete="off" value="${escape(t[key] ?? "")}" ${bad ? 'aria-invalid="true"' : ""} ${described ? `aria-describedby="${described}"` : ""}/>${unit ? `<span class="unit">${escape(unit)}</span>` : ""}</div>${bad}${help ? `<p class="help" id="${id}-h">${escape(help)}</p>` : ""}</div>`;
+  };
+  const pick = (key: string, label: string, options: string[], last: string, help: string) =>
+    `<div class="field"><label for="t-${key}">${escape(label)}</label><div class="control"><select id="t-${key}" data-typed="${key}">${[...options, ...(last ? [""] : [])].map((o) => `<option value="${escape(o)}"${(t[key] ?? (last ? "" : options[0])) === o ? " selected" : ""}>${escape(o || last)}</option>`).join("")}</select></div><p class="help">${escape(help)}</p></div>`;
+  return `<details class="more typed"${typedOpen || Object.values(t).some((v) => String(v ?? "").trim() !== "") ? " open" : ""}><summary>${icon("adjustments")}Type in the figures from its datasheet<span class="quiet">MOSFET, SiC or GaN: nine figures, no file, no key</span></summary>
+<p class="quiet">Copy each figure as the datasheet prints it, typical values where it gives them.</p>
+<div class="fields">${one("part_number", "Part number", "", true, "")}${one("vendor", "Maker", "", false, "")}
+${pick("technology", "Kind of transistor", form.technologies, "", "Silicon unless the datasheet says otherwise.")}${pick("outline", "Package", form.outlines, "another package", "Sets what lies between the case and a heatsink.")}
+${form.fields.filter((f) => f.required).map((f) => one(f.key, f.label, f.unit, f.required, f.help)).join("")}</div>
+<details class="more" data-fold="typed-more"${openFolds.has("typed-more") || form.fields.some((f) => !f.required && (f.key === wrong || String(t[f.key] ?? "").trim() !== "")) ? " open" : ""}><summary>${icon("adjustments")}More figures<span class="quiet">optional: hot on-resistance, output and recovery charge, body diode. Each one sharpens the result</span></summary><div class="fields">${form.fields.filter((f) => !f.required).map((f) => one(f.key, f.label, f.unit, f.required, f.help)).join("")}</div></details>
+${typedRefused && !form.fields.some((f) => f.key === wrong) && wrong !== "part_number" ? refusal(typedRefused) : ""}
+<p><button type="button" class="ghost" data-add-typed ${typedBusy ? "disabled" : ""}>${icon("plus")}${typedBusy ? "Adding" : "Add this part"}</button></p></details>`;
+}
+
+async function addTyped(): Promise<void> {
+  typedBusy = true; typedRefused = null; typedOpen = true;
+  renderPanel(true);
+  try {
+    const form = setup.typed;
+    const figures = { technology: form.technologies[0], ...state.typed };
+    const answer = await api.addTyped(figures);
+    reading = { name: answer.name, outcome: { device: answer.device, read: { values: 0, curves: 0, flagged: [] } }, file: answer.text };
+    setup = await api.setup();
+    const made = new Set(setup.devices.filter((d) => d.example).map((d) => d.id));
+    state.devices = [...new Set([...state.devices.filter((id) => !made.has(id)), answer.device.id])];
+    state.added = [...new Set([...state.added.filter((id) => !made.has(id)), answer.device.id])];
+    state.typed = {};
+    typedOpen = false;
+    void suggestFor();
+    focusPicked = false;
+    schedule();
+  } catch (e) {
+    typedRefused = e instanceof Refused ? e : new Refused((e as Error).message, "check the figures and try again", "");
+  }
+  typedBusy = false;
+  renderPanel(true);
+  renderRail(); renderStage();
+  const to = typedRefused
+    ? document.querySelector<HTMLElement>(typedRefused.field ? `[data-typed="${typedRefused.field}"]` : "details.typed .refusal")
+    : document.querySelector<HTMLElement>(".read-result");
+  to?.scrollIntoView({ block: "center" });
+  to?.focus();
+}
+
 /** The parts the user has brought. The made-up one appears only if they asked for it. */
 function ownDevices() {
   // Whatever else sits in the folder the page is served from, only what this user added
@@ -629,19 +808,19 @@ function devicesPanel(): string {
   const accepts = canRead ? "its datasheet (PDF), a device file (.yaml)" : "a device file (.device.yaml)";
   const drop = reading && !reading.outcome && !reading.refused
     ? waiting(/\.pdf$/i.test(reading.name) ? `Reading ${reading.name}. This takes a minute or two.` : `Adding ${reading.name}.`)
-    : `<label class="drop big" id="drop"><input type="file" id="part-file" accept="${canRead ? "application/pdf," : ""}.yaml,.yml,.json" class="sr"/>${icon("upload")}<span><b>Add your device</b> Drop ${accepts}, or your own double-pulse measurements (.json). Or press to choose a file.</span>${canRead ? '<span class="quiet">Reading a datasheet is a paid language-model call from this machine, with your key. It takes a minute or two.</span>' : ""}</label>`;
+    : `<label class="drop big" id="drop"><input type="file" id="part-file" accept="${canRead ? "application/pdf," : ""}.yaml,.yml,.json" class="sr"/>${icon("upload")}<span><b>Add your device</b> Drop ${accepts}, or your own double-pulse measurements (.json). Or press to choose a file.</span>${canRead ? "" : `<span class="quiet">${local ? "A datasheet PDF is read on your own machine, not on this page: how is below." : "A datasheet PDF is read here too, once your own API key is set: how is below."}</span>`}${canRead ? '<span class="quiet">Reading a datasheet is a paid language-model call from this machine, with your key. It takes a minute or two.</span>' : ""}</label>`;
   let how: string;
   if (canRead) {
     how = "";
   } else if (local) {
     how = `<details class="more"><summary>${icon("info-circle")}How to get a device file from a datasheet</summary><p class="quiet">Reading a datasheet needs a language-model key, so it is done on your own machine, not on this page. With the tool installed:</p><p><code>motionsim extract part.pdf -o part.observations.yaml</code><br/><code>motionsim build part.observations.yaml -o part.device.yaml</code></p><p class="quiet">Then drop <code>part.device.yaml</code> above. It stays in this browser and is sent nowhere. Or run <code>motionsim serve</code> to drop the PDF straight onto the page.</p></details><p class="quiet small local-note">The engine runs in this browser. Its Python runtime is fetched once from cdn.jsdelivr.net, and nothing you enter is sent anywhere. To work offline, install it as the README says.</p>`;
   } else {
-    how = `<details class="more" open><summary>${icon("info-circle")}To read a datasheet PDF here<span class="quiet">it needs your own key, on your own machine</span></summary><p class="quiet">Reading a datasheet is done by a language model, and that is a paid call. It is made from this machine with your own Anthropic API key, straight to Anthropic: this tool has no server of its own, keeps no key and sees none of your files. That is why it runs on your machine.</p><p class="quiet">Set the key in the terminal, then start the page again:</p><p><code>export ANTHROPIC_API_KEY=your-key</code><br/><code>motionsim serve</code></p><p class="quiet">Without a key everything else works: device files, your own measurements, and the made-up part.</p></details>`;
+    how = `<details class="more"><summary>${icon("info-circle")}To read a datasheet PDF here<span class="quiet">it needs your own key, on your own machine</span></summary><p class="quiet">Reading a datasheet is done by a language model, and that is a paid call. It is made from this machine with your own Anthropic API key, straight to Anthropic: this tool has no server of its own, keeps no key and sees none of your files. That is why it runs on your machine.</p><p class="quiet">Set the key in the terminal, then start the page again:</p><p><code>export ANTHROPIC_API_KEY=your-key</code><br/><code>motionsim serve</code></p><p class="quiet">Without a key everything else works: device files, your own measurements, and the made-up part.</p></details>`;
   }
   const outcome = reading?.refused
     ? refusal(reading.refused)
     : reading?.outcome
-      ? `<div class="read-result" role="status"><p>${icon("circle-check")}<b>${escape(reading.outcome.device.name)}</b> ${reading.outcome.read.values ? `read: ${reading.outcome.read.values} table values and ${reading.outcome.read.curves} curves.` : "added."}</p>${reading.outcome.read.from_images ? `<p class="quiet">${reading.outcome.read.from_images} pages of this datasheet are pictures with no text. Their values were read from the picture, which is less sure than reading printed text: check the ratings against the datasheet.</p>` : ""}${reading.outcome.read.flagged.length ? `<p class="quiet">Set aside, because a check did not pass:</p><ul class="plain small">${reading.outcome.read.flagged.map((f) => `<li>${escape(f.what)}, page ${f.page}: ${escape(f.why)}</li>`).join("")}</ul>` : ""}</div>`
+      ? `<div class="read-result" role="status" tabindex="-1"><p>${icon("circle-check")}<b>${escape(reading.outcome.device.name)}</b> ${reading.outcome.read.values ? `read: ${reading.outcome.read.values} table values and ${reading.outcome.read.curves} curves.` : "added."}${reading.file ? ` <a class="link" download="${escape(reading.name)}" href="data:text/yaml;charset=utf-8,${encodeURIComponent(reading.file)}">Save it as a device file</a>, to bring it back another day.` : ""}</p>${reading.outcome.read.from_images ? `<p class="quiet">${reading.outcome.read.from_images} pages of this datasheet are pictures with no text. Their values were read from the picture, which is less sure than reading printed text: check the ratings against the datasheet.</p>` : ""}${reading.outcome.read.flagged.length ? `<p class="quiet">Set aside, because a check did not pass:</p><ul class="plain small">${reading.outcome.read.flagged.map((f) => `<li>${escape(f.what)}, page ${f.page}: ${escape(f.why)}</li>`).join("")}</ul>` : ""}</div>`
       : "";
   const list = parts.length
     ? `<h3>Your ${parts.length > 1 ? "parts" : "part"}</h3><p class="quiet">${parts.length > 1 ? "Tick the ones to test. More than one are compared under the same conditions." : "Ticked: this is the part under test."}</p><ul class="devices">${rows}</ul>`
@@ -650,11 +829,12 @@ function devicesPanel(): string {
     ? `<p class="aside"><button type="button" class="link" data-start-over>Start over: clear everything entered on this page</button></p>`
     : "";
   const files = `<p class="aside setup-files"><button type="button" class="link" data-save-setup ${state.reached > DEVICE ? "" : "disabled"}>Save this setup to a file</button><label class="link-label"><input type="file" data-setup-file accept=".json,application/json" class="sr"/>Open a setup file</label></p>`;
-  const example = setup.devices.some((d) => d.example) && !state.devices.includes("example")
-    ? `<p class="aside"><button type="button" class="link" data-example>No part to hand? Try the tool with a made-up one.</button></p>`
+  const spare = setup.devices.filter((d) => d.example && !state.added.includes(d.id));
+  const example = spare.length
+    ? `<p class="aside examples">No part to hand? Try the tool with a made-up one: ${spare.map((d) => `<button type="button" class="link" data-example="${escape(d.id)}">a ${sig(d.v_max)} V ${escape(d.technology.replace(/^Si /, ""))}</button>`).join(" or ")}.</p>`
     : "";
-  return `<h2 tabindex="-1">The device you want to test</h2><p class="lead">Start with the power transistor or module you have in mind. Add its datasheet or your own data for it. Nothing is listed here that you did not bring.</p>
-${drop}${outcome}${how}${list}${reviewBlock()}${example}${files}${again}${nextButton(DEVICE)}`;
+  return `<h2 tabindex="-1">The device you want to test</h2><p class="lead">The power transistor or module you have in mind: ${canRead ? "drop its datasheet, " : ""}type in its figures, or drop a device file.</p>
+${drop}${outcome}${typedForm()}${how}${list}${reviewBlock()}${example}${files}${again}${nextButton(DEVICE)}`;
 }
 
 /* ---------- results ---------- */
@@ -666,7 +846,7 @@ function proposalTab(): string {
     .map((c, k) => {
       const r = c.result;
       return `<details class="candidate ${c.level}"${c.id === focused()?.id ? " open" : ""}><summary data-focus="${escape(c.id)}"><span class="rank">${k + 1}</span><span class="cand-name">${escape(c.name)}<span class="quiet">${escape(c.technology)}</span></span><span class="num loss"><span class="cell-label">Loss </span>${r ? watts(r.loss) : "–"}</span><span class="num junction"><span class="cell-label">Junction </span>${r ? degrees(r.tj_peak) : "–"}</span><span class="num still"><span class="cell-label">Held still </span>${c.stall_tj != null ? degrees(c.stall_tj) : "–"}</span>${verdict(c.level)}</summary>
-<div class="cand-body">${c.problem ? `<p class="fix"><b>${escape(sentence(c.problem))}.</b> ${escape(sentence(c.fix))}${c.fix ? "." : ""}</p>` : ""}${gateBlock(c)}${c.needs.length ? `<h4>What it needs around it</h4><ul class="plain">${c.needs.map((n) => `<li>${escape(sentence(n))}</li>`).join("")}</ul>` : ""}${c.checks.length ? `<h4>Checks</h4>${checkList(c.checks)}` : ""}</div></details>`;
+<div class="cand-body">${c.problem ? `<p class="fix"><b>${escape(sentence(c.problem))}.</b> ${escape(sentence(c.fix))}${c.fix ? "." : ""}</p>` : ""}${checksBlock(c)}${gateBlock(c)}${c.needs.length ? `<details class="more" data-fold="needs-${escape(c.id)}"${openFolds.has(`needs-${c.id}`) ? " open" : ""}><summary>${icon("adjustments")}What it needs around it<span class="quiet">${escape(c.needs[0] ?? "")}</span></summary><ul class="plain">${c.needs.map((n) => `<li>${escape(sentence(n))}</li>`).join("")}</ul></details>` : ""}</div></details>`;
     })
     .join("");
   const single = proposal.candidates.length === 1;
@@ -788,7 +968,7 @@ function buildSpec(): string {
   const section = (title: string, glyph: string, head: string, lines: string[]) => `<section class="rec"><h4>${icon(glyph)}${title}<span class="rec-value">${escape(head)}</span></h4><ul class="plain small">${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></section>`;
   return `<h3>What to build</h3><p class="quiet">The inverter this motor and load ask for, with ${escape(c.name)} as the switch.</p>
 ${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It suits this design.", caution: "It can do this, with the cautions on the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
-${section("Heatsink", "temperature", sinkRec?.value.rth_sink ? `${sig(sinkRec.value.rth_sink, 2)} K/W or lower` : "See below", [`${watts(r.loss)} to remove at the design point${motion ? `, ${watts(motion.summary.mean_loss!)} averaged over the motion` : ""}.`, ...(sinkRec ? sinkRec.lines.slice(0, 2).map((l) => `${sentence(l)}.`) : [])])}
+${section("Heatsink", "temperature", sinkRec?.value.rth_sink ? `${sig(sinkRec.value.rth_sink, 2)} K/W or lower` : "See below", [`${watts(r.loss)} to remove at the design point${motion ? `, ${watts(motion.summary.mean_loss!)} averaged over the motion` : ""}.`, ...(sinkRec ? [...sinkRec.lines.slice(0, 2), ...sinkRec.lines.filter((l) => l.startsWith("With no heatsink"))].map((l) => `${sentence(l)}.`) : [])])}
 ${section("DC-link capacitor", "bolt", rms > 0 ? `${sig(rms, 2)} A rms ripple` : "See below", cap)}
 ${section("Gate drive", "adjustments", c.gate.kind === "built in" ? "Built in" : `${state.conditions.parallel > 1 ? `${state.conditions.parallel} gates a channel` : "One gate a channel"}`, gate)}
 ${section("Protection", "alert-triangle", trip ? { ok: "A trip is harmless", caution: "A trip charges the link", fail: "A trip exceeds the rating" }[trip.level] : "Overcurrent and stall", protect.length ? protect : ["Set an overcurrent trip above the peak current and below the device's limit."])}`;
@@ -816,14 +996,14 @@ function capabilityTab(): string {
     return `<p class="fact">${icon("circle-check")}<span>The load of step 4 could be <b>${sig(biggest.scale, 2)} times</b> as heavy (its inertia, friction, steady torque and mass together) before a check fails. What gives first: ${escape(sentence(biggest.why))}.</span></p>`;
   })();
   return `<h3>What ${escape(c.name)} can drive</h3>
-<p class="quiet">On this motor, at ${sig(k.v_dc)} V, ${sig(k.f_khz)} kHz and a ${sig(k.t_sink)} °C heatsink, held without end.</p>
-<dl class="facts"><div><dt>Torque at ${sig(d.rpm)} rpm</dt><dd>${sig(d.torque)} N·m</dd></div><div><dt>Shaft power there</dt><dd>${watts(d.power)}</dd></div><div><dt>Motor current there</dt><dd>${d.current === null ? "n/a" : `${sig(d.current)} A peak`}</dd></div><div><dt>What stops it</dt><dd class="words">${escape(sentence(d.why))}</dd></div></dl>
-<p class="quiet">${room}${d.current !== null && d.current > d.rated ? ` At that limit the current is above the device's ${sig(d.rated)} A rating: check what case temperature that rating assumes.` : ""}</p>
+<p class="quiet">On this motor, at ${sig(k.v_dc)} V, ${sig(k.f_khz)} kHz and ${coolingWords()}, held without end.</p>
+<dl class="facts"><div><dt>Torque at ${sig(d.rpm)} rpm</dt><dd>${sig(d.torque)} N·m</dd></div><div><dt>Shaft power there</dt><dd>${watts(d.power)}</dd></div><div><dt>Motor current there</dt><dd>${d.current === null ? "n/a" : `${sig(d.current)} A peak`}</dd></div><div class="wide"><dt>What stops it</dt><dd class="words">${escape(sentence(d.why))}</dd></div></dl>
+<p class="quiet after-facts">${room}${d.current !== null && d.current > d.rated ? ` At that limit the current is above the device's ${sig(d.rated)} A rating: check what case temperature that rating assumes.` : ""}</p>
 <h4>Across the speed range</h4>
-${limitChart(capable.rpm, capable.edge.map((x) => x.torque), "speed, rpm", "torque it can hold, N·m", { x: d.rpm, y: k.torque, label: "your design point" })}
-<p class="quiet small">Below the line every junction stays within its rating. At standstill one switch carries the current without rest, so the limit is lower there.</p>
+<div class="when-wide">${limitChart(capable.rpm, capable.edge.map((x) => x.torque), "speed, rpm", "torque it can hold, N·m", { x: d.rpm, y: k.torque, label: "your design point" }, true)}</div><div class="when-narrow">${limitChart(capable.rpm, capable.edge.map((x) => x.torque), "speed, rpm", "torque it can hold, N·m", { x: d.rpm, y: k.torque, label: "your design point" })}</div>
+<p class="quiet small caption">Below the line every junction stays within its rating. At standstill one switch carries the current without rest, so the limit is lower there.</p>
 <div class="read-grid"><div class="read-item"><h4>Against switching frequency</h4>${limitChart(capable.f_sw.map((v) => v / 1000), capable.by_f_sw.map((x) => x.torque), "switching frequency, kHz", "torque, N·m")}</div>
-<div class="read-item"><h4>Against heatsink temperature</h4>${limitChart(capable.t_sink, capable.by_t_sink.map((x) => x.torque), "heatsink, °C", "torque, N·m")}</div></div>
+<div class="read-item"><h4>Against ${k.cooling === "held" ? "heatsink" : "air"} temperature</h4>${limitChart(capable.t_sink, capable.by_t_sink.map((x) => x.torque), `${k.cooling === "held" ? "heatsink" : "air"}, °C`, "torque, N·m")}</div></div>
 <h4>How much heavier could the load be?</h4>${load}`;
 }
 
@@ -861,10 +1041,19 @@ const SWEEPS: Record<string, { label: string; unit: string; field: string; scale
   parallel: { label: "Devices in parallel", unit: "a switch", field: "parallel", scale: 1 },
 };
 
+/** A setting as it is tried. With cooling to air there is no heatsink temperature to set:
+ *  the temperature tried is the air's. */
+function sweepOf(key: string): { label: string; unit: string; field: string; scale: number } {
+  if (key === "t_sink" && state.conditions.cooling !== "held") return { label: "Air temperature", unit: "°C", field: "t_ambient", scale: 1 };
+  return SWEEPS[key] ?? SWEEPS.f_khz;
+}
+
 /** The values a setting is tried at: the user's, or the present one with half and double. */
 function sweepValues(): number[] {
-  const typed = state.sweep.values.split(/[\s,;]+/).map(Number).filter((v) => Number.isFinite(v) && v > 0);
-  const now = Number((state.conditions as Record<string, any>)[state.sweep.key]) || 1;
+  const degrees = state.sweep.key === "t_sink"; // a temperature may be zero or below
+  const typed = state.sweep.values.split(/[\s,;]+/).filter((v) => v !== "").map(Number).filter((v) => Number.isFinite(v) && (degrees || v > 0));
+  const held = (state.conditions as Record<string, any>)[degrees && state.conditions.cooling !== "held" ? "t_ambient" : state.sweep.key];
+  const now = degrees ? Number(held) || 0 : Number(held) || 1;
   const usual = state.sweep.key === "parallel" ? [1, 2, 3] : state.sweep.key === "t_sink" ? [now - 20, now, now + 20] : [now / 2, now, now * 2];
   return [...new Set(typed.length ? typed : usual.map((v) => Number(v.toPrecision(3))))].slice(0, MOST);
 }
@@ -891,7 +1080,7 @@ function series(): Series[] {
       ...state.motorSet.slice(0, MOST - 1).map((m) => ({ key: m.id, name: m.label, candidate: focused(), item: null, over: { motor: m.motor, conditions: m.conditions } }))];
   }
   if (state.compare === "sweep") {
-    const sweep = SWEEPS[state.sweep.key] ?? SWEEPS.f_khz;
+    const sweep = sweepOf(state.sweep.key);
     return sweepValues().map((v) => ({ key: `${state.sweep.key}=${v}`, name: `${sig(v)} ${sweep.unit}`, candidate: focused(), item: null, over: { conditions: { [sweep.field]: v * sweep.scale } } }));
   }
   return (proposal?.candidates ?? []).filter((c) => c.result).slice(0, MOST).map((c) => ({ key: c.id, name: c.name, candidate: c, item: null }));
@@ -910,7 +1099,8 @@ function compareTable(): string {
     const cell = (pick: (r: NonNullable<Candidate["result"]>, k: number) => string) => got.map((g, k) => (g === null ? "…" : g === "refused" ? "cannot run" : pick(g, k)));
     // What a candidate carries beside its result: its verdict, its margins, its data.
     const whole = (pick: (c: Candidate) => string) => got.map((g, k) => { const c = resultOf(list[k]); return g === null || !c ? "…" : g === "refused" ? "cannot run" : pick(c); });
-    const losses = got.map((g) => (g && g !== "refused" ? g.loss : Infinity));
+    // A part that does not pass is not the one with the lowest loss, whatever it would lose.
+    const losses = got.map((g, k) => (g && g !== "refused" && resultOf(list[k])?.level !== "fail" ? g.loss : Infinity));
     // Losses closer than the engine can tell apart are marked together, not one as the winner.
     const least = Math.min(...losses);
     const level = Number.isFinite(least) ? losses.flatMap((v, k) => (v <= least * (1 + (proposal?.level ?? 0.05)) ? [k] : [])) : [];
@@ -927,7 +1117,7 @@ ${line("Hottest junction", whole((c) => `<span class="${c.result!.tj_peak > c.re
 ${line("Held at standstill", whole((c) => (c.stall_tj == null ? "n/a" : `<span class="${c.stall_tj > c.result!.tj_max ? "fail" : ""}">${degrees(c.stall_tj)}</span>${room(c.stall_margin)}`)))}
 ${line("Shaft over DC power", list.map((x) => { const e = resultOf(x)?.efficiency; return e != null ? percent(e) : resultOf(x) ? "n/a" : "…"; }))}
 ${state.compare === "devices" ? line("Switching data", whole((c) => `<span class="basis">${escape(sentence(c.switching?.text ?? "not given"))}</span>`)) : ""}
-</tbody></table><p class="quiet small">${foot} ${marked} The margin is counted from the top of the temperature range where values are assumed.</p>`;
+</tbody></table><p class="quiet small">${foot} ${marked} The margin is counted from the top of the temperature range where values are assumed.${list.length > 2 ? " Slide the table sideways to see every column." : ""}</p>`;
   }
   const got = list.map((x) => cycles.get(x.key));
   const cell = (pick: (c: Cycle) => string) => got.map((g) => (g === undefined ? "…" : g instanceof Refused ? "cannot run" : pick(g)));
@@ -961,9 +1151,9 @@ function compareBar(): string {
     add = full ? `<span class="quiet small">Five motors is the most.</span>`
       : `<button type="button" class="ghost add-part" data-add-motor>${icon("plus")}Keep the motor of step 2 to compare</button><span class="quiet small">Then change the motor in step 2: the one kept stays here beside it.</span>`;
   } else if (mode === "sweep") {
-    const sweep = SWEEPS[state.sweep.key] ?? SWEEPS.f_khz;
+    const sweep = sweepOf(state.sweep.key);
     items = all.map((x) => `<li class="chip-item">${escape(x.name)}</li>`).join("");
-    add = `<div class="fields sweep">${select("sweep.key", "Setting", state.sweep.key, Object.entries(SWEEPS).map(([k, v]) => [k, v.label]))}${field("sweep.values", "Values to try", state.sweep.values, sweep.unit, "Up to five, with commas between. Empty: the present value, half of it and double.")}</div>`;
+    add = `<div class="fields sweep">${select("sweep.key", "Setting", state.sweep.key, Object.keys(SWEEPS).map((k) => [k, sweepOf(k).label] as [string, string]))}${field("sweep.values", "Values to try", state.sweep.values, sweep.unit, "Up to five, with commas between. Empty: the present value, half of it and double.")}</div>`;
   } else {
     items = all.map((x) => `<li class="chip-item">${escape(x.name)}${x.item ? `<button type="button" class="chip-x" data-drop-load="${escape(x.key)}" aria-label="Take ${escape(x.name)} out of the comparison">${icon("x")}</button>` : ""}</li>`).join("");
     const offered = (presets?.list ?? []).filter((p) => p.id !== state.loadKind && !state.loadSet.some((x) => x.id === p.id));
@@ -982,7 +1172,7 @@ function resultsPanel(): string {
   const body = { proposal: proposalTab, losses: lossesTab, motion: motionTab, map: mapTab, settings: settingsTab, capability: capabilityTab }[state.tab]();
   return `<h2 tabindex="-1">Results</h2>${compareBar()}<div class="tabs" role="tablist" aria-label="Results">${TABS.map(([t, name]) => `<button type="button" role="tab" id="tab-${t}" aria-selected="${state.tab === t}" aria-controls="tab-body" tabindex="${state.tab === t ? 0 : -1}" data-tab="${t}">${name}</button>`).join("")}</div>
 <div id="tab-body" role="tabpanel" aria-labelledby="tab-${state.tab}" tabindex="0">${body}</div>
-<div class="actions"><button type="button" class="ghost" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button><button type="button" class="ghost" data-report ${focused()?.result ? "" : "disabled"}>${icon("file-text")}Save a report</button></div>`;
+<div class="actions"><button type="button" class="ghost" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button><span class="save-as"><button type="button" class="ghost" data-report-md ${focused()?.result ? "" : "disabled"} title="The whole design as a Markdown file: for your notes, or to hand to a coding agent">${icon("file-text")}${savingMd ? "Writing" : "Report as .md"}</button><button type="button" class="ghost" data-report ${focused()?.result ? "" : "disabled"} title="Opens the print dialog: choose Save as PDF">${icon("file-text")}Report as PDF</button></span></div>`;
 }
 
 function renderPanel(keepFocus = false): void {
@@ -1132,7 +1322,7 @@ async function deep(): Promise<void> {
   if (state.tab === "capability" && capable === null) await run("capability", () => api.capability(req), (v) => (capable = v));
   // The sheet of what to build draws on the motion too: the capacitor is sized by braking.
   if (state.tab === "settings" && cycle === null) await run("cycle", () => api.cycle({ ...req, ...motionRequest(state) }), (v) => (cycle = v));
-  if (state.tab === "settings" && advised === null) await run("recommend", () => api.recommend({ ...req, t_ambient: Number(state.sink.t_ambient) || 40 }).then((x) => x.items), (v) => (advised = v));
+  if (state.tab === "settings" && advised === null) await run("recommend", () => api.recommend({ ...req, t_ambient: state.sink.t_ambient === "" || Number.isNaN(Number(state.sink.t_ambient)) ? 40 : Number(state.sink.t_ambient) }).then((x) => x.items), (v) => (advised = v));
 }
 
 /** Open a setup saved from this page: everything entered comes back as it was. */
@@ -1171,8 +1361,9 @@ async function addPart(file: File): Promise<void> {
     reading = { name: file.name, outcome };
     setup = await api.setup();
     // The part just brought is the part under test.
-    state.devices = [...new Set([...state.devices.filter((id) => id !== "example"), outcome.device.id])];
-    state.added = [...new Set([...state.added.filter((id) => id !== "example"), outcome.device.id])];
+    const made = new Set(setup.devices.filter((d) => d.example).map((d) => d.id));
+    state.devices = [...new Set([...state.devices.filter((id) => !made.has(id)), outcome.device.id])];
+    state.added = [...new Set([...state.added.filter((id) => !made.has(id)), outcome.device.id])];
     void suggestFor();
     focusPicked = false;
     schedule();
@@ -1194,6 +1385,8 @@ function setPath(path: string, raw: string): void {
   const numeric = typeof target[last] === "number";
   target[last] = numeric ? (raw.trim() === "" || Number.isNaN(Number(raw)) ? target[last] : Number(raw)) : raw;
   if (keys[0] === "motors" && raw.trim() !== "" && !Number.isNaN(Number(raw))) target[last] = Number(raw);
+  // A figure the motor can do without is taken away when its box is emptied, not kept unseen.
+  if (keys[0] === "motors" && raw.trim() === "" && setup.motors[keys[1]]?.fields.some((f) => f.key === last && f.required === false)) target[last] = "";
   if (keys[0] === "motors" || keys[0] === "conditions") state.motorTouched = true;
   if (keys[0] === "load" || keys[0] === "segments") state.loadTouched = true;
 }
@@ -1208,16 +1401,28 @@ function goTo(step: number): void {
   const doc = document as Document & { startViewTransition?: (f: () => void) => void };
   if (doc.startViewTransition && !reduced()) doc.startViewTransition(draw); else draw();
   if (conditionsGiven() && !proposal && !blocked) void compute(); else void deep();
+  if (state.step === MOTOR) fitFor(true);
 }
 
 function wire(): void {
   const app = $("#app");
   app.addEventListener("input", (e) => {
     const el = e.target as HTMLInputElement;
+    if (el.dataset.typed) {
+      state.typed[el.dataset.typed] = el.value; save(state);
+      if (typedRefused?.field === el.dataset.typed) {
+        typedRefused = null;
+        const box = el.closest(".field");
+        box?.classList.remove("is-wrong"); box?.querySelector(".said-wrong")?.remove(); el.removeAttribute("aria-invalid");
+      }
+      return;
+    }
     if (!el.dataset.bind || el.tagName === "SELECT") return;
     if (el.dataset.bind.startsWith("sweep.")) return; // taken when the field is left: see the change handler
     setPath(el.dataset.bind, el.value);
-    if (el.dataset.bind.startsWith("motors.")) renderStage(); // the drawing follows the motor's figures as they are typed
+    const said = el.closest(".field")?.querySelector<HTMLElement>("[data-said]");
+    if (said) said.textContent = saidAs(el.value, said.dataset.said!); // the spoken figure follows what is typed
+    if (el.dataset.bind.startsWith("motors.")) { renderStage(); fitFor(); } // the drawing and the fit follow the motor's figures as they are typed
     if (el.dataset.bind.startsWith("segments")) renderPreview();
     if (el.dataset.bind.startsWith("map.")) { grid = null; clearTimeout(timer); timer = window.setTimeout(() => void deep(), 500); save(state); return; }
     schedule();
@@ -1236,8 +1441,10 @@ function wire(): void {
       Object.assign(state.conditions, { v_dc: start.v_dc, rpm: start.rpm, torque: start.torque, f_khz: start.f_sw / 1000, pwm: "" });
       state.map = { rpm_max: "", torque_max: "" };
       renderStage(); // the drawing shows the kind of motor at once
+      fit = null;
       renderPanel(true);
       document.querySelector<HTMLInputElement>(`[data-kind][value="${state.kind}"]`)?.focus();
+      fitFor(true);
       schedule();
     } else if (el.matches("[data-device]")) {
       const id = el.dataset.device!;
@@ -1277,7 +1484,8 @@ function wire(): void {
       void openSetup(el.files[0]);
     } else if (el.tagName === "SELECT" && el.dataset.bind) {
       setPath(el.dataset.bind, el.value);
-      if (el.dataset.bind.startsWith("motors.")) renderStage();
+      if (el.dataset.bind.startsWith("motors.")) { renderStage(); fitFor(); }
+      if (el.dataset.bind === "conditions.cooling") { renderPanel(true); document.querySelector<HTMLElement>('[data-bind="conditions.cooling"]')?.focus(); }
       if (el.dataset.bind === "start.method") { cycle = null; renderPanel(true); document.querySelector<HTMLElement>('[data-bind="start.method"]')?.focus(); }
       schedule();
     }
@@ -1292,9 +1500,11 @@ function wire(): void {
   app.addEventListener("toggle", (e) => {
     const el = e.target as HTMLDetailsElement;
     if (el.classList?.contains("pwm-fold")) pwmOpen = el.open;
+    if (el.classList?.contains("typed")) typedOpen = el.open;
+    if (el.dataset?.fold) { if (el.open) openFolds.add(el.dataset.fold); else openFolds.delete(el.dataset.fold); }
   }, true);
   app.addEventListener("click", (e) => {
-    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-step],[data-tab],[data-focus],[data-metric],[data-add],[data-remove],[data-example],[data-review],[data-add-motor],[data-drop-motor],[data-save-setup],[data-largest],[data-forget-device],[data-start-over],[data-compare],[data-drop-device],[data-drop-load],[data-drop-mission],[data-resize-load],[data-report],[data-zoom],[data-equations],[data-map-at]");
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-step],[data-tab],[data-focus],[data-metric],[data-add],[data-remove],[data-example],[data-add-typed],[data-report-md],[data-review],[data-add-motor],[data-drop-motor],[data-save-setup],[data-largest],[data-forget-device],[data-start-over],[data-compare],[data-drop-device],[data-drop-load],[data-drop-mission],[data-resize-load],[data-report],[data-zoom],[data-equations],[data-map-at]");
     if (!el) return;
     if (el.dataset.zoom) {
       const at = ZOOMS.indexOf(state.pwmPeriods);
@@ -1344,6 +1554,7 @@ function wire(): void {
     }
     if (el.dataset.dropMission !== undefined) { state.mission = null; missionFault = null; cycle = null; cycles.clear(); save(state); renderPanel(true); schedule(); return; }
     if (el.dataset.report !== undefined) { void printReport(); return; }
+    if (el.dataset.reportMd !== undefined) { void saveMarkdown(); return; }
     if (el.dataset.resizeLoad !== undefined) {
       const again = presets?.list.find((p) => p.id === state.loadKind);
       if (again) { state.loadTouched = false; applyPreset(again); cycles.clear(); renderPanel(true); renderPreview(); schedule(); }
@@ -1363,7 +1574,8 @@ function wire(): void {
     if (el.dataset.dropDevice !== undefined) { state.devices = state.devices.filter((d) => d !== el.dataset.dropDevice); focusPicked = false; void suggestFor(); renderPanel(true); schedule(); return; }
     if (el.dataset.dropLoad !== undefined) { state.loadSet = state.loadSet.filter((x) => x.id !== el.dataset.dropLoad); cycles.delete(el.dataset.dropLoad!); save(state); renderPanel(true); renderStage(); return; }
     if (el.dataset.review !== undefined) { void openReview(el.dataset.review); return; }
-    if (el.dataset.example !== undefined) { state.devices = [...new Set([...state.devices, "example"])]; state.added = [...new Set([...state.added, "example"])]; save(state); void suggestFor(); renderPanel(true); renderRail(); renderStage(); schedule(); return; }
+    if (el.dataset.addTyped !== undefined) { void addTyped(); return; }
+    if (el.dataset.example !== undefined) { const made = el.dataset.example || "example"; state.devices = [...new Set([...state.devices, made])]; state.added = [...new Set([...state.added, made])]; save(state); void suggestFor(); renderPanel(true); renderRail(); renderStage(); schedule(); return; }
     if (el.dataset.step !== undefined) goTo(Number(el.dataset.step));
     else if (el.dataset.tab) { state.tab = el.dataset.tab as Tab; save(state); renderPanel(true); document.querySelector<HTMLElement>(`#tab-${state.tab}`)?.focus(); void deep(); }
     else if (el.dataset.focus) { focusPicked = true; if (state.focus !== el.dataset.focus) { state.focus = el.dataset.focus; cycle = grid = advised = null; save(state); renderStage(); if (!el.matches("summary")) renderPanel(true); void deep(); } }
@@ -1372,6 +1584,7 @@ function wire(): void {
     else if (el.dataset.remove !== undefined) { state.segments.splice(Number(el.dataset.remove), 1); renderPanel(true); schedule(); }
   });
   app.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && (e.target as HTMLElement).matches?.("input[data-typed]") && !typedBusy) { e.preventDefault(); void addTyped(); return; }
     const tab = (e.target as HTMLElement).closest<HTMLElement>("[role=tab]");
     if (!tab || !["ArrowLeft", "ArrowRight"].includes(e.key)) return;
     const k = TABS.findIndex(([t]) => t === state.tab);
@@ -1392,14 +1605,17 @@ function wire(): void {
 
 async function start(): Promise<void> {
   const app = $("#app");
-  app.innerHTML = `<header class="top"><span class="brand">MotionSim</span><span class="top-note">Datasheets as models for motor drives</span><button type="button" class="top-button" data-equations>${icon("math-function")}<span>The equations</span></button><details class="about"><summary>${icon("info-circle")}Exploratory tool</summary><p>Results are estimates from what you bring (a datasheet, a device file or your own measurements), stated assumptions and simplified models. They can be wrong. Check them against the manufacturer's data and measure on real hardware before you rely on them.</p></details></header>
+  app.innerHTML = `<header class="top"><span class="brand">MotionSim</span><span class="top-note">Datasheets as models for motor drives</span><button type="button" class="top-button" data-equations aria-label="The equations">${icon("math-function")}<span>The equations</span></button><details class="about"><summary>${icon("info-circle")}Exploratory tool</summary><p>Results are estimates from what you bring (a datasheet, a device file or your own measurements), stated assumptions and simplified models. They can be wrong. Check them against the manufacturer's data and measure on real hardware before you rely on them.</p></details></header>
 <dialog id="equations" aria-labelledby="equations-title"><div class="dialog-head"><h2 id="equations-title">How the results are worked out</h2><button type="button" class="ghost" data-close-equations>${icon("x")}Close</button></div><p class="lead">Every figure on this page comes from these equations and from the values read from your device. Nothing else is fitted or tuned.</p><div id="equations-body"></div></dialog>
-<nav id="rail" aria-label="Steps"></nav>
+`;
+  // The steps, the drawing and the form are put on the page only once they can be drawn in
+  // full: an empty frame filled a moment later pushes everything below it down.
+  const frame = `<nav id="rail" aria-label="Steps"></nav>
 <main id="stage"><div id="plate" class="plate" tabindex="0" role="group" aria-label="Power stage drawing"></div><p class="swipe-hint">${icon("arrow-right")}Slide the drawing sideways to see the motor.</p><div id="switcher" class="switcher"></div><dl id="readouts" class="readouts" aria-live="polite"></dl><div id="compare-table" class="compare-table" aria-live="polite"></div><section id="pwm" class="pwm-view" aria-label="Switching periods"></section></main>
 <section id="panel" aria-label="Current step"></section>`;
   let engine: Awaited<ReturnType<typeof boot>>;
   try {
-    engine = await boot((text) => { starting = text; renderStage(); });
+    engine = await boot((text) => { starting = text; if (document.querySelector("#stage")) renderStage(); });
   } catch (e) {
     app.innerHTML = `<div class="dead"><h1>motionsim could not start</h1><p>${escape((e as Error).message)}</p><p>Reload the page. If you run it yourself, start it with <code>motionsim serve</code>.</p></div>`;
     return;
@@ -1411,6 +1627,7 @@ async function start(): Promise<void> {
   if (inBrowser) starting = "Fetching the Python runtime";
   state = restore(setup, inBrowser);
   state.reached = Math.max(state.reached ?? 0, state.step);
+  app.insertAdjacentHTML("beforeend", frame);
   wire();
   renderRail();
   renderPanel(true);

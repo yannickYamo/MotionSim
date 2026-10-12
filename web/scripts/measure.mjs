@@ -23,12 +23,29 @@ writeFileSync(mission, "time_s;speed_rpm;torque_Nm\n" + Array.from({ length: 40 
 // A second part, to compare with the first.
 const second = join(mkdtempSync(join(tmpdir(), "motionsim-")), "second-part.device.yaml");
 writeFileSync(second, made.replace(/^vendor:.*$/m, "vendor: Second Maker").replace(/^part_number:.*$/m, "part_number: SM-600-30"));
+// What the tool assumes is said on the face of a fold; the means of changing it is inside.
+// The tour opens the folds of the step it is on before it reaches in.
+const unfold = (page) => page.evaluate(() => document.querySelectorAll("#panel details[data-fold]").forEach((d) => { d.open = true; }));
 const browser = await chromium.launch();
 const errors = [];
 for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 760], ["mobile", 390, 844]]) {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
   page.on("pageerror", (e) => errors.push(`${label}: ${e.message}`));
+  // Nothing on the page may be pushed about while it loads, and no request may fail.
+  await page.addInitScript(() => {
+    window.__shift = 0;
+    new PerformanceObserver((list) => { for (const e of list.getEntries()) if (!e.hadRecentInput) window.__shift += e.value; }).observe({ type: "layout-shift", buffered: true });
+  });
+  const failed = [];
+  page.on("response", (r) => { if (r.status() >= 400 && !/\/api\//.test(r.url())) failed.push(`${r.status()} ${r.url()}`); });
   await page.goto(url, { waitUntil: "networkidle" });
+  await page.waitForSelector("#panel h2");
+  await page.waitForTimeout(1500);
+  const shift = await page.evaluate(() => window.__shift);
+  if (shift > 0.02) failures.push(`${label}: the page shifts as it loads (cumulative layout shift ${shift.toFixed(3)})`);
+  if (failed.length) failures.push(`${label}: a request failed while the page loaded: ${failed.join(", ")}`);
+  const unnamed = await page.$$eval("button, a[href], summary", (els) => els.filter((e) => e.offsetParent !== null && !(e.getAttribute("aria-label") || e.textContent || e.getAttribute("title") || "").trim()).map((e) => e.outerHTML.slice(0, 80)));
+  if (unnamed.length) failures.push(`${label}: a control has no name for a screen reader: ${unnamed.join(" | ")}`);
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "networkidle" });
   // Without a server the engine loads into the page first, which takes a while.
@@ -44,6 +61,27 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await measure(page, `${label}-0-equations`);
   await page.click("[data-close-equations]");
   await page.waitForSelector("#equations:not([open])", { state: "attached" }); // a closed dialog is in the page but not shown
+  // A part can be typed in from its datasheet: the form opens, and a slip is refused at
+  // the figure it sits in, with nothing added.
+  await page.click("details.typed summary");
+  await page.waitForSelector('details.typed[open] [data-typed="rds_on"]');
+  await measure(page, `${label}-1-typed`);
+  for (const [key, value] of Object.entries({ part_number: "TYPED-1", v_rated: 100, i_rated: 100, tj_max: 175, rth_jc: 0.6, rds_on: 4000, v_th: 3, v_plateau: 4.6, q_gs: 20, q_gd: 14 })) await page.fill(`[data-typed="${key}"]`, String(value));
+  await page.click("[data-add-typed]");
+  await page.waitForSelector("details.typed .said-wrong");
+  // The reason is said at the figure, in view, with the figure in focus; and it goes when the figure is corrected.
+  const said = await page.evaluate(() => { const m = document.querySelector(".said-wrong")?.getBoundingClientRect(); return !!m && m.top >= 0 && m.bottom <= innerHeight && document.activeElement?.getAttribute("data-typed") === "rds_on"; });
+  if (!said) failures.push(`${label}: the reason a figure is refused is not shown at that figure, in view and in focus`);
+  await measure(page, `${label}-1-typed-slip`);
+  if (!(await page.$('.field.is-wrong [data-typed="rds_on"]'))) failures.push(`${label}: the mistyped figure is not the one marked`);
+  await page.fill('[data-typed="rds_on"]', "4");
+  if (await page.$("details.typed .said-wrong, details.typed .field.is-wrong")) failures.push(`${label}: a corrected figure keeps its mark`);
+  await page.fill('[data-typed="rds_on"]', "4000");
+  await page.click("[data-add-typed]");
+  await page.waitForSelector("details.typed .said-wrong");
+  if ((await page.$$("[data-device]")).length) failures.push(`${label}: a part with a mistyped figure was added`);
+  if ((await page.$$("[data-example]")).length !== 2) failures.push(`${label}: both made-up parts should be offered, a transistor and an IGBT`);
+  await page.click("details.typed summary");
   // Nothing is listed that the user did not bring, whatever the served folder holds.
   if ((await page.$$("[data-device]")).length) failures.push(`${label}: parts are listed before the user has added any`);
   // No figure is shown that the user has not given: the supply voltage comes at step 3.
@@ -64,9 +102,66 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await measure(page, `${label}-2-motor`);
   if ((await page.$$(".tag.recommended")).length !== 1) failures.push(`${label}: exactly one kind of motor should be recommended for the device`);
   if (!(await page.$(".kind.is-rec input:checked"))) failures.push(`${label}: the recommended motor is not the one the user starts on`);
+  // A motor that asks more than the part is rated for is said here, where it was typed,
+  // with why; and the alert goes when the figure is put back.
+  {
+    const box = '[data-bind$=".i_max"]';
+    await page.waitForSelector("#motor-fit .fact");
+    if (await page.$("#motor-fit .fit-raised")) failures.push(`${label}: the example motor is said not to fit the part it was wound for`);
+    const was = await page.$eval(box, (e) => e.value);
+    await page.fill(box, "4000");
+    await page.waitForSelector("#motor-fit .fit-raised", { timeout: 15000 }).catch(() => failures.push(`${label}: a motor drawing far more than the part's rating raises nothing at the motor step`));
+    if (!/A peak, and the part is rated/.test(await page.$eval("#motor-fit", (e) => e.textContent))) failures.push(`${label}: the alert does not say what the motor draws against what the part is rated for`);
+    await measure(page, `${label}-2-motor-misfit`);
+    await page.fill(box, was);
+    await page.waitForFunction(() => !document.querySelector("#motor-fit .fit-raised"), null, { timeout: 15000 }).catch(() => failures.push(`${label}: the alert stays after the motor is put right`));
+  }
+  // A figure in a base unit is said the way it is spoken, and follows what is typed.
+  {
+    const box = '[data-bind$=".l"], [data-bind$=".ld"], [data-bind$=".lm"]';
+    const was = await page.$eval(box, (e) => e.value);
+    const said = () => page.$eval(box, (e) => e.closest(".field").querySelector("[data-said]").textContent.trim());
+    await page.fill(box, "0.00833");
+    if ((await said()) !== "That is 8.33 mH.") failures.push(`${label}: an inductance of 0.00833 H is not said as 8.33 mH: "${await said()}"`);
+    await page.fill(box, "0.0002");
+    if ((await said()) !== "That is 200 µH.") failures.push(`${label}: the spoken inductance does not follow what is typed: "${await said()}"`);
+    await page.fill(box, was);
+  }
   await page.click('#panel .actions [data-step="2"]');
   await page.waitForTimeout(800);
   await measure(page, `${label}-3-supply`);
+  // The step asks for three figures and the cooling; the rest is assumed, said, and one press away.
+  const asked = await page.$$eval("#panel input:not(.sr), #panel select", (els) => els.filter((e) => e.offsetParent && !e.closest("details:not([open])")).length);
+  // In view: the bus, the point, the switching frequency, devices in parallel, the modulation
+  // and the cooling. Folded, and said on the fold: the kind of supply and the motor's temperature.
+  for (const bind of ["conditions.v_dc", "conditions.rpm", "conditions.torque", "conditions.f_khz", "conditions.parallel", "conditions.cooling"]) {
+    if (!(await page.$eval(`[data-bind="${bind}"]`, (e) => !!e.offsetParent && !e.closest("details:not([open])")).catch(() => false))) failures.push(`${label}: ${bind} is not in view on the supply step`);
+  }
+  if (asked > 9) failures.push(`${label}: the supply step asks for ${asked} things before anything is unfolded`);
+  if (!/power supply, which does not take braking energy back; motor at 25 °C/.test(await page.$eval('[data-fold="more-settings"] summary', (e) => e.textContent))) failures.push(`${label}: the settings left folded are not said on the fold's face`);
+  await unfold(page);
+  await measure(page, `${label}-3-supply-unfolded`);
+  // Cooling: each choice asks only for what it needs, and the one that needs a figure says so.
+  await page.selectOption('[data-bind="conditions.cooling"]', "heatsink");
+  await page.waitForSelector(".refusal");
+  await measure(page, `${label}-3-cooling-heatsink`);
+  if (!(await page.$('[data-bind="conditions.rth_sink"]')) || (await page.$('[data-bind="conditions.t_sink"]'))) failures.push(`${label}: a heatsink in air should ask for its K/W and the air, not its temperature`);
+  await page.fill('[data-bind="conditions.rth_sink"]', "2");
+  await page.waitForFunction(() => !document.querySelector(".refusal"), null, { timeout: 30000 });
+  await page.selectOption('[data-bind="conditions.cooling"]', "none");
+  await page.waitForSelector('[data-bind="conditions.rth_ja"]');
+  await page.fill('[data-bind="conditions.rth_ja"]', "40");
+  await page.waitForTimeout(800);
+  await measure(page, `${label}-3-cooling-none`);
+  // Soldered to one board: the board's area is asked for, and refused without.
+  await page.selectOption('[data-bind="conditions.cooling"]', "board");
+  await page.waitForSelector(".refusal");
+  if (!(await page.$('.field.is-wrong [data-bind="conditions.board_area"]'))) failures.push(`${label}: the missing board area is not the field marked`);
+  await page.fill('[data-bind="conditions.board_area"]', "150");
+  await page.waitForFunction(() => !document.querySelector(".refusal"), null, { timeout: 30000 });
+  await measure(page, `${label}-3-cooling-board`);
+  await page.selectOption('[data-bind="conditions.cooling"]', "held");
+  await page.waitForSelector('[data-bind="conditions.t_sink"]');
   await page.fill('[data-bind="conditions.rpm"]', "30000");
   await page.waitForSelector(".refusal");
   await measure(page, `${label}-3-refused`);
@@ -75,6 +170,11 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.click('#panel .actions [data-step="3"]');
   await page.waitForTimeout(1500);
   await measure(page, `${label}-4-load`);
+  // The load step is a choice and a picture; its figures and its motion are one press away.
+  const typed = await page.$$eval("#panel input:not(.sr):not([type=radio]):not([type=file]), #panel select", (els) => els.filter((e) => e.offsetParent && !e.closest("details:not([open])")).length);
+  if (typed > 0) failures.push(`${label}: the load step shows ${typed} figures to fill before anything is unfolded`);
+  await unfold(page);
+  await measure(page, `${label}-4-load-unfolded`);
   if (!(await page.$("[data-load]:checked"))) failures.push(`${label}: no kind of load is chosen for the motor on the load step`);
   // Every kind of load offered for this motor, on the widest screen: each has to draw and run.
   if (label === "desktop") {
@@ -154,6 +254,24 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.click('#rail [data-step="3"]');
   await page.click("[data-drop-mission]");
   await page.click('#rail [data-step="4"]');
+  // The motion is four drawings of one size, each with its axes named and its unit said.
+  {
+    await page.click('[data-tab="motion"]');
+    await page.waitForFunction(() => !document.querySelector(".waiting") && document.querySelectorAll("#tab-body svg.chart").length >= 4, null, { timeout: 120000 });
+    const charts = await page.$$eval("#tab-body svg.chart", (els) => els.map((e) => { const b = e.getBoundingClientRect(); return { size: `${Math.round(b.width)}x${Math.round(b.height)}`, axes: [...e.querySelectorAll("text.axis")].map((t) => t.textContent), ticks: e.querySelectorAll("text.tick").length }; }));
+    if (new Set(charts.map((c) => c.size)).size !== 1) failures.push(`${label}: the motion's charts are not one size: ${charts.map((c) => c.size).join(", ")}`);
+    for (const c of charts) if (c.axes.length < 2 || !c.axes.includes("time, s") || !c.axes.some((a) => /, (°C|rpm|N·m|A peak)$/.test(a)) || c.ticks < 4) failures.push(`${label}: a motion chart has no named axes with units, or no scale: ${JSON.stringify(c)}`);
+    await page.click('[data-tab="proposal"]');
+    await page.waitForSelector(".candidate", { timeout: 60000 });
+  }
+  // The result can be kept as a Markdown file, the same report the command line writes.
+  {
+    const [file] = await Promise.all([page.waitForEvent("download", { timeout: 120000 }), page.click("[data-report-md]")]);
+    const text = readFileSync(await file.path(), "utf8");
+    if (!file.suggestedFilename().endsWith("-report.md")) failures.push(`${label}: the Markdown report is saved under "${file.suggestedFilename()}"`);
+    for (const part of ["power-stage estimate", "## What was tested", "## Verdict at the design point", "## What to build", "## What this rests on"]) if (!text.includes(part)) failures.push(`${label}: the Markdown report has no "${part}"`);
+    await page.waitForSelector("[data-report-md]:not([disabled])");
+  }
   // The report is built for paper: with print styles on, only it is on the page.
   await page.click('[data-tab="proposal"]');
   await page.waitForSelector(".candidate", { timeout: 60000 });

@@ -2,7 +2,7 @@
 
 export type Level = "ok" | "caution" | "fail";
 export interface Check { level: Level; topic: string; message: string }
-export interface Field { key: string; label: string; unit: string; help: string; options: string[] | null }
+export interface Field { key: string; label: string; unit: string; help: string; options: string[] | null; required?: boolean }
 export interface MotorKind {
   family: string; label: string; about: string; start: Record<string, number>;
   values: Record<string, string | number>; fields: Field[];
@@ -18,6 +18,7 @@ export interface Setup {
   motors: Record<string, MotorKind>; pwm: string[]; load: Record<string, unknown>;
   profile: { name?: string; start_angle_deg?: number; segments: Segment[] };
   devices: DeviceSummary[]; can_read: boolean;
+  typed: { technologies: string[]; outlines: string[]; fields: { key: string; label: string; unit: string; required: boolean; help: string }[] };
 }
 export interface Segment { duration: number; speed_start: number; speed_end: number }
 export interface Role { name: string; count: number; forward: number; reverse: number; switching: number }
@@ -33,11 +34,11 @@ export interface Losses {
 export interface Position extends Losses { name: string; count: number; tj: number; tj_switch: number; tj_diode: number }
 export interface Result {
   loss: number; conduction: number; switching: number; efficiency: number | null; tj_peak: number;
-  tj_range: [number, number] | null; tj_max: number; t_case: number; validity: string;
+  tj_range: [number, number] | null; tj_max: number; t_case: number; t_sink?: number | null; validity: string;
   notes: string[]; limits: string[]; assumptions: string[]; warnings: string[];
   hottest: Losses; positions: Position[];
 }
-export interface GateUsed { kind: "chosen" | "given" | "datasheet" | "built in"; v_drive: number | null; rg_on: number | null; rg_off: number | null; lines: string[] }
+export interface GateUsed { kind: "chosen" | "given" | "datasheet" | "built in"; v_drive: number | null; rg_on: number | null; rg_off: number | null; lines: string[]; t_dead?: number | null }
 /** One PWM period of the hottest switch at the instant it works hardest. */
 export interface SwitchingPeriod { current: number; duty: number; p_on: number; e_on: number; e_off: number; f_sw: number; position: string }
 export interface Candidate {
@@ -54,7 +55,7 @@ export interface Candidate {
 /** level: losses closer than this share of the lowest are not told apart. */
 export interface Proposal { candidates: Candidate[]; explain: string[]; level: number }
 export interface Cycle {
-  time: number[]; tj: (number | null)[]; steady: (number | null)[]; t_sink: number[];
+  time: number[]; tj: (number | null)[]; steady: (number | null)[]; t_sink: number[]; sink_name?: string;
   rpm: number[]; torque: number[]; p_stage: (number | null)[]; p_dc: (number | null)[];
   summary: Record<string, number | null>; checks: Check[];
   i_peak: (number | null)[];
@@ -97,6 +98,20 @@ function storedDevices(): { name: string; text: string }[] {
     return JSON.parse(localStorage.getItem(STORED) ?? "[]");
   } catch {
     return [];
+  }
+}
+
+/**
+ * The body of an answer. A request can be superseded after its status has arrived and
+ * before its body has: reading the body then fails, and that is a superseded request, not
+ * an answer. It must never be handed on as one.
+ */
+export async function bodyOf(response: { json: () => Promise<any> }, signal?: AbortSignal): Promise<any> {
+  try {
+    return await response.json();
+  } catch {
+    if (signal?.aborted) throw new DOMException("superseded", "AbortError");
+    throw new Error("the engine sent something unreadable");
   }
 }
 
@@ -149,8 +164,7 @@ async function send<T>(route: string, data: unknown, signal?: AbortSignal, metho
     const response = await fetch(route.slice(1), method === "GET" ? { signal } : {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data), signal,
     });
-    const body = await response.json().catch(() => ({ error: "the engine sent something unreadable" }));
-    return answerOf<T>(response.status, body);
+    return answerOf<T>(response.status, await bodyOf(response, signal));
   }
   await ready;
   if (signal?.aborted) throw new DOMException("superseded", "AbortError");
@@ -168,14 +182,26 @@ async function send<T>(route: string, data: unknown, signal?: AbortSignal, metho
  * settles when the engine can answer. `onProgress` hears what the engine is doing meanwhile.
  */
 export async function boot(onProgress: (text: string) => void): Promise<{ mode: Mode; setup: Setup; ready: Promise<void> }> {
+  // A small file says where the engine is. Asking a server that is not there would be a
+  // failed request on every visit to the hosted page; a build without the file (the
+  // development server) is asked the old way.
+  let server: boolean | null = null;
   try {
-    const response = await fetch("api/setup");
-    if (response.ok && (response.headers.get("Content-Type") ?? "").includes("json")) {
-      mode = "server";
-      return { mode, setup: (await response.json()) as Setup, ready };
-    }
+    const said = await fetch("engine/mode.json");
+    if (said.ok) server = Boolean((await said.json()).server);
   } catch {
-    /* no server here: the engine runs in this page */
+    /* no such file: ask the server itself */
+  }
+  if (server !== false) {
+    try {
+      const response = await fetch("api/setup");
+      if (response.ok && (response.headers.get("Content-Type") ?? "").includes("json")) {
+        mode = "server";
+        return { mode, setup: (await response.json()) as Setup, ready };
+      }
+    } catch {
+      /* no server here: the engine runs in this page */
+    }
   }
   mode = "browser";
   const setup = (await (await fetch("engine/setup.json")).json()) as Setup;
@@ -213,6 +239,15 @@ export const api = {
     }
     return answer;
   },
+  /** A part typed in from its datasheet figures. The device file it makes is handed back. */
+  addTyped: async (figures: Record<string, string>) => {
+    const answer = await send<{ device: DeviceSummary; name: string; text: string }>("/api/typed", { figures });
+    if (mode === "browser") {
+      const kept = storedDevices().filter((d) => d.name !== answer.name);
+      try { localStorage.setItem(STORED, JSON.stringify([...kept, { name: answer.name, text: answer.text }])); } catch { /* it lasts this visit only */ }
+    }
+    return answer;
+  },
   /** Put the user's own double-pulse measurements in place of a device's datasheet switching energy. */
   addMeasurement: async (deviceId: string, file: File) => {
     const answer = await send<{ device: DeviceSummary }>("/api/measure", { device: deviceId, name: file.name, text: await file.text() });
@@ -223,10 +258,13 @@ export const api = {
   capability: (d: unknown) => send<Capability>("/api/capability", d),
   largest: (d: unknown) => send<Largest>("/api/largest", d),
   suggest: (device: string) => send<Suggest>("/api/suggest", { device }),
+  /** The whole design as a report in Markdown. */
+  report: (d: unknown) => send<{ markdown: string }>("/api/report", d),
+  /** Whether a motor as described fits a device, before any design point is set. */
+  fit: (d: unknown) => send<{ level: string; lines: { level: string; text: string }[] }>("/api/fit", d),
   reading: (id: string) => send<Reading>(`/api/device/${encodeURIComponent(id)}`, null, undefined, "GET"),
   read: async (file: File) => {
     const response = await fetch(`api/read?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
-    const body = await response.json().catch(() => ({ error: "the engine sent something unreadable" }));
-    return answerOf<ReadOutcome>(response.status, body);
+    return answerOf<ReadOutcome>(response.status, await bodyOf(response));
   },
 };

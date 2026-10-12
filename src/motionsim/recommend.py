@@ -54,16 +54,35 @@ def turn_off_time(device: Device, v_drive: float, rg_off: float) -> tuple[float,
     return delay, rise, fall
 
 
+# Dead time, as drives are built. The margin is the usual one on the sum of the delays; a
+# hot transistor switches about a tenth slower than the 25 °C figures say; and the two
+# channels of a gate driver do not answer at the same instant: half-bridge drivers on a
+# bootstrap supply are matched to within 35 to 60 ns at worst, the better ones to 10 or 20,
+# those made for GaN to a few. Below the floor no common driver or controller is set.
+DEAD_MARGIN = 1.2
+HOT_SWITCHING = 1.1
+GAN_MISMATCH, USUAL_MISMATCH = 10e-9, 50e-9  # s
+GAN_FLOOR, DEAD_FLOOR = 20e-9, 100e-9  # s
+
+
+def _is_gan(device: Device) -> bool:
+    return "gan" in device.technology.lower()
+
+
+COMMON_FIRMWARE = 500e-9  # s: open motor-control firmware runs 300 to 800 ns by default
+
+
 def dead_time(
-    device: Device, op: OperatingPoint, *, margin: float = 1.5, igbt_margin: float = 2.0,
-    driver_mismatch: float = 0.0,
+    device: Device, op: OperatingPoint, *, margin: float = DEAD_MARGIN, igbt_margin: float = 2.0,
+    driver_mismatch: float | None = None,
 ) -> Recommendation:
     """Shortest safe time between one switch of a leg turning off and the other turning on.
 
-    margin covers part spread and temperature. An IGBT gets a larger one,
-    because its current has a tail that the tabulated fall time leaves out.
-    driver_mismatch is the difference in propagation delay between the two
-    gate-driver channels, which adds directly.
+    The delays are taken a tenth longer for a hot part, the mismatch between the two
+    gate-driver channels is added, and the margin covers part spread. An IGBT gets a
+    larger margin, because its current has a tail that the tabulated fall time leaves out.
+    driver_mismatch is the difference in propagation delay between the two gate-driver
+    channels; left out, the usual figure for the technology is taken and said.
     """
     topic = "dead time"
     if device.package.integrated_driver:
@@ -108,16 +127,19 @@ def dead_time(
             if sw.charge is not None else "a turn-off delay and fall time in the device model"
         )
         return Recommendation(topic, lines=[f"cannot be worked out without {missing}"])
-    value = factor * needed + driver_mismatch
+    assumed = driver_mismatch is None
+    mismatch = (GAN_MISMATCH if _is_gan(device) else USUAL_MISMATCH) if assumed else driver_mismatch
+    floor = GAN_FLOOR if _is_gan(device) else DEAD_FLOOR
+    worked = factor * (HOT_SWITCHING * needed + mismatch)
+    value = max(worked, floor)
     lines.append(
-        f"with a margin of {factor:g} times"
-        + (f" and {driver_mismatch * 1e9:.0f} ns of driver mismatch" if driver_mismatch else "")
-        + f": at least {value * 1e9:.0f} ns"
+        f"a tenth longer when hot, plus {mismatch * 1e9:.0f} ns for the two gate-driver channels not "
+        f"answering together ({'usual for a half-bridge driver; give yours to tighten this' if assumed else 'as you gave'}), "
+        f"with a margin of {factor:g} times: {worked * 1e9:.0f} ns"
     )
-    if not driver_mismatch:
-        lines.append(
-            "add the difference in propagation delay between your two gate-driver channels"
-        )
+    if value > worked:
+        lines.append(f"no shorter than {floor * 1e9:.0f} ns, the least a common driver or controller is set to")
+    lines.append(f"at least {value * 1e9:.0f} ns")
     if op.t_dead and op.t_dead < value:
         lines.append(
             f"the dead time given, {op.t_dead * 1e9:.0f} ns, is shorter than this: both switches "
@@ -241,9 +263,35 @@ class GateDrive:
     rg_on: float | None = None
     rg_off: float | None = None
     lines: list[str] = field(default_factory=list)
+    t_dead: float | None = None  # s, where the tool chose it
 
 
 def choose_gate_drive(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive:
+    """The gate drive, and with it the dead time where the user gave none.
+
+    A half-bridge of transistors cannot run without a dead time, and its loss is part of
+    the result. Left open, it is the shortest safe one for the gate drive in use (see
+    dead_time), so that the loss is counted and not left as a caution on every result.
+    Where none can be worked out it stays open, and the checks say so.
+    """
+    from dataclasses import replace
+
+    gate = _choose_gate(device, op, i_peak)
+    if device.switch.kind is not ChipKind.mosfet or gate.op.t_dead > 0:
+        return gate
+    found = dead_time(device, gate.op).value.get("t_dead")
+    if not found:
+        return gate
+    found = _round_up(found)  # never under the rule's own least
+    line = (
+        f"dead time taken as {found * 1e9:.0f} ns, the shortest a drive with this gate drive would "
+        "be set to: its loss is counted. Much firmware runs 300 to 800 ns by default; give yours "
+        "if it is longer"
+    )
+    return replace(gate, op=replace(gate.op, t_dead=found), t_dead=found, lines=[*gate.lines, line])
+
+
+def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive:
     """The conditions with the gate drive filled in where the user left it open.
 
     A device whose switching loss is estimated from its charges needs a gate voltage

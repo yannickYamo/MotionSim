@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import IntEnum
 
+from motionsim.cooling import BOARD_LIMIT
 from motionsim.device.schema import ChipKind, Device
 from motionsim.engine.limits import hottest
 from motionsim.engine.solver import OperatingPoint, Result, Validity
@@ -115,7 +116,9 @@ def check(
 
     peak = hottest(result)
     low, high = result.tj_peak_range or (peak, peak)
-    spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions)" if result.tj_peak_range else ""
+    # A range whose ends read the same says nothing, and is left out.
+    wide = bool(result.tj_peak_range) and f"{low:.0f}" != f"{high:.0f}"
+    spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions)" if wide else ""
     if low > r.tj_max:
         out.append(Check(
             Level.fail, "temperature",
@@ -184,6 +187,12 @@ def check(
     else:
         out.append(Check(Level.ok, "data", "inside the datasheet's own curves"))
 
+    if op.rth_board is not None and result.t_case > BOARD_LIMIT:
+        out.append(Check(
+            Level.caution, "board",
+            f"the board under the hottest package reaches {result.t_case:.0f} °C: ordinary board material "
+            f"is rated to about {BOARD_LIMIT:.0f} °C. Give each package more copper, or a heatsink",
+        ))
     if device.switch.kind is ChipKind.mosfet and op.t_dead == 0:
         out.append(Check(Level.caution, "dead time", "no dead time given, so its loss is not counted; every half-bridge needs one"))
     if not result.converged:

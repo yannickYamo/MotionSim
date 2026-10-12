@@ -255,9 +255,32 @@ Neither has an external reference.
 
 - A motor turning at 1.5 rpm, followed through three ten-second output periods in time, reaches the peak that the frequency-domain periodic solution gives, within 0.5 °C. The two share the loss waveform and nothing else.
 
-## Level D: still empty
+## Level D: one public measurement, and what it does and does not show
 
-`motionsim validate` takes a file of measurements. None exists yet.
+A measured inverter loss, from a published reference design: Texas Instruments TIDA-00364, design guide TIDUCB6, tables 7 and 8. A 48 V three-phase inverter with five CSD19536KTT in parallel at each switch (30 in all) on a heatsink, sinusoidal PWM into an induction motor on a dynamometer, loss measured with a power analyzer from DC input to motor terminals at 8 and at 10 kHz, from 27 to 131 A rms.
+
+The model: the CSD19536KCS as read from its datasheet (the same die in another package), with its on-resistance scaled to the 2 mΩ the guide gives for the KTT; five in parallel; 12 V gate drive; turn-on through the guide's shared 24 Ω and 8.2 Ω a device, turn-off through 8.2 Ω; modulation index and power factor worked out from the table's own voltage, current and power at each row. The guide does not give the heatsink temperature or the dead time, so the model was run across 30 to 60 °C and 100 to 500 ns; that moves the result by 4% either way.
+
+| Phase current | Measured, 8 kHz | Model | Model over measured | Measured, 10 kHz | Model | Model over measured |
+|---|---|---|---|---|---|---|
+| 27 A | 12.1 W | 10.1 W | 0.84 | 15.3 W | 12.4 W | 0.81 |
+| 40 A | 17.9 W | 15.3 W | 0.85 | 21.1 W | 18.9 W | 0.90 |
+| 54 A | 25.1 W | 21.1 W | 0.84 | 29.1 W | 26.1 W | 0.90 |
+| 71 A | 35.0 W | 28.8 W | 0.82 | 40.8 W | 35.7 W | 0.88 |
+| 93 A | 51.3 W | 39.3 W | 0.77 | 59.9 W | 49.2 W | 0.82 |
+| 131 A | 92.4 W | 63.3 W | 0.69 | 99.8 W | 73.2 W | 0.73 |
+
+(The two frequencies were measured at slightly different currents; the row label is their mean.)
+
+What it shows:
+
+- The model is 10 to 31% below the measured loss, and further below as the current rises.
+- The measurement is of the whole inverter: board copper, connectors and snubbers are in it, and they are not in the model. The part of the measured loss that does not change with frequency is about three times the transistors' own conduction loss at 131 A, and grows with the square of the current: about 0.8 mΩ a phase of resistance outside the transistors would account for it. The guide gives no figure to check that against, so the conduction model is neither confirmed nor refuted by this.
+- The part that changes with frequency can be separated, from the two rows measured at the same current. At 27 A the measured loss rises by 1.6 W for each kHz and the model's by 1.1 W; at 131 A, 3.7 W against 4.8 W. So the switching estimate from gate and output charge is about 30% low at low current and 30% high at high current on this board. The snubbers, which lose the same at any current, are part of the first.
+
+What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same source's companion (TIDA-010056, TIDUEQ9, the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
+
+`motionsim validate` takes a file of measurements, for anyone with their own.
 
 ## Level C: figures stored as images, against the same datasheet's tables
 
@@ -376,3 +399,36 @@ A comparison has to put parts in the right order, not only give each a plausible
 In `tests/test_limits.py`: what the motor and the stage note about their own model does not make a data caution; a loss term outside its data does, once it could move the stage's loss by 5%; table points and an estimate from charge are a stated footing.
 
 No ranking has been checked against measured parts.
+
+## A part typed in, a dead time left open, cooling by air
+
+Level A, in `tests/test_entry.py`:
+
+- A transistor typed in holds each figure as typed, in SI units, and loses in conduction what its typed resistance gives in closed form, within 2%.
+- Eight slips are each refused at the figure they sit in: an on-resistance a thousand times too large, a plateau below the threshold, a hot resistance below the cold one, a junction-to-ambient figure given as junction-to-case, a figure missing or not a number, an output charge with no voltage, a part with no name.
+- A dead time left open is the one the dead-time rule gives for the gate drive in use, its loss is counted, and the caution for a missing dead time is gone; a dead time the user gave is left alone.
+- The dead-time rule itself, in `tests/test_recommend.py`: the three intervals of turn-off from the gate charges, a tenth longer, plus the mismatch between driver channels, times 1.2, and never under the floor. The figures behind it are published ones: gate-driver delay matching from 4 to 60 ns across six common half-bridge drivers, a tenth longer switching for 100 K, and defaults of 100 to 800 ns in open motor-control firmware and driver chips.
+- Copper and a shared board: the pad relation reproduces the figure printed for a TO-263 and agrees with the one printed for a DPAK within 3% as a ratio from 0.5 to 25 cm²; a 100 cm² board is 5 K/W to still air; on a shared board the hottest case sits at the air plus its own loss through its own path plus the others' loss through the board, and never under the board's own rise; past 120 °C the checks say so. Against a published rule of thumb (15.3 cm² of two-sided board a watt for a 40 K rise), the board term alone gives 33 K for the same area: the same order, a little cooler, with each part's own rise on top.
+- A request superseded after its status arrived and before its body did is a superseded request, not an answer (`web/tests/api.test.ts`).
+- A heatsink in air settles at the air's temperature plus its resistance times the stage's loss, and the junction is the same as with a heatsink held at that temperature. Two devices in parallel load it with both.
+- With no heatsink the case of each package sits at the air's temperature plus its own resistance to air times its own loss.
+- Through the page: each kind of cooling asks for the figure it needs and refuses without it, and the motion follows the same cooling.
+
+One real 100 V transistor, typed in with the same table figures its read model holds, set beside that read model on a 48 V motor at 20 kHz: 1.98 W typed against 2.00 W read at 1 N·m, and 19.7 W against 19.8 W at 4 N·m. The read model has the body diode's curve and the output charge against voltage; the typed one has one figure for each, and at this voltage that costs under 1%. It says nothing about how well either matches the part.
+
+## The tests, tested
+
+The cooling, dead-time and typed-part code is held by tests whose expected values are worked out apart from the code: closed forms, literals from the published figures, and one path through the engine checked against another. Among them (`tests/test_entry.py`, `tests/test_values.py`):
+
+- A point held as a motion ends within 1 K of the steady solution, for seven combinations of motor and cooling: at standstill, on an H-bridge, on a shared board, on a heatsink in air, with devices in parallel. The two are worked out by different code.
+- A motion that cannot settle in air says so.
+- The junction-to-air figure the heatsink advice gives for doing without a heatsink, fed back as the cooling, puts the hottest junction on the limit, running and held still, for a permanent-magnet, a six-step and a brushed motor; a figure a fifth larger passes it.
+- The dead time chosen is never under the rule's own least. Its loss is the body diode's voltage times the current it carries for both edges of each period, within 1%.
+- A typed figure outside what a power transistor can have is refused with its unit; the page and the command line give the same loss for the same part with the dead time left open.
+- Whether a motor fits a part, before any design point: the current it draws at its limit against the part's rating, and the speed it reaches against the speed asked.
+
+How much the tests would notice was measured: 100 single faults were put into this code one at a time (a constant changed, a term dropped, a check removed) and the suite run on each. It catches all 100. This covers the code for cooling, dead time, typed parts and their paths through the page and the command line; the older engine has closed-form tests and has not been put through the same.
+
+A whole design run from one file (`motionsim design run`) gives the figures the page's own steps give, asked one by one (`tests/test_design.py`).
+
+The page in its hosted form scores 100 for accessibility, best practices and search in Lighthouse at desk and phone widths, with no layout shift as it loads. The tour fails on a control with no name, a request that fails while the page loads, a layout shift at load, a sentence squeezed beside something else, a refusal shown away from its figure, a chart without named axes and units, or drawing text under 9.5 px.

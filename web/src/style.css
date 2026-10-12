@@ -340,15 +340,15 @@ button.link:hover { color: var(--ink); }
 
 .explain { margin: 18px 0 20px; color: var(--ink-2); max-width: 68ch; }
 .explain p:first-child { color: var(--ink); font-size: 1.05rem; }
-.cand-head, .candidate summary { display: grid; grid-template-columns: 26px minmax(0, 1fr) 70px 70px 76px 104px; align-items: center; gap: 10px; }
+.cand-head, .candidate > summary { display: grid; grid-template-columns: 26px minmax(0, 1fr) 70px 70px 76px 104px; align-items: center; gap: 10px; }
 .cell-label { display: none; color: var(--ink-3); font-size: 0.86rem; }
 .cand-head { padding: 0 12px 6px; color: var(--ink-3); font-size: 0.86rem; }
 .candidate { border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 8px; transition: border-color 0.2s; }
 .candidate[open] { border-color: var(--line-strong); background: var(--surface); }
 .candidate:first-of-type:not(.fail) { border-color: var(--orange); background: color-mix(in oklab, var(--orange) 9%, var(--ground)); }
-.candidate summary { min-height: 56px; padding: 8px 12px; cursor: pointer; list-style: none; }
-.candidate summary::-webkit-details-marker { display: none; }
-.candidate summary:hover { background: var(--surface); }
+.candidate > summary { min-height: 56px; padding: 8px 12px; cursor: pointer; list-style: none; }
+.candidate > summary::-webkit-details-marker { display: none; }
+.candidate > summary:hover { background: var(--surface); }
 .rank { display: grid; place-items: center; width: 24px; height: 24px; border: 1px solid var(--line-strong); border-radius: 50%; font-size: 0.85rem; color: var(--ink-2); }
 .candidate:first-of-type:not(.fail) .rank { background: var(--orange); border-color: var(--orange); color: var(--on-orange); font-weight: 600; }
 .cand-name { display: grid; font-weight: 500; min-width: 0; overflow-wrap: anywhere; }
@@ -398,9 +398,16 @@ table.data td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var
 .chart .grid { stroke: var(--line); stroke-width: 1; }
 .chart .plot { fill: none; stroke: var(--line-strong); stroke-width: 1; }
 .chart text { fill: var(--ink-3); font: 400 12.5px "Funnel Sans", sans-serif; font-variant-numeric: tabular-nums; }
+/* Text in a drawing is sized in the drawing's own units, so it shrinks with the drawing.
+   Where a drawing is shown small its text is set larger, to stay near 12.5px on the screen. */
 @container panel (max-width: 430px) {
-  .chart text, .chart.map text.cell-text { font-size: 15.5px; }
+  .chart text { font-size: 19px; }
+  .chart.map text.cell-text { font-size: 15.5px; }
   .chart.small text { font-size: 12.5px; }
+}
+.read-item { container-type: inline-size; }
+@container (max-width: 330px) {
+  .chart.small text { font-size: 15.5px; }
 }
 .chart .axis { fill: var(--ink-2); }
 .chart .tick.warn { fill: var(--fail); }
@@ -481,13 +488,13 @@ table.data td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var
 }
 @container panel (max-width: 620px) {
   .cand-head { display: none; }
-  .candidate summary { grid-template-columns: 26px repeat(3, max-content) 1fr; column-gap: 14px; row-gap: 4px; padding: 12px; }
-  .candidate summary .cand-name { grid-column: 2 / -1; }
-  .candidate summary .num { grid-row: 2; text-align: left; }
-  .candidate summary .loss { grid-column: 2; }
-  .candidate summary .junction { grid-column: 3; }
-  .candidate summary .still { grid-column: 4; }
-  .candidate summary .verdict { grid-row: 3; grid-column: 2 / -1; }
+  .candidate > summary { grid-template-columns: 26px repeat(3, max-content) 1fr; column-gap: 14px; row-gap: 4px; padding: 12px; }
+  .candidate > summary .cand-name { grid-column: 2 / -1; }
+  .candidate > summary .num { grid-row: 2; text-align: left; }
+  .candidate > summary .loss { grid-column: 2; }
+  .candidate > summary .junction { grid-column: 3; }
+  .candidate > summary .still { grid-column: 4; }
+  .candidate > summary .verdict { grid-row: 3; grid-column: 2 / -1; }
   .cell-label { display: inline; }
   .cand-body { padding-left: 14px; }
 }
@@ -540,7 +547,9 @@ table.data td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var
 .chart .area.switching { fill: var(--orange); stroke: none; }
 .loads .family { margin-top: 0; }
 .pwm-view { container-type: inline-size; }
+.chart.pwm text { font-size: 14px; }
 @container (max-width: 470px) { .chart.pwm text { font-size: 17px; } }
+@container (max-width: 370px) { .chart.pwm text { font-size: 20px; } }
 
 /* ---------- comparing devices, or loads ---------- */
 .compare-bar { margin: 12px 0 2px; padding: 12px 14px; border: 1px solid var(--line); background: var(--surface); display: grid; gap: 8px; }
@@ -644,3 +653,70 @@ label.add-part:focus-within { outline: 2px solid var(--orange); outline-offset: 
 .link-label { display: inline-flex; align-items: center; min-height: 32px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link-label:focus-within { outline: 2px solid var(--orange); outline-offset: 2px; }
 button.link:disabled { opacity: 0.45; cursor: default; }
+
+/* A typed figure that cannot be right: the reason sits under the figure itself. */
+.field .said-wrong { color: var(--fail); }
+.read-result a.link { display: inline-flex; align-items: center; min-height: 24px; }
+.read-result:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+/* A fold's face: its glyph, its title and the mark that it opens on one line; what it holds
+   on the line under the title, at the full width, however long that is. The description is
+   never set in whatever room the title leaves beside it. */
+.more > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 10px; row-gap: 2px; align-items: center; padding: 10px 0; }
+.more > summary > .icon { grid-column: 1; grid-row: 1; }
+.more > summary::after { grid-column: 3; grid-row: 1; margin-left: 0; margin-right: 4px; }
+.more > summary > .quiet { grid-column: 2 / 4; grid-row: 2; margin-left: 0; min-width: 0; max-width: 62ch; line-height: 1.4; overflow-wrap: break-word; }
+.cand-body .more { margin-top: 10px; }
+.cand-body .more:first-child { border-top: 0; }
+
+/* What it can drive: a fact that is a sentence takes the row; captions keep off the drawing. */
+.facts .wide { grid-column: 1 / -1; }
+.facts .wide dd.words { max-width: 62ch; }
+.after-facts { margin-top: 12px; }
+.when-narrow + .caption, .chart + .caption { margin-top: 10px; max-width: 68ch; }
+/* The main drawing of a tab is drawn twice, for a wide panel and for a narrow one, and the
+   one that fits is shown: a wide drawing squeezed into a narrow panel is too small to read. */
+.when-narrow { display: none; }
+@container panel (max-width: 500px) {
+  .when-wide { display: none; }
+  .when-narrow { display: block; }
+}
+/* Two facts to a row: the odd one before a sentence takes its row, so no rule is left half drawn. */
+@container panel (max-width: 430px) {
+  .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .facts div:nth-child(odd):has(+ .wide) { grid-column: 1 / -1; }
+}
+.chart .mark-label { fill: var(--ink-2); paint-order: stroke; stroke: var(--ground); stroke-width: 4px; stroke-linejoin: round; }
+#tab-body h4 { margin-top: 28px; }
+.read-grid .read-item h4 { margin-top: 22px; }
+
+/* A fold followed by a group of choices keeps its distance from it. */
+.more + .kinds, .more + fieldset { margin-top: 20px; }
+/* The cooling is a choice between sentences: it takes the row, so none of them is cut short. */
+.fields .field:has(> .control > select[data-bind="conditions.cooling"]) { grid-column: 1 / -1; }
+
+/* The motor step: what the engine says of this motor on this part. A misfit is said in a
+   block of its own, in the caution colour, where the figures were typed. */
+#motor-fit { margin-top: 6px; }
+.fit-raised { margin-top: 18px; padding: 14px 16px; border: 1px solid var(--caution); border-radius: var(--radius); background: color-mix(in oklab, var(--caution) 8%, var(--ground)); }
+.fit-raised h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 1rem; color: var(--ink); }
+.fit-raised h3 .icon { color: var(--caution); }
+.fit-raised .fact { margin-top: 8px; color: var(--ink); }
+.fit-raised .fact > .icon { display: none; }
+.fact.fits .icon { color: var(--ok, var(--ink-3)); }
+
+/* The two ways to keep a result sit together at the end of the row. */
+.save-as { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+
+/* The switching periods: the heading and its zoom on one line, then the sentence, the
+   drawing, its key and its caption, each with air above it. */
+.pwm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 4px; }
+.pwm-head h3 { margin: 0; }
+.pwm-head .zoom { display: flex; gap: 6px; }
+.pwm-view .pwm-head + p { margin-top: 8px; }
+.pwm-view .chart { margin-top: 16px; }
+.pwm-view .legend.inline { margin-top: 12px; gap: 8px 22px; }
+.pwm-view .caption { margin-top: 12px; max-width: 68ch; }
+/* Charts set one above another: the same air between each, and under a chart's key. */
+#tab-body .chart + .chart, #tab-body .legend.inline + .chart { margin-top: 26px; }
+.chart .zero { stroke: var(--line-strong); stroke-width: 1; }

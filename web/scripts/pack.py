@@ -40,6 +40,9 @@ def main() -> None:
         setup = page.setup(page.Workspace(Path(folder)))
     setup["can_read"] = False
     (OUT / "setup.json").write_text(json.dumps(setup), encoding="utf-8")
+    # Served as it is, the page has no engine behind it; `motionsim serve` answers this
+    # address itself and says so.
+    (OUT / "mode.json").write_text(json.dumps({"server": False}), encoding="utf-8")
     print(f"engine packed: {len(files)} files, {(OUT / 'motionsim.zip').stat().st_size // 1024} kB")
 
 

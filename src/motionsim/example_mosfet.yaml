@@ -1,0 +1,80 @@
+# Synthetic device for trying the tool. Not a real part: the figures are made up to be
+# plausible for a 100 V, 100 A silicon MOSFET in a TO-220, as used on batteries and in robots.
+schema_version: 1
+vendor: synthetic
+part_number: MOSFET-100V-100A
+technology: Si MOSFET
+ratings:
+  v_max: 100.0
+  i_nominal: 100.0
+  tj_max: 175.0
+package:
+  topology: discrete
+  construction: unknown
+  outline: TO-220
+  interface: grease
+  integrated_driver: false
+switch:
+  kind: mosfet
+  conduction:
+    curves:
+    - tj: 25.0
+      current:
+      - 0.0
+      - 100.0
+      value:
+      - 0.0
+      - 0.4
+    - tj: 125.0
+      current:
+      - 0.0
+      - 100.0
+      value:
+      - 0.0
+      - 0.72
+    basis: curve
+    source:
+      kind: synthetic
+      note: 'made up: on-resistance from the tables: 4 mΩ at 25 °C, 7.2 mΩ at 125
+        °C'
+      status: unverified
+  reverse:
+    curves:
+    - tj: 25.0
+      current:
+      - 0.0
+      - 100.0
+      value:
+      - 0.9
+      - 0.9
+    basis: point
+    assumption: reverse voltage taken as constant at its one tabulated point; it rises
+      with current, so dead-time loss is underestimated
+    source:
+      kind: synthetic
+      note: 'made up: 0.9 V at 100 A, gate off'
+      status: unverified
+  charge:
+    q_gs: 2.0e-08
+    q_gd: 1.4e-08
+    q_g_th: 1.304e-08
+    v_plateau: 4.6
+    q_oss: 1.5e-07
+    v_ref: 50.0
+    q_oss_scaling: sqrt
+    q_rr: 1.2e-07
+    q_rr_current: 50.0
+    assumption: gate charge at threshold not tabulated; taken as gate-source charge
+      times threshold voltage over plateau voltage
+    source:
+      kind: synthetic
+      note: 'made up: gate and output charges from the tables'
+      status: unverified
+  thermal:
+    r:
+    - 0.6
+    source:
+      kind: synthetic
+      note: 'made up: junction-to-case resistance only (0.6 K/W); no transient data'
+      status: unverified
+  rg_internal: 1.2

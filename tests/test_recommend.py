@@ -33,7 +33,17 @@ def test_dead_time_from_gate_charge_is_the_three_intervals_of_turn_off() -> None
         + op.rg_off * c_iss * log(c.v_plateau / v_th)
     )
     r = recommend.dead_time(device, op, driver_mismatch=20e-9)
-    assert r.value["t_dead"] == pytest.approx(1.5 * expected + 20e-9)
+    # A tenth longer when hot, the mismatch given, the margin on the sum, and never under the floor.
+    gan = "gan" in device.technology.lower()
+    floor = 20e-9 if gan else 100e-9  # written out: the test must not read the answer from the code
+    assert r.value["t_dead"] == pytest.approx(max(1.2 * (1.1 * expected + 20e-9), floor))
+    usual = recommend.dead_time(device, op)
+    mismatch = 10e-9 if gan else 50e-9
+    assert usual.value["t_dead"] == pytest.approx(max(1.2 * (1.1 * expected + mismatch), floor))
+    assert any("usual for a half-bridge driver" in text for text in usual.lines)
+    # Silicon is held to the floor no common driver goes under; GaN drivers go lower.
+    silicon = device.model_copy(update={"technology": "Si MOSFET"})
+    assert recommend.dead_time(silicon, op).value["t_dead"] >= 100e-9
 
 
 def test_dead_time_for_an_igbt_uses_tabulated_times_with_a_larger_margin() -> None:
@@ -42,7 +52,7 @@ def test_dead_time_for_an_igbt_uses_tabulated_times_with_a_larger_margin() -> No
     assert recommend.dead_time(device, op).value == {}  # nothing to work from
     device.timing = SwitchingTimes(t_d_off=150e-9, t_f=50e-9, source=Source(kind="synthetic"))
     r = recommend.dead_time(device, op)
-    assert r.value["t_dead"] == pytest.approx(2.0 * 200e-9)
+    assert r.value["t_dead"] == pytest.approx(2.0 * (1.1 * 200e-9 + 50e-9))
     assert any("tail" in text for text in r.lines)
 
 

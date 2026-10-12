@@ -29,6 +29,7 @@ from motionsim.page import (  # noqa: F401  (re-exported: the server is the page
     Workspace,
     add_device,
     add_measurement,
+    add_typed,
     call,
     curves,
     cycle,
@@ -142,6 +143,8 @@ def make_handler(workspace: Workspace):
             if not self._local():
                 return self._json({"error": "this address answers only its own page"}, 403)
             path = self.path.split("?")[0]
+            if path == "/engine/mode.json":  # the page asks where its engine is: here
+                return self._json({"server": True})
             if path == "/api/setup":
                 return self._guarded(lambda: setup(workspace))
             if path.startswith("/api/device/"):
@@ -167,7 +170,7 @@ def make_handler(workspace: Workspace):
                 from urllib.parse import unquote
 
                 return self._guarded(lambda: read_datasheet(unquote(name), body, workspace))
-            if path not in ROUTES and path not in ("/api/device", "/api/measure"):
+            if path not in ROUTES and path not in ("/api/device", "/api/measure", "/api/typed"):
                 return self._json({"error": "no such address"}, 404)
             try:
                 data = json.loads(body or b"{}")
@@ -175,6 +178,8 @@ def make_handler(workspace: Workspace):
                 return self._json({"error": "the request was not JSON"}, 400)
             if path == "/api/device":
                 return self._guarded(lambda: add_device(data.get("name", ""), data.get("text", ""), workspace))
+            if path == "/api/typed":
+                return self._guarded(lambda: add_typed(data.get("figures"), workspace))
             if path == "/api/measure":
                 return self._guarded(lambda: add_measurement(
                     data.get("device", ""), data.get("name", ""), data.get("text", ""), workspace))

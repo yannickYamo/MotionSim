@@ -22,14 +22,96 @@ def _pwm(args: argparse.Namespace) -> Pwm:
     return Pwm.sine
 
 
-def _operating_point(args: argparse.Namespace, i_rms: float) -> OperatingPoint:
+def _cooling(args: argparse.Namespace) -> dict:
+    """The cooling asked for: a heatsink held at --tsink, or cooling to air at --tair
+    through a heatsink (--rth-heatsink) or with none (--rth-ja, completed for a device by
+    _in_free_air)."""
+    get = lambda name: getattr(args, name, None)  # noqa: E731
+    free = _no_heatsink_asked(args)
+    in_air = get("rth_heatsink") is not None or free
+    if get("rth_heatsink") is not None and free:
+        raise SystemExit("give --rth-heatsink, or one of --rth-ja, --no-heatsink and --board-area, not both: "
+                         "the devices sit on a heatsink or they do not")
+    if get("copper") is not None and get("board_area") is None:
+        raise SystemExit("--copper needs --board-area: the packages then share a board")
+    for name in ("rth_heatsink", "rth_ja", "board_area", "copper", "copper_ref"):
+        if get(name) is not None and not get(name) > 0:
+            raise SystemExit(f"--{name.replace('_', '-')} has to be above zero")
+    if in_air:
+        if get("tsink") is not None:
+            raise SystemExit("give one cooling: --tsink is a heatsink at a known temperature, --tair is cooling to air")
+        if args.tair is None:
+            raise SystemExit("cooling to air needs the air's temperature: --tair")
+        return {"t_sink": args.tair, "rth_sink": args.rth_heatsink}
+    if get("tair") is not None:
+        raise SystemExit("--tair needs the way to the air: --rth-heatsink (a heatsink's K/W), --rth-ja or "
+                         "--no-heatsink (no heatsink), --board-area (parts soldered to one board)")
+    if args.tsink is None:
+        raise SystemExit("give the cooling: --tsink for a heatsink at a known temperature, or --tair with "
+                         "--rth-heatsink (a heatsink in air) or --rth-ja (no heatsink)")
+    return {"t_sink": args.tsink}
+
+
+def _no_heatsink_asked(args: argparse.Namespace) -> bool:
+    return any(getattr(args, name, None) not in (None, False) for name in ("rth_ja", "no_heatsink", "board_area"))
+
+
+def _in_free_air(args: argparse.Namespace, device, op: OperatingPoint) -> OperatingPoint:
+    """With no heatsink, what lies between this device's case and the air."""
+    if not _no_heatsink_asked(args):
+        return op
+    from dataclasses import replace
+
+    from motionsim.cooling import no_heatsink
+
+    try:
+        free = no_heatsink(device, args.rth_ja, board_area=args.board_area, copper=args.copper, copper_ref=args.copper_ref)
+        for line in free.lines:
+            if line.startswith("junction to air taken") and not getattr(args, "_air_said", False):
+                print(line)
+                args._air_said = True
+        return replace(op, rth_free=free.rth_free, rth_board=free.rth_board)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
+
+
+def _operating_point(args: argparse.Namespace, i_rms: float, device=None) -> OperatingPoint:
+    """The conditions from the command line. With no heatsink they depend on the device,
+    which is then needed."""
+    op = _conditions(args, i_rms)
+    if _no_heatsink_asked(args) and device is None:
+        raise SystemExit("cooling with no heatsink is not taken by this command: it compares devices under one set of conditions")
+    return op if device is None else _dead_time_filled(args, device, _in_free_air(args, device, op))
+
+
+def _dead_time_filled(args: argparse.Namespace, device, op: OperatingPoint) -> OperatingPoint:
+    """As the page does: a dead time left open is the one a drive with this gate drive would
+    be set to, so that the same part gives the same loss here and there. Said once."""
+    from dataclasses import replace
+
+    from motionsim import recommend
+    from motionsim.device.schema import ChipKind
+
+    if device.switch.kind is not ChipKind.mosfet or op.t_dead > 0:
+        return op
+    found = recommend.dead_time(device, op).value.get("t_dead")
+    if not found:
+        return op
+    found = recommend._round_up(found)
+    if not getattr(args, "_dead_said", False):
+        print(f"dead time taken as {found * 1e9:.0f} ns, none being given (--tdead): its loss is counted")
+        args._dead_said = True
+    return replace(op, t_dead=found)
+
+
+def _conditions(args: argparse.Namespace, i_rms: float) -> OperatingPoint:
     return OperatingPoint(
+        **_cooling(args),
         v_dc=args.vdc,
         i_rms=i_rms,
         modulation_index=getattr(args, "m", 0.0),
         power_factor=getattr(args, "pf", 1.0),
         f_sw=args.fsw,
-        t_sink=args.tsink,
         f_out=getattr(args, "fout", 50.0),
         pwm=_pwm(args),
         t_dead=args.tdead,
@@ -55,7 +137,7 @@ def _machine(args: argparse.Namespace):
 def _simulate(args: argparse.Namespace) -> int:
     device = load_device(args.device)
     try:
-        r = solve(device, _operating_point(args, args.irms))
+        r = solve(device, _operating_point(args, args.irms, device))
     except ThermalRunaway as exc:
         print(f"thermal runaway: {exc}", file=sys.stderr)
         return 1
@@ -70,7 +152,7 @@ def _simulate(args: argparse.Namespace) -> int:
 def _max_current(args: argparse.Namespace) -> int:
     device = load_device(args.device)
     i_max, r = max_current(
-        device, _operating_point(args, 0.0), tj_limit=args.tj, peak=not args.average
+        device, _operating_point(args, 0.0, device), tj_limit=args.tj, peak=not args.average
     )
     print(f"{device.vendor} {device.part_number} ({device.technology})")
     print(f"  maximum current     {i_max:8.2f} A rms")
@@ -86,7 +168,7 @@ def _motor(args: argparse.Namespace) -> int:
     device, motor = load_device(args.device), _machine(args)
     try:
         point = at_speed_and_torque(
-            device, motor, args.rpm, args.torque, _operating_point(args, 0.0)
+            device, motor, args.rpm, args.torque, _operating_point(args, 0.0, device)
         )
     except (Unreachable, ThermalRunaway, ValueError) as exc:
         print(f"cannot simulate: {exc}", file=sys.stderr)
@@ -108,7 +190,7 @@ def _motor(args: argparse.Namespace) -> int:
     _print_result(device, point.result)
     from motionsim import guard
 
-    _print_checks(guard.check(device, _operating_point(args, 0.0), point.result, st.i_peak))
+    _print_checks(guard.check(device, _operating_point(args, 0.0, device), point.result, st.i_peak))
     return 0
 
 
@@ -131,9 +213,10 @@ def _propose(args: argparse.Namespace) -> int:
 
     devices = [load_device(path) for path in args.devices]
     motor = _machine(args)
-    base = _operating_point(args, 0.0)
+    shared = _conditions(args, 0.0)
 
     def gate(device):
+        base = _in_free_air(args, device, shared)
         # As the page does: a gate drive left open is chosen for each device, at the design
         # point's peak current, so that a part with charge data only can be ranked at all.
         try:
@@ -143,6 +226,7 @@ def _propose(args: argparse.Namespace) -> int:
         return choose_gate_drive(device, base, max(i_peak * hot_share(device, base.parallel), 1e-3))
 
     gates = {id(d): gate(d) for d in devices}
+    base = shared
     try:
         candidates = propose(devices, motor, args.rpm, args.torque, base, tune=lambda d: gates[id(d)].op)
     except Unreachable as exc:
@@ -247,7 +331,9 @@ def _recommend(args: argparse.Namespace) -> int:
     from motionsim.motor import Unreachable, load_machine
 
     device, motor = load_device(args.device), _machine(args)
-    base = _operating_point(args, 0.0)
+    base = _operating_point(args, 0.0, device)
+    if args.tambient is None:
+        args.tambient = getattr(args, "tair", None)  # the air given with the cooling is the air
     try:
         stage = motor.stage(args.rpm, args.torque, base.v_dc, base.pwm)
     except Unreachable as exc:
@@ -266,7 +352,7 @@ def _recommend(args: argparse.Namespace) -> int:
         worst, loss = float("-inf"), 0.0
         for rpm in (args.rpm, 0.0):  # the design point, and holding the same torque at standstill
             try:
-                point = at_speed_and_torque(device, motor, rpm, args.torque, replace(base, t_sink=t_sink))
+                point = at_speed_and_torque(device, motor, rpm, args.torque, replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None))
             except Unreachable:
                 continue
             except ValueError as exc:
@@ -360,7 +446,7 @@ def _map(args: argparse.Namespace) -> int:
     device, motor = load_device(args.device), _machine(args)
     try:
         m = speed_torque_map(
-            device, motor, _grid(args.rpm), _grid(args.torque), _operating_point(args, 0.0)
+            device, motor, _grid(args.rpm), _grid(args.torque), _operating_point(args, 0.0, device)
         )
     except ValueError as exc:
         print(f"cannot simulate: {exc}", file=sys.stderr)
@@ -429,10 +515,11 @@ def _template(args: argparse.Namespace) -> int:
     from motionsim.load import LOAD_TEMPLATE, PROFILE_TEMPLATE
     from motionsim.motor import TEMPLATES
     from motionsim.reference import TEMPLATE as REFERENCE_TEMPLATE
+    from motionsim.fit.typed import TEMPLATE as DEVICE_TEMPLATE
     from motionsim.trajectory import example
 
     text = {
-        **TEMPLATES, "load": LOAD_TEMPLATE, "profile": PROFILE_TEMPLATE,
+        **TEMPLATES, "device": DEVICE_TEMPLATE, "load": LOAD_TEMPLATE, "profile": PROFILE_TEMPLATE,
         "reference": REFERENCE_TEMPLATE, "trajectory": example(),
     }[args.kind]
     if args.output:
@@ -455,13 +542,21 @@ def _cycle(args: argparse.Namespace) -> int:
 
     device, motor = load_device(args.device), _machine(args)
     load, profile = load_load(args.load), load_profile(args.profile)
-    base = _operating_point(args, 0.0)
+    base = _operating_point(args, 0.0, device)
+    if args.tambient is None:
+        args.tambient = getattr(args, "tair", None)
     heatsink = None
     if args.rth_sink is not None or args.c_sink is not None:
         if args.rth_sink is None or args.c_sink is None:
             print("a heatsink needs both --rth-sink and --c-sink", file=sys.stderr)
             return 1
-        ambient = args.tsink if args.tambient is None else args.tambient
+        if _no_heatsink_asked(args) or getattr(args, "rth_heatsink", None) is not None:
+            print("to follow a heatsink as it warms, give --tsink (where it starts), --rth-sink, --c-sink and "
+                  "--tambient. --tair with --rth-heatsink takes the heatsink as already warm; with no heatsink "
+                  "there is none to follow", file=sys.stderr)
+            return 1
+        # The air is where the heatsink starts from: --tambient, or the temperature given for the cooling.
+        ambient = base.t_sink if args.tambient is None else args.tambient
         heatsink = Heatsink(rth=args.rth_sink, capacity=args.c_sink, t_ambient=ambient)
     try:
         cycle, trace = follow(
@@ -534,7 +629,7 @@ def _cycle(args: argparse.Namespace) -> int:
 
         def evaluate(t_sink: float) -> tuple[float, float]:
             moved, temperatures = follow(
-                device, motor, load, profile, replace(base, t_sink=t_sink), repeats=args.repeat
+                device, motor, load, profile, replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None), repeats=args.repeat
             )
             return temperatures.peak + spread, moved.mean_loss
 
@@ -813,13 +908,82 @@ def _build(args: argparse.Namespace) -> int:
     from motionsim.fit import MissingData, build_device
     from motionsim.observe import load_observations
 
+    import yaml
+
+    from motionsim.fit.typed import Mistyped, from_figures, is_figures
+
     try:
-        device = build_device(load_observations(args.observations), allow_flagged=args.allow_flagged)
+        with open(args.observations, encoding="utf-8") as f:
+            typed = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"cannot read {args.observations}: {str(exc).splitlines()[0]}", file=sys.stderr)
+        return 1
+    try:
+        # A file of figures typed in by hand (motionsim template device) is built directly.
+        if is_figures(typed):
+            device = from_figures(typed)
+        else:
+            device = build_device(load_observations(args.observations), allow_flagged=args.allow_flagged)
+    except Mistyped as exc:
+        print(f"cannot build a device: {exc}", file=sys.stderr)
+        return 1
     except MissingData as exc:
         print(f"cannot build a device: {exc}", file=sys.stderr)
         return 1
     save_device(device, args.output)
     print(f"{device.vendor} {device.part_number}: device model written to {args.output}")
+    return 0
+
+
+def _design(args: argparse.Namespace) -> int:
+    """A whole design from one file. Exit status: 0 the part passes, 3 it does not,
+    2 the design was refused (the reason is in the output), 1 a fault of ours."""
+    import json
+    import tempfile
+    from pathlib import Path
+
+    import yaml
+
+    from motionsim import design, page
+
+    with tempfile.TemporaryDirectory() as folder:
+        workspace = page.Workspace(Path(args.workspace) if args.workspace else Path(folder))
+        try:
+            if args.action == "init":
+                key = design.bring_device(args.device, Path.cwd(), workspace)
+                setup = design.starting_setup(key, workspace, args.motor)
+                setup["devices"] = [args.device]  # as the user named it: a path stays a path
+                text = design.SETUP_HEAD + yaml.safe_dump(setup, sort_keys=False, allow_unicode=True)
+                if args.output:
+                    Path(args.output).write_text(text, encoding="utf-8")
+                    print(f"written to {args.output}: edit it, then `motionsim design run {args.output}`")
+                else:
+                    print(text, end="")
+                return 0
+            setup = design.load_setup(args.setup, workspace)
+            steps = tuple(x for x in design.STEPS if x not in (args.skip or []))
+            result = design.run(setup, workspace, steps=steps, traces=args.traces)
+        except page.Refused as exc:
+            refusal = {"outcome": "refused", "refused": exc.reason, "fix": exc.fix, "field": exc.field}
+            print(json.dumps(refusal, indent=1) if getattr(args, "json", False) else f"refused: {exc.reason}" + (f"\n  {exc.fix}" if exc.fix else ""),
+                  file=sys.stdout if getattr(args, "json", False) else sys.stderr)
+            return 2
+        report = design.markdown(result)
+        if args.md:
+            Path(args.md).write_text(report, encoding="utf-8")
+        if args.json:
+            print(json.dumps(result, indent=1, default=float))
+        elif not args.md:
+            print(report, end="")
+        else:
+            print(f"{result['outcome']}: report written to {args.md}")
+    return {"refused": 2, "does not pass": 3}.get(result["outcome"], 0)
+
+
+def _agent(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    print((Path(__file__).parent / "AGENT_GUIDE.md").read_text(encoding="utf-8"), end="")
     return 0
 
 
@@ -898,7 +1062,14 @@ def main(argv: list[str] | None = None) -> int:
                 "--fout", type=float, default=50.0, help="output frequency, Hz (default 50)"
             )
         p.add_argument("--fsw", type=float, required=True, help="switching frequency, Hz")
-        p.add_argument("--tsink", type=float, required=True, help="heatsink temperature, °C")
+        p.add_argument("--tsink", type=float, help="heatsink temperature, °C, where it is known")
+        p.add_argument("--tair", type=float, help="air temperature, °C, for cooling to air")
+        p.add_argument("--rth-heatsink", type=float, help="a heatsink in air: its thermal resistance, K/W, with every device on it")
+        p.add_argument("--rth-ja", type=float, help="no heatsink: one package's junction-to-air resistance, K/W, from its datasheet")
+        p.add_argument("--no-heatsink", action="store_true", help="no heatsink, at the usual junction-to-air figure for a TO-220, TO-247 or TO-263")
+        p.add_argument("--board-area", type=float, help="no heatsink, soldered to one board: the board's area, cm². The packages then warm each other")
+        p.add_argument("--copper", type=float, help="no heatsink, on a board: the copper each package has to itself, cm²")
+        p.add_argument("--copper-ref", type=float, help="the copper area the datasheet's junction-to-air figure was taken on, cm² (default 6.45, one square inch)")
         p.add_argument("--tdead", type=float, default=0.0, help="dead time, s (mosfets)")
         p.add_argument("--vdrive", type=float, help="gate drive voltage, V")
         p.add_argument("--rgon", type=float, help="total turn-on gate resistance, ohm")
@@ -974,7 +1145,7 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--tambient", type=float, help="ambient temperature, °C, to size a heatsink")
     rec.add_argument("--dvdt", type=float, default=5.0, help="voltage slew-rate limit, V/ns (default 5)")
     rec.add_argument("--driver-peak", type=float, help="gate driver's peak output current, A")
-    rec.add_argument("--driver-mismatch", type=float, default=0.0,
+    rec.add_argument("--driver-mismatch", type=float, default=None,
                      help="difference in propagation delay between gate-driver channels, s")
     rec.set_defaults(func=_recommend)
 
@@ -1024,7 +1195,7 @@ def main(argv: list[str] | None = None) -> int:
     tpl = sub.add_parser("template", help="write a parameter file to fill in")
     tpl.add_argument(
         "kind",
-        choices=["pmsm", "induction", "bldc", "dc", "stepper", "load", "profile", "reference",
+        choices=["device", "pmsm", "induction", "bldc", "dc", "stepper", "load", "profile", "reference",
                  "trajectory"],
     )
     tpl.add_argument("-o", "--output", help="file to write (default: print)")
@@ -1064,6 +1235,26 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("-o", "--output", required=True, help="device YAML to write")
     bld.add_argument("--allow-flagged", action="store_true", help="use flagged values too")
     bld.set_defaults(func=_build)
+
+    dsn = sub.add_parser("design", help="a whole design from one file, every step of the page: for a terminal or a coding agent")
+    actions = dsn.add_subparsers(dest="action", required=True)
+    ini = actions.add_parser("init", help="write a design to start from, sized to a device")
+    ini.add_argument("--device", default="example-mosfet", help="a device file, a file of typed figures, or a made-up part: example-mosfet, example")
+    ini.add_argument("--motor", help="kind of motor (default: the one usual with the device): pmsm, bldc, synrm, induction, dc, dc_series, stepper")
+    ini.add_argument("-o", "--output", help="file to write (default: print)")
+    ini.add_argument("--workspace", help=argparse.SUPPRESS)
+    ini.set_defaults(func=_design)
+    go = actions.add_parser("run", help="run a design: fit, verdict, motion, what to build, what it can drive")
+    go.add_argument("setup", help="the design file (YAML or JSON)")
+    go.add_argument("--json", action="store_true", help="print everything as JSON, for a program or an agent to read")
+    go.add_argument("--md", help="write the report in Markdown to this file")
+    go.add_argument("--skip", action="append", choices=["fit", "motion", "build", "drive"], help="leave a step out (may be given more than once)")
+    go.add_argument("--traces", action="store_true", help="with --json: keep the motion's traces through time")
+    go.add_argument("--workspace", help="a folder to keep the device files in (default: a temporary one)")
+    go.set_defaults(func=_design)
+
+    agt = sub.add_parser("agent", help="print the guide for a coding agent that drives motionsim from the terminal")
+    agt.set_defaults(func=_agent)
 
     args = parser.parse_args(argv)
     return args.func(args)

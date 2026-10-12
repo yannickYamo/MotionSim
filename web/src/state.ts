@@ -20,7 +20,10 @@ export interface State {
     v_dc: number; rpm: number; torque: number; f_khz: number; t_sink: number; pwm: string;
     v_drive: string; rg_on: string; rg_off: string; t_dead_ns: string; l_loop_nh: string;
     parallel: number; t_motor: string; t_min_ns: string;
+    cooling: "held" | "heatsink" | "none" | "board"; t_ambient: number; rth_sink: string; rth_ja: string;
+    board_area: string; copper: string; copper_ref: string;
   };
+  typed: Record<string, string>; // a part being typed in from its datasheet, kept until added
   mission: Mission | null; // a mission profile brought as a file, in place of the load and motion
   supply: "one-way" | "battery";
   load: {
@@ -64,7 +67,9 @@ export function initial(setup: Setup): State {
       v_dc: start.v_dc, rpm: start.rpm, torque: start.torque, f_khz: start.f_sw / 1000, t_sink: 60, pwm: "",
       v_drive: "", rg_on: "", rg_off: "", t_dead_ns: "", l_loop_nh: "",
       parallel: 1, t_motor: "", t_min_ns: "",
+      cooling: "held", t_ambient: 40, rth_sink: "", rth_ja: "", board_area: "", copper: "", copper_ref: "",
     },
+    typed: {},
     mission: null,
     supply: "one-way",
     load: {
@@ -108,6 +113,7 @@ export function restore(setup: Setup, keepDevices = false): State {
       ...fresh, ...saved,
       motors: { ...fresh.motors, ...saved.motors },
       conditions: { ...fresh.conditions, ...saved.conditions },
+      typed: { ...(saved.typed ?? {}) },
       load: { ...fresh.load, ...saved.load },
       sink: { ...fresh.sink, ...saved.sink },
       start: { ...fresh.start, ...saved.start },
@@ -135,13 +141,15 @@ const number = (text: string, scale = 1): number | null => (text === "" || text 
 export function request(state: State) {
   const c = state.conditions;
   return {
-    motor: { type: state.kind, ...state.motors[state.kind], t_motor: number(c.t_motor) },
+    motor: { type: state.kind, ...Object.fromEntries(Object.entries(state.motors[state.kind]).filter(([, v]) => v !== "")), t_motor: number(c.t_motor) },
     conditions: {
       v_dc: c.v_dc, rpm: c.rpm, torque: c.torque, f_sw: c.f_khz * 1000, t_sink: c.t_sink,
       pwm: c.pwm || null, v_drive: number(c.v_drive), rg_on: number(c.rg_on), rg_off: number(c.rg_off),
       t_dead: number(c.t_dead_ns, 1e-9) ?? 0, l_loop: number(c.l_loop_nh, 1e-9),
       t_min_pulse: number(c.t_min_ns, 1e-9) ?? 0,
       parallel: Math.max(1, Math.round(Number(c.parallel) || 1)),
+      cooling: c.cooling, t_ambient: c.t_ambient, rth_sink: number(c.rth_sink), rth_ja: number(c.rth_ja),
+      board_area: number(c.board_area), copper: number(c.copper), copper_ref: number(c.copper_ref),
     },
     supply: state.supply,
   };

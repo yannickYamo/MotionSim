@@ -107,8 +107,18 @@ export async function measure(page, name) {
       const w = Math.min(a.r.right, b.r.right) - Math.max(a.r.left, b.r.left), h = Math.min(a.r.bottom, b.r.bottom) - Math.max(a.r.top, b.r.top);
       if (w > 2 && h > 2) stacked.push(`${a.el.tagName} "${(a.el.textContent || "").trim().slice(0, 20)}" and ${b.el.tagName} "${(b.el.textContent || "").trim().slice(0, 20)}"`);
     }
+    // Running text squeezed into a sliver: three lines or more in a column too narrow to
+    // read, while the box it sits in has room. A sentence is given its own line, not the
+    // space left over beside something else.
+    const squeezed = [...document.querySelectorAll("#panel *, #stage *")].filter(visible)
+      .filter((el) => !el.closest("svg, table, .sr") && [...el.childNodes].some((n) => n.nodeType === 3 && n.textContent.trim().length > 24))
+      .filter((el) => {
+        const r = el.getBoundingClientRect(); const line = parseFloat(getComputedStyle(el).lineHeight) || 20;
+        const room = el.parentElement.getBoundingClientRect().width;
+        return r.width < 170 && r.height / line >= 2.6 && room > r.width * 1.8;
+      }).map((el) => el.textContent.trim().slice(0, 40));
     const above = [...document.querySelectorAll("#app *")].filter(visible).filter((el) => scrollY === 0 && el.getBoundingClientRect().bottom < 0 && !el.closest(".skip")).length;
-    return { small, texts, drawn, unnamed, targets: targets.length, overflow: doc.scrollWidth - innerWidth, overlaps: [...new Set(overlaps)], spilled: [...new Set(spilled)], clipped: [...new Set(clipped)], stacked: [...new Set(stacked)], above };
+    return { small, texts, drawn, unnamed, targets: targets.length, overflow: doc.scrollWidth - innerWidth, overlaps: [...new Set(overlaps)], spilled: [...new Set(spilled)], clipped: [...new Set(clipped)], stacked: [...new Set(stacked)], squeezed: [...new Set(squeezed)], above };
   });
   visited.push(`${name} (${report.targets} targets, ${report.texts.length} texts)`);
   if (report.targets === 0 || report.texts.length < 5) failures.push(`${name}: the page did not render (${report.targets} targets)`);
@@ -118,6 +128,7 @@ export async function measure(page, name) {
   for (const o of report.overlaps.slice(0, 6)) failures.push(`${name}: text on top of text: ${o}`);
   for (const c of report.spilled.slice(0, 6)) failures.push(`${name}: text spills out of its box or touches its sides: "${c}"`);
   for (const c of report.clipped.slice(0, 6)) failures.push(`${name}: text cut off by its box: "${c}"`);
+  for (const c of report.squeezed.slice(0, 6)) failures.push(`${name}: a sentence squeezed into a narrow column beside something else: "${c}"`);
   for (const o of report.stacked.slice(0, 6)) failures.push(`${name}: two controls share ground: ${o}`);
   if (report.above) failures.push(`${name}: ${report.above} elements above the top of the page, out of reach`);
   for (const t of report.small) failures.push(`${name}: target under 24px: ${t.tag} "${t.text}" ${t.w}x${t.h}`);

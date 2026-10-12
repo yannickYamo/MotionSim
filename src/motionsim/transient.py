@@ -102,6 +102,87 @@ def _static(result: Result, role, chip: str, rth: float, t_sink: float) -> float
     return role.tj_diode - rth * role.diode.total - t_sink
 
 
+def _package_means(cycle: Cycle, device: Device, parallel: int) -> tuple[list[float], float]:
+    """Through a motion: the mean loss of the package each role sits in, and of the stage.
+
+    A package of its own holds what its switch and diode lose. Held at standstill, that
+    is what it loses at the rotor position that works it hardest, as in the steady
+    solution, and not the average over positions it never visits.
+    """
+    solved = cycle.solved
+    span = sum(s.sample.duration for s in solved)
+    alone = device.package.topology.positions == 1
+    roles = len(solved[0].point.result.roles)
+    means = [0.0] * roles
+    for s in solved:
+        result = s.point.result
+        still = s.point.stage.stalled
+        for k, role in enumerate(result.roles):
+            if not alone:
+                own = result.p_inverter / max(int(parallel), 1)  # a module holds the stage's loss, or its share
+            elif still:
+                own = float((role.p_switch + role.p_diode).max())
+            else:
+                own = role.switch.total + role.diode.total
+            means[k] += own * s.sample.duration / span
+    if not alone:
+        positions = sum(r.count for r in solved[0].point.result.roles)
+        packages = -(-positions // device.package.topology.positions)
+        means = [m / packages for m in means]
+    return means, cycle.mean_loss
+
+
+def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, samples):
+    """A motion with the stage cooled to air: what the packages sit on is worked out first.
+
+    A heatsink, or a package in still air, takes minutes to warm and a motion lasts seconds,
+    so through a motion that repeats they sit where the mean loss puts them. The motion is
+    run on a guess of that temperature and run again where its own mean loss says, until
+    the two agree. With no heatsink each package sits where its own mean loss puts it, and
+    the motion is followed from the hottest of them.
+    A heatsink given with its heat capacity is followed from cold instead.
+    """
+    from motionsim.engine.solver import _case_sink
+
+    held = replace(base, rth_sink=None, rth_free=None, rth_board=None)
+    if heatsink is not None:
+        if base.rth_free is not None:
+            raise ValueError("a heatsink with its heat capacity and no heatsink at all cannot both be given")
+        return follow(device, motor, None, None, held, heatsink=heatsink, repeats=repeats, start=start, samples=samples)
+
+    def settled(cycle: Cycle) -> float:
+        own, stage = _package_means(cycle, device, base.parallel)
+        if base.rth_sink is not None:
+            return base.t_sink + base.rth_sink * stage
+        # The steady solution holds the case to the heatsink through its own layer; here
+        # that layer is the package's path to the air, less what the solves below add back.
+        under = max(base.rth_free - _case_sink(device, "typical"), 0.0)
+        board = base.rth_board or 0.0
+        return base.t_sink + max(max(under * p + board * max(stage - p, 0.0), board * stage) for p in own)
+
+    limit = device.ratings.tj_max + 500.0
+    t_sink, before, out = base.t_sink, None, None
+    for _ in range(40):
+        out = follow(device, motor, None, None, replace(held, t_sink=t_sink), repeats=repeats, start=start, samples=samples)
+        if not out[0].solved:
+            return out
+        after = settled(out[0])
+        if abs(after - t_sink) < 0.25:
+            return out
+        if after > limit:
+            break
+        # Loss rises with temperature nearly in a straight line, so two passes say where
+        # the two meet; the step is kept within bounds in case they do not.
+        step = after - t_sink
+        if before is not None and abs(t_sink - before[0]) > 1e-6:
+            gain = (after - before[1]) / (t_sink - before[0])
+            if 0.0 < gain < 0.95:
+                step = step / (1.0 - gain)
+        before = (t_sink, after)
+        t_sink = t_sink + min(max(step, -200.0), 200.0)
+    raise ThermalRunaway("cooled to air, the temperature of what the devices sit on does not settle through this motion")
+
+
 def follow(
     device: Device, motor, load: Load, profile: Profile, base: OperatingPoint,
     *, heatsink: Heatsink | None = None, repeats: int = 1, per_segment: int = 12,
@@ -116,6 +197,8 @@ def follow(
     # A mission profile brings its own speed and torque at each instant, measured or planned;
     # otherwise they come from the load and the motion.
     samples = sample(load, profile, per_segment) if samples is None else samples
+    if base.rth_sink is not None or base.rth_free is not None:
+        return _in_air(device, motor, base, heatsink, repeats, start, samples)
     if start is not None:
         from motionsim.starting import with_start
 

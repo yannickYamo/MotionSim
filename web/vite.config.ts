@@ -6,5 +6,5 @@ export default defineConfig({
   base: "./",
   build: { outDir: "../src/motionsim/webui", emptyOutDir: true, target: "es2022" },
   worker: { format: "iife" },
-  server: { port: 4311, proxy: { "/api": "http://127.0.0.1:4310" } },
+  server: { port: 4311, proxy: { "/api": "http://127.0.0.1:4310", "/engine/mode.json": "http://127.0.0.1:4310" } },
 });

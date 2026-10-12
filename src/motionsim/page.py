@@ -29,6 +29,9 @@ from motionsim.motor import TEMPLATES, Unreachable
 from motionsim.motor.machines import _ADAPTER
 
 EXAMPLE = Path(__file__).parent / "example_device.yaml"
+# The made-up parts the page can be tried with: an IGBT for mains voltages, and a
+# low-voltage transistor for batteries and robots.
+EXAMPLES = {"example": EXAMPLE, "example-mosfet": Path(__file__).parent / "example_mosfet.yaml"}
 
 # What the page shows beside each motor value. The values themselves come from the
 # templates, so the page and `motionsim template` never drift apart.
@@ -126,17 +129,19 @@ class Refused(Exception):
         self.reason, self.fix, self.field = reason, fix, field
 
 
-def _number(value, name: str, *, low: float | None = None, high: float | None = None) -> float:
+def _number(value, name: str, *, low: float | None = None, high: float | None = None, field: str | None = None) -> float:
+    """field: the page's own name for the input, where it differs from the words used."""
+    field = field or name
     try:
         x = float(value)
     except (TypeError, ValueError):
-        raise Refused(f"{name} is not a number", f"enter a value for {name}", name) from None
+        raise Refused(f"{name} is not a number", f"enter a value for {name}", field) from None
     if not math.isfinite(x):
-        raise Refused(f"{name} is not a number", f"enter a value for {name}", name)
+        raise Refused(f"{name} is not a number", f"enter a value for {name}", field)
     if low is not None and x < low:
-        raise Refused(f"{name} cannot be below {low:g}", f"raise {name}", name)
+        raise Refused(f"{name} cannot be below {low:g}", f"raise {name}", field)
     if high is not None and x > high:
-        raise Refused(f"{name} cannot be above {high:g}", f"lower {name}", name)
+        raise Refused(f"{name} cannot be above {high:g}", f"lower {name}", field)
     return x
 
 
@@ -184,17 +189,60 @@ def _conditions(data: dict, motor) -> OperatingPoint:
     optional = lambda key: (  # noqa: E731
         None if data.get(key) in ("", None) else _number(data[key], key, low=floor.get(key, 0))
     )
+    # Cooling: a heatsink held at a temperature, a heatsink in air, or no heatsink at all.
+    # In air, t_sink is the air's temperature and the engine works out the rest.
+    cooling = data.get("cooling") or "held"
+    if cooling not in COOLING:
+        raise Refused(f"cooling is one of {', '.join(COOLING)}", "", "cooling")
+    rth_sink = None
+    if cooling == "held":
+        t_sink = _number(data.get("t_sink", 60), "heatsink temperature", low=-40, high=200, field="t_sink")
+    else:
+        air = data.get("t_ambient")
+        t_sink = _number(40 if air in ("", None) else air, "air temperature", low=-40, high=120, field="t_ambient")
+    if cooling == "board" and data.get("board_area") in ("", None):
+        raise Refused("the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area")
+    if cooling == "heatsink":
+        if data.get("rth_sink") in ("", None):
+            raise Refused("the heatsink's thermal resistance is needed", "give it in K/W, from the heatsink's data: a smaller figure is a bigger heatsink", "rth_sink")
+        rth_sink = _number(data["rth_sink"], "heatsink thermal resistance", low=0.001, high=500, field="rth_sink")
     return OperatingPoint(
         v_dc=_number(data.get("v_dc"), "supply voltage", low=1, high=2000),
         i_rms=0.0, modulation_index=0.0, power_factor=1.0,
         f_sw=_number(data.get("f_sw"), "switching frequency", low=100, high=2e6),
-        t_sink=_number(data.get("t_sink", 60), "heatsink temperature", low=-40, high=200),
+        t_sink=t_sink, rth_sink=rth_sink,
         pwm=Pwm(pwm), t_dead=_number(data.get("t_dead", 0) or 0, "dead time", low=0, high=1e-4),
         t_min_pulse=_number(data.get("t_min_pulse", 0) or 0, "shortest pulse", low=0, high=1e-4),
         v_drive=optional("v_drive"), rg_on=optional("rg_on"), rg_off=optional("rg_off"),
         l_loop=optional("l_loop"),
         parallel=int(_number(data.get("parallel") or 1, "devices in parallel", low=1, high=12)),
     )
+
+
+COOLING = ("held", "heatsink", "none", "board")
+def _free_air(device, conditions: dict, packages: int | None = None):
+    """With no heatsink: what lies between a package's case and the air, standing alone
+    or soldered to a board with the others (see cooling.py)."""
+    from motionsim.cooling import no_heatsink
+
+    kind = conditions.get("cooling") or "held"
+    if kind not in ("none", "board"):
+        return None
+    given = lambda key, name: None if conditions.get(key) in ("", None) else _number(conditions[key], name, low=0.01, high=100000, field=key)  # noqa: E731
+    area = given("board_area", "board area") if kind == "board" else None
+    if kind == "board" and area is None:
+        raise Refused("the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area")
+    try:
+        return no_heatsink(
+            device, given("rth_ja", "junction to air"), board_area=area,
+            copper=given("copper", "copper area") if kind == "board" else None,
+            copper_ref=given("copper_ref", "the datasheet's copper area") if kind == "board" else None,
+            packages=packages,
+        )
+    except ValueError as exc:
+        text = str(exc)
+        field = "copper" if "does not fit" in text else "rth_ja"
+        raise Refused(text, "check the figure against the datasheet", field) from None
 
 
 def _gate(device, op: OperatingPoint, motor, conditions: dict):
@@ -205,13 +253,20 @@ def _gate(device, op: OperatingPoint, motor, conditions: dict):
     try:
         rpm = _number(conditions.get("rpm"), "speed")
         torque = _number(conditions.get("torque"), "torque")
-        i_peak = motor.stage(rpm, torque, op.v_dc, op.pwm).i_peak
+        asked = motor.stage(rpm, torque, op.v_dc, op.pwm)
+        i_peak = asked.i_peak
+        positions = sum(r.count for r in asked.roles)
+        packages = -(-positions // device.package.topology.positions) * op.parallel
     except (Unreachable, Refused, ValueError):
-        i_peak = device.ratings.i_nominal
+        i_peak, packages = device.ratings.i_nominal, None
     # Each device of those in parallel switches its own share in its own loop.
     from motionsim.engine.solver import hot_share
 
-    return choose_gate_drive(device, op, max(i_peak * hot_share(device, op.parallel), 1e-3))
+    free = _free_air(device, conditions, packages)
+    if free is not None:
+        op = replace(op, rth_free=free.rth_free, rth_board=free.rth_board)
+    gate = choose_gate_drive(device, op, max(i_peak * hot_share(device, op.parallel), 1e-3))
+    return gate if free is None else replace(gate, lines=[*gate.lines, *free.lines])
 
 
 def _switching_period(device, design, op: OperatingPoint) -> dict:
@@ -226,7 +281,7 @@ def _switching_period(device, design, op: OperatingPoint) -> dict:
 
 def _gate_out(gate) -> dict:
     return {"kind": gate.kind, "v_drive": gate.v_drive, "rg_on": gate.rg_on, "rg_off": gate.rg_off,
-            "lines": gate.lines}
+            "lines": gate.lines, "t_dead": gate.t_dead}
 
 
 def _unreachable(exc: Unreachable, v_dc: float) -> Refused:
@@ -261,7 +316,7 @@ def _result(r, tj_max: float, parallel: int = 1) -> dict:
     return {
         "loss": r.p_inverter, "conduction": conduction, "switching": switching,
         "efficiency": r.efficiency, "tj_peak": hottest(r), "tj_range": r.tj_peak_range,
-        "tj_max": tj_max, "t_case": r.t_case, "validity": r.validity.value, "notes": r.notes,
+        "tj_max": tj_max, "t_case": r.t_case, "t_sink": r.t_sink, "validity": r.validity.value, "notes": r.notes,
         "limits": r.limits, "assumptions": r.assumptions, "warnings": r.rating_warnings,
         "hottest": _losses(r.switch, r.diode),
         "positions": [
@@ -302,7 +357,7 @@ class Workspace:
         folder.mkdir(parents=True, exist_ok=True)
 
     def paths(self) -> dict[str, Path]:
-        found = {"example": EXAMPLE} if EXAMPLE.exists() else {}
+        found = {key: path for key, path in EXAMPLES.items() if path.exists()}
         for path in sorted(self.folder.glob("*.device.yaml")):
             found[path.name.removesuffix(".device.yaml")] = path
         return found
@@ -327,7 +382,7 @@ class Workspace:
             "i_pulsed": device.ratings.i_pulsed, "t_sc": device.ratings.t_sc,
             "positions": device.package.topology.positions,
             "integrated_driver": device.package.integrated_driver,
-            "example": key == "example",
+            "example": key in EXAMPLES,
             "switching": "measured energy from the datasheet" if measured else "estimated from gate and output charge",
             "support": "table points and assumed shapes" if point else "curves",
             "needs_gate_drive": not measured,
@@ -352,7 +407,9 @@ def setup(workspace: Workspace) -> dict:
             "family": family, "label": label, "about": about, "start": STARTING[kind],
             "values": {k: v for k, v in values.items() if k not in ("name",)},
             "fields": [
-                {"key": key, "label": lab, "unit": unit, "help": text_, "options": options}
+                # A figure the motor can be described without may be left empty on the page.
+                {"key": key, "label": lab, "unit": unit, "help": text_, "options": options,
+                 "required": key not in type(motor).model_fields or type(motor).model_fields[key].is_required()}
                 for key, lab, unit, text_, options in FIELDS[kind]
             ],
             "fixed_scheme": motor.fixed_scheme, "default_pwm": motor.default_pwm.value,
@@ -362,7 +419,7 @@ def setup(workspace: Workspace) -> dict:
     return {
         "motors": motors, "pwm": [p.value for p in Pwm],
         "load": yaml.safe_load(LOAD_TEMPLATE), "profile": yaml.safe_load(PROFILE_TEMPLATE),
-        "devices": workspace.listing(),
+        "devices": workspace.listing(), "typed": typed_form(),
         "can_read": bool(os.environ.get("ANTHROPIC_API_KEY")),
     }
 
@@ -408,6 +465,94 @@ def suggest(data: dict, workspace: Workspace) -> dict:
             for kind, fit in fits.items()
         },
     }
+
+
+def _reach(motor, v_dc: float, *, rpm: float | None = None, torque: float | None = None) -> tuple[float, object | None]:
+    """The most of one thing a motor can do from a supply, with the other held: the top
+    speed at a torque, or the top torque at a speed. Found by asking the motor, kind by
+    kind, whether it can be there: no formula of its own to disagree with the engine."""
+    pwm = motor.default_pwm
+
+    def at(value: float):
+        try:
+            return motor.stage(value if rpm is None else rpm, torque if rpm is None else value, v_dc, pwm)
+        except (Unreachable, ValueError, ZeroDivisionError, FloatingPointError):
+            return None
+
+    low, best = 0.0, at(0.0)
+    high = 1.0
+    while high < 1e7 and at(high) is not None:
+        low, best, high = high, at(high), high * 2
+    if high >= 1e7:
+        return float("inf"), best
+    for _ in range(40):
+        mid = 0.5 * (low + high)
+        found = at(mid)
+        if found is not None:
+            low, best = mid, found
+        else:
+            high = mid
+    return low, best
+
+
+def motor_fit(data: dict, workspace: Workspace) -> dict:
+    """Whether the motor as described fits the part under test, before any design point is
+    given: what the motor can ask of a power stage at most, set against what the part is
+    rated for. Said at the motor step, so that a motor too large for the part, or wound for
+    another voltage, is known before the user goes on."""
+    from motionsim.advise import motors_for
+
+    motor = _motor(data["motor"])
+    device = workspace.device(data["device"])
+    parallel = max(int(data.get("parallel") or 1), 1)
+    bus, fits = motors_for(device.ratings.v_max, device.package.topology.positions)
+    v_dc = _number(data["v_dc"], "supply voltage", low=1, high=2000) if data.get("v_dc") else float(bus)
+    lines: list[dict] = []
+    say = lambda level, text: lines.append({"level": level, "text": text})  # noqa: E731
+    kind = data["motor"].get("type")
+    if kind in fits and fits[kind].fit == "unusual":
+        say("caution", fits[kind].why)
+
+    top_rpm, _ = _reach(motor, v_dc, torque=0.0)
+    if top_rpm <= 1.0:
+        say("caution", f"from {v_dc:g} V this motor does not turn at all: it is wound for a much higher voltage, or one of its "
+                       "figures is in the wrong unit")
+        return {"v_supply": v_dc, "top_rpm": 0.0, "i_peak": None, "i_rated": device.ratings.i_nominal * parallel,
+                "level": "caution", "lines": lines}
+    # The most current it can ask for is at standstill, where no back-EMF opposes it.
+    torque, hardest = _reach(motor, v_dc, rpm=0.0)
+    i_peak = None if hardest is None else float(hardest.i_peak)
+    rated = device.ratings.i_nominal * parallel
+    limited = getattr(motor, "i_max", None) is not None or getattr(motor, "i_phase", None) is not None
+    # Speed: only against the speed asked for. How fast a motor could turn with its field
+    # weakened to nothing is a figure of the model, not of the motor.
+    asked = data.get("rpm")
+    if asked not in ("", None):
+        asked = abs(_number(asked, "speed"))
+        if top_rpm < asked:
+            say("caution",
+                f"from {v_dc:g} V this motor reaches about {float(f'{top_rpm:.2g}'):,.0f} rpm with no load, short of the "
+                f"{asked:,.0f} rpm of the design point: it is wound for a higher voltage than this part suits. Lower the "
+                "speed in the next step, or use a motor wound for this voltage")
+        else:
+            say("ok", f"from {v_dc:g} V this motor reaches the {asked:,.0f} rpm of the design point")
+    if i_peak is not None and torque not in (0.0, float("inf")):
+        what = "at its current limit" if limited else "held still with nothing but its winding resistance to limit it"
+        share = rated / i_peak
+        if i_peak > rated * 1.02:
+            fix = (
+                f"use {math.ceil(i_peak / device.ratings.i_nominal)} of this part in parallel, a part rated for {float(f'{i_peak:.2g}'):g} A, "
+                "or a current limit in the drive at what the part can carry"
+            )
+            say("caution",
+                f"{what} this motor draws {i_peak:.3g} A peak, and the part is rated {rated:g} A"
+                + (f" ({parallel} in parallel)" if parallel > 1 else "")
+                + f": the part can take it to about {100 * share:.0f}% of the {torque:.3g} N·m it can give. To use all of the motor, {fix}")
+        else:
+            say("ok", f"{what} this motor draws {i_peak:.3g} A peak for {torque:.3g} N·m, within the part's {rated:g} A rating")
+    level = "caution" if any(x["level"] == "caution" for x in lines) else "ok"
+    return {"v_supply": v_dc, "top_rpm": None if top_rpm == float("inf") else top_rpm, "i_peak": i_peak,
+            "i_rated": rated, "torque": None if torque == float("inf") else torque, "level": level, "lines": lines}
 
 
 # Which kinds of load each kind of motor usually drives, most usual first.
@@ -755,8 +900,12 @@ def cycle(data: dict, workspace: Workspace) -> dict:
                           "check the load and motion values") from None
         load = profile = None
     sink = None
-    h = data.get("heatsink") or {}
-    if h.get("rth") and h.get("capacity"):
+    h = data.get("heatsink")
+    h = h if isinstance(h, dict) else {}
+    if op.rth_sink is not None and h.get("capacity"):
+        # A heatsink in air with its heat capacity given: followed from cold, as it warms.
+        sink = Heatsink(rth=op.rth_sink, capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1), t_ambient=op.t_sink)
+    elif op.rth_sink is None and op.rth_free is None and h.get("rth") and h.get("capacity"):
         sink = Heatsink(
             rth=_number(h["rth"], "heatsink resistance", low=0.01),
             capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1),
@@ -811,6 +960,7 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         "time": clean(trace.time[start:] - (trace.time[start] - run.steps[0].sample.duration)),
         "tj": clean(trace.tj[start:]), "steady": clean(trace.steady[start:]),
         "t_sink": clean(trace.t_sink[start:]),
+        "sink_name": "each package's case, on average" if op.rth_free is not None else "heatsink",
         "rpm": [s.sample.motor_rpm for s in run.steps],
         "torque": [s.sample.motor_torque for s in run.steps],
         "p_stage": [None if s.point is None else s.point.result.p_inverter for s in run.steps],
@@ -978,9 +1128,21 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
                if asked.rg_on is not None and asked.rg_off is not None else
                ["the results use these values, since you gave none"]),
         )
+    dead = recommend.dead_time(device, op)
+    if dead.value.get("t_dead") and op.t_dead < recommend.COMMON_FIRMWARE and device.diode is None:
+        # What a longer dead time would cost: firmware is often left at its default.
+        try:
+            now = at_speed_and_torque(device, motor, rpm, torque, op, spread=False).result.p_inverter
+            then = at_speed_and_torque(device, motor, rpm, torque, replace(op, t_dead=recommend.COMMON_FIRMWARE), spread=False).result.p_inverter
+            dead = recommend.Recommendation(dead.topic, {**dead.value, "loss_at_common": then}, dead.lines + [
+                f"open motor-control firmware often runs 300 to 800 ns by default: at {recommend.COMMON_FIRMWARE * 1e9:.0f} ns "
+                f"the stage would lose {then:.3g} W, {then - now:.2g} W more than at the {op.t_dead * 1e9:.0f} ns used here",
+            ])
+        except (Unreachable, ThermalRunaway, ValueError):
+            pass
     out = [
         resistors,
-        recommend.dead_time(device, op),
+        dead,
     ]
     losses = {}
     if motor.fixed_scheme is None:
@@ -997,7 +1159,7 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
         worst, loss = float("-inf"), 0.0
         for speed in (rpm, 0.0):
             try:
-                point = at_speed_and_torque(device, motor, speed, torque, replace(op, t_sink=t_sink))
+                point = at_speed_and_torque(device, motor, speed, torque, replace(op, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None))
             except Unreachable:
                 continue
             top = point.result.tj_peak_range[1] if point.result.tj_peak_range else hottest(point.result)
@@ -1005,11 +1167,71 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
         return worst, loss
 
     try:
-        ambient = _number(data.get("t_ambient", 40), "ambient temperature", low=-40, high=120)
-        out.append(recommend.heatsink(device, ambient, evaluate))
+        # Cooled to air, the air is the one given with the cooling; with a heatsink held at
+        # a temperature it is the one given for sizing a heatsink. Zero is a temperature.
+        in_air = (data["conditions"].get("cooling") or "held") != "held"
+        air = data["conditions"].get("t_ambient") if in_air else data.get("t_ambient")
+        ambient = _number(40 if air in ("", None) else air, "air temperature", low=-40, high=120, field="t_ambient")
+        sink = recommend.heatsink(device, ambient, evaluate)
+        alone = _alone_in_air(device, motor, rpm, torque, op, ambient) if sink.value.get("loss") else None
+        if alone is not None:
+            sink = recommend.Recommendation(sink.topic, {**sink.value, "rth_ja": alone}, sink.lines + [
+                f"With no heatsink at all, a package may have up to {alone:.0f} K/W from junction to air (RthJA on the "
+                "datasheet) for the same margin, counting the hardest-worked one, running and held still. A TO-220 "
+                "standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60",
+            ])
+        elif sink.value.get("loss"):
+            sink = recommend.Recommendation(sink.topic, sink.value, sink.lines + [
+                "With no heatsink at all the hardest-worked package would pass that limit whatever its path to the air",
+            ])
+        out.append(sink)
     except ValueError as exc:
         out.append(recommend.Recommendation("heatsink", lines=[str(exc)]))
     return {"items": [{"topic": r.topic, "value": r.value, "lines": r.lines} for r in out]}
+
+
+def _alone_in_air(device, motor, rpm: float, torque: float, op: OperatingPoint, ambient: float) -> float | None:
+    """The largest junction-to-air resistance of one package, K/W, that keeps the hottest
+    junction 25 K under its rating with no heatsink, at the design point and held still.
+
+    Found by solving with the package in air, not by sharing the loss out evenly: at
+    standstill, and on a motor driven in six steps or through an H-bridge, one package does
+    far more than its share.
+    """
+    from motionsim.drivers import at_speed_and_torque
+
+    limit = device.ratings.tj_max - 25.0
+    inside = max(c.thermal.rth for c in (device.switch, device.diode) if c is not None)
+
+    def worst(case_to_air: float) -> float:
+        air = replace(op, t_sink=ambient, rth_sink=None, rth_board=None, rth_free=case_to_air)
+        top = float("-inf")
+        for speed in (rpm, 0.0):
+            try:
+                top = max(top, hottest(at_speed_and_torque(device, motor, speed, torque, air, spread=False).result))
+            except Unreachable:
+                continue
+            except ThermalRunaway:
+                return float("inf")
+        return top
+
+    low, high = 0.0, 1000.0
+    if worst(1e-3) > limit:
+        return None
+    if worst(high) <= limit:
+        return high + inside
+    for _ in range(24):
+        mid = 0.5 * (low + high)
+        low, high = (mid, high) if worst(mid) <= limit else (low, mid)
+    return low + inside
+
+
+def _report(data: dict, workspace: Workspace) -> dict:
+    """The whole design as a report in Markdown, for saving from the page: the same
+    document `motionsim design run` writes."""
+    from motionsim import design
+
+    return {"markdown": design.markdown(design.run(data, workspace))}
 
 
 def curves(key: str, workspace: Workspace) -> dict:
@@ -1089,6 +1311,8 @@ ROUTES = {
     "/api/capability": capability,
     "/api/largest": largest,
     "/api/suggest": suggest,
+    "/api/fit": motor_fit,
+    "/api/report": lambda data, ws: _report(data, ws),
     "/api/loads": lambda data, ws: loads(data),
     "/api/cycle": cycle,
     "/api/map": speed_torque,
@@ -1103,7 +1327,7 @@ def add_device(name: str, text: str, workspace: Workspace) -> dict:
     from pydantic import ValidationError
 
     key = re.sub(r"[^a-z0-9]+", "-", name.lower().removesuffix(".yaml").removesuffix(".device")).strip("-")
-    if not key or key == "example":
+    if not key or key in EXAMPLES:
         key = "device"
     try:
         device = Device.model_validate(yaml.safe_load(text))
@@ -1115,6 +1339,40 @@ def add_device(name: str, text: str, workspace: Workspace) -> dict:
         ) from None
     (workspace.folder / f"{key}.device.yaml").write_text(text, encoding="utf-8")
     return {"device": workspace.summary(key, device)}
+
+
+def typed_form() -> dict:
+    """The form for a transistor typed in from its datasheet, as the page draws it."""
+    from motionsim.fit.typed import FIGURES, OUTLINES, TECHNOLOGIES
+
+    return {
+        "technologies": list(TECHNOLOGIES), "outlines": list(OUTLINES),
+        "fields": [{"key": key, "label": label, "unit": unit, "required": required, "help": text_}
+                   for key, label, unit, _, required, text_ in FIGURES],
+    }
+
+
+def add_typed(figures: dict, workspace: Workspace) -> dict:
+    """A device from the figures the user typed in, built and kept like any other."""
+    import re
+
+    from motionsim.fit.typed import Mistyped, from_figures
+
+    try:
+        device = from_figures(figures or {})
+    except Mistyped as exc:
+        raise Refused(str(exc), "check the figure against the datasheet", exc.field) from None
+    import hashlib
+
+    name = f"{device.vendor} {device.part_number}"
+    key = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    # A name that leaves nothing to tell it by, or that is one the page keeps for itself,
+    # gets a key of its own, so that no two parts are written over each other.
+    if not re.sub(r"[^a-z0-9]+", "", device.part_number.lower()) or key in EXAMPLES or key == "device":
+        key = "typed-" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    text = yaml.safe_dump(device.model_dump(mode="json", exclude_none=True), sort_keys=False, allow_unicode=True)
+    (workspace.folder / f"{key}.device.yaml").write_text(text, encoding="utf-8")
+    return {"device": workspace.summary(key, device), "name": f"{key}.device.yaml", "text": text}
 
 
 def add_measurement(key: str, name: str, text: str, workspace: Workspace) -> dict:
@@ -1156,6 +1414,8 @@ def call(route: str, payload: str, workspace: Workspace) -> str:
             body = setup(workspace)
         elif route == "/api/device":
             body = add_device(data["name"], data["text"], workspace)
+        elif route == "/api/typed":
+            body = add_typed(data.get("figures"), workspace)
         elif route == "/api/measure":
             body = add_measurement(data["device"], data["name"], data["text"], workspace)
         elif route.startswith("/api/device/"):

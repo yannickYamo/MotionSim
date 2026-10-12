@@ -35,7 +35,7 @@ def request(workspace: server.Workspace, kind: str = "pmsm", **changes) -> dict:
 def test_setup_offers_every_motor_with_values_that_run(workspace) -> None:
     info = server.setup(workspace)
     assert set(info["motors"]) == {"pmsm", "bldc", "synrm", "induction", "dc", "dc_series", "stepper"}
-    assert [d["id"] for d in info["devices"]] == ["example", "transistor"]
+    assert [d["id"] for d in info["devices"]] == ["example", "example-mosfet", "transistor"]
     for kind, motor in info["motors"].items():
         assert {f["key"] for f in motor["fields"]} <= set(motor["values"]) | {"drive"}
         answer = server.stage(request(workspace, kind))  # the first screen is never an error

@@ -1,6 +1,6 @@
 # MotionSim
 
-Bring a power transistor's datasheet, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
+Bring a power transistor's datasheet, or a dozen figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
 
 MotionSim is a web page with a loss and temperature engine behind it. It works from any vendor's datasheet, shows the equations it uses, and says in every result what the data supports and what it leaves out. It answers two questions: what inverter a load needs, and what load a device can drive.
 
@@ -8,9 +8,9 @@ Live page: https://yannickyamo.github.io/MotionSim/
 
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature, the verdict and its checks on the right](docs/images/page.png)
 
-The live page runs the engine in your browser, with a made-up part to try and room for your own device files. Nothing you enter leaves your browser. It does not read datasheet PDFs: that needs your own key and a local install, as below.
+The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. It does not read datasheet PDFs: that needs your own key and a local install, as below.
 
-**Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). It has not been checked against a measured loss. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
+**Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). Against the one measured inverter loss found in public, a 48 V reference design, it is 10 to 31% low on a measurement that includes the board's own resistance. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
 
 ## Who it is for
 
@@ -26,19 +26,21 @@ MotionSim starts from the datasheet itself, or from your own measurements. Each 
 
 Five steps on one page, with the power stage drawn on screen the whole time:
 
-1. **The device.** Drop its datasheet (PDF), a device file, or your own double-pulse measurements. Nothing is listed that you did not bring.
+1. **The device.** Type in a dozen figures from a transistor's datasheet (ratings, on-resistance, gate and output charge, thermal resistance), drop its datasheet (PDF) or a device file, or bring your own double-pulse measurements. A figure that cannot be right, such as an on-resistance in the wrong unit, is refused where it sits. Nothing is listed that you did not bring.
 2. **The motor.** Seven kinds: permanent-magnet (magnets on, set into or buried in the rotor), reluctance, induction, brushless DC, brushed DC with a magnet or a series field, and stepper. The kinds that suit your device's voltage come first, and one is recommended.
-3. **The supply and the design point.** Voltage, speed, torque, switching frequency, devices in parallel.
+3. **The supply and the design point.** Voltage, speed, torque, switching frequency, devices in parallel. And the cooling: a heatsink at a temperature you know, a heatsink in air from its K/W figure, or no heatsink, with each part standing in the air or all of them soldered to one board, where they warm each other.
 4. **The load.** Pick a kind (fan, compressor, robot joint, vehicle, washer drum, positioning axis, power tool) sized to your motor, or bring a mission profile as a CSV file. Choose how the drive starts the motor.
 5. **The results.**
-   - A verdict with plain-language checks, and what the part needs around it. A caution on the data means the operating point is outside what the datasheet gives, for a loss that matters there.
+   - A verdict with plain-language checks, and what the part needs around it. A caution on the data means the operating point is outside what the datasheet gives, for a loss that matters there. A gate drive and a dead time you did not give are chosen, counted and stated, and the dead-time advice says what a firmware default of 500 ns would cost.
    - Conduction and switching loss, and junction temperature as a range where values are assumed.
    - Temperature through the whole motion, the motor current, and a life estimate under thermal cycling.
    - A speed-torque map, in the motor's units or the load's.
    - **What to build**: the heatsink, the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
    - **What it can drive**: the question turned round. The torque the device holds at each speed, how that moves with switching frequency and heatsink temperature, and how much heavier your load could be.
    - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values. Each device shows its verdict, its margin to the junction limit running and held still, and what its switching loss rests on. Losses too close to tell apart are marked level, and devices compared on unlike data are said to be.
-   - A setup you can save to a file, and a report you can save as a PDF.
+   - A setup you can save to a file, and the whole result as a report: a PDF, or a Markdown file to keep or to hand to a coding agent.
+
+![The first step: a transistor typed in from its datasheet figures, with the made-up parts and the device file drop beside it](docs/images/device.png)
 
 ![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
 
@@ -70,7 +72,7 @@ motionsim serve
 - The key is read from your environment each time the page starts. It is never written to disk, never sent to the page, and never leaves your machine except in the call to Anthropic.
 - A datasheet takes a minute or two and costs about what a long chat message does. The page says so before it starts.
 - What was read is saved beside the device model, value by value with its page number, so you can check it against the datasheet. Open "Check what was read" on any part.
-- Without a key everything else works: device files, your own measurements, and a made-up part to try the tool with.
+- Without a key everything else works: a transistor typed in from its datasheet, device files, your own measurements, and the made-up parts.
 
 Datasheets are their vendors' property. None is distributed here, and no device data ships with the project.
 
@@ -105,6 +107,13 @@ motionsim build my_part.observations.yaml -o my_part.device.yaml
 motionsim serve --devices .
 ```
 
+Or with a transistor typed in by hand, no key needed:
+
+```
+motionsim template device -o my_part.yaml      # fill in the figures from the datasheet
+motionsim build my_part.yaml -o my_part.device.yaml
+```
+
 Everything the page does is also a command: `motionsim --help` lists them. To rank several parts on one motor from the command line:
 
 ```
@@ -112,7 +121,21 @@ motionsim propose a.device.yaml b.device.yaml --vdc 48 --motor examples/motor_ro
     --fsw 20000 --tsink 50 --tdead 2e-7 --rpm 1000 --torque 1
 ```
 
-A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature.
+A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature. In place of `--tsink`, cooling to air is `--tair` with `--rth-heatsink` (a heatsink's K/W), or with `--rth-ja` or `--no-heatsink` for none (add `--board-area` and `--copper` for parts soldered to one board). A dead time left open is filled in and said, as on the page.
+
+## From the terminal, or driven by a coding agent
+
+Every step of the page can be run from one file, with no browser and no server:
+
+```
+motionsim design init --device my_part.yaml -o design.yaml   # a design sized to the part
+motionsim design run design.yaml --md report.md              # fit, verdict, motion, what to build, what it can drive
+motionsim design run design.yaml --json                      # the same, for a program to read
+```
+
+`my_part.yaml` is a device file, or the figures typed from a datasheet (`motionsim template device`). The exit status says how it went: 0 the part passes, 3 it does not, 2 the design cannot be run as written, with the reason and the figure at issue in the output.
+
+`motionsim agent` prints a guide written for coding agents: the loop, the design file, what comes back, and what to do with a refusal. There is no service to host and nothing to register: an agent that can run a command can use the tool. [AGENTS.md](AGENTS.md) points to it.
 
 ## How it works
 
@@ -133,10 +156,10 @@ Choosing a power semiconductor usually means trusting each vendor's calculator f
 
 | | Vendor web tools | General circuit simulators | MotionSim |
 |---|---|---|---|
-| Parts covered | One vendor's | Any, if you build the model | Any, from its datasheet |
+| Parts covered | One vendor's | Any, if you build the model | Any, from its datasheet or a dozen typed figures |
 | Model source | Not shown | Entered by hand | Recorded per value, with its page |
 | Assumptions and gaps | Not shown | Not shown | Listed in each result |
-| Accuracy | Calibrated on the vendor's own measurements | As good as your model | Unproven against measurement; a range where data is missing |
+| Accuracy | Calibrated on the vendor's own measurements | As good as your model | One public measurement, 10 to 31% low with the board's resistance in it; a range where data is missing |
 | Control loop, other topologies | Some | Yes | No: motor inverters, steady state at each instant, with ripple at the switching frequency worked out from the switching sequence |
 | Both directions | The load is given | The load is given | What a load needs, and what a device can drive |
 | Comparing parts | Within one vendor | Any, model by model | Any vendors, with each part's test conditions beside it and a tie called a tie |

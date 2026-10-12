@@ -16,6 +16,35 @@ export function ticks(lo: number, hi: number, wanted = 5): number[] {
 
 interface Box { x: number; y: number; w: number; h: number }
 
+/** Every drawing that takes the width of the panel is this size, and every one that takes
+ *  half of it is that size: charts set one above another line up, axis for axis. */
+const FULL = { view: "0 0 540 254", box: { x: 50, y: 28, w: 466, h: 184 } };
+const HALF = { view: "0 0 356 220", box: { x: 46, y: 26, w: 286, h: 150 } };
+
+/** A scale on round values that holds everything from lo to hi, with zero always on it. */
+function scale(values: number[], wanted = 4): number[] {
+  const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
+  const yt = ticks(lo, hi > lo ? hi : lo + 1, wanted);
+  const step = yt.length > 1 ? yt[1] - yt[0] : 1;
+  while (yt[0] > lo - step * 1e-9 && yt[0] > lo) yt.unshift(Number((yt[0] - step).toPrecision(12)));
+  while (yt[yt.length - 1] < hi) yt.push(Number((yt[yt.length - 1] + step).toPrecision(12)));
+  return yt;
+}
+
+/** One quantity against time, on the frame every full-width chart shares. */
+function against(time: number[], values: (number | null)[], yLabel: string, tone: string, said: string): string {
+  const { view, box } = FULL;
+  const tMax = time[time.length - 1] || 1;
+  const yt = scale(values.filter((v): v is number => v !== null));
+  const lo = yt[0], hi = yt[yt.length - 1];
+  const sx = (t: number) => box.x + (t / tMax) * box.w;
+  const sy = (v: number) => box.y + box.h - ((v - lo) / (hi - lo || 1)) * box.h;
+  const zero = lo < 0 ? `<path class="zero" d="M${box.x} ${sy(0)}h${box.w}"/>` : "";
+  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${escape(said)}">
+${frame(box, ticks(0, tMax), yt, sx, sy, "time, s", yLabel)}${zero}
+<path class="series ${tone}" d="${line(time, values, sx, sy)}"/></svg>`;
+}
+
 /** A tick label: whole numbers stay whole. */
 const tickText = (v: number) => (Number.isInteger(v) ? String(v) : sig(v, 2));
 
@@ -64,10 +93,11 @@ export function lossBar(l: Losses, hasDiode: boolean): string {
   return `<svg class="lossbar" viewBox="0 0 100 28" preserveAspectRatio="none" role="img" aria-label="Loss split of one switch position">${bar}</svg><ul class="legend">${rows}</ul>`;
 }
 
-/** Junction temperature through a motion, against what each instant would reach if it lasted. */
+/** A motion, as four drawings of one size on one time axis: the junction temperature against
+ *  what each instant would reach if it lasted, then what the motor was asked for (speed,
+ *  torque) and what it drew. Each has its own scale and says its unit. */
 export function timeChart(c: Cycle): string {
-  const box = { x: 46, y: 26, w: 470, h: 190 };
-  const strip = { x: 46, y: 262, w: 470, h: 64 };
+  const { view, box } = FULL;
   const tMax = c.time[c.time.length - 1];
   const temps = [...c.tj, ...c.steady, ...c.t_sink].filter((v): v is number => v !== null);
   const limit = c.summary.tj_max ?? 150;
@@ -76,35 +106,18 @@ export function timeChart(c: Cycle): string {
   const sx = (t: number) => box.x + (t / tMax) * box.w;
   const sy = (v: number) => box.y + box.h - ((v - lo) / (hi - lo)) * box.h;
   const limitLine = limit <= hi ? `<path class="limit" d="M${box.x} ${sy(limit)}h${box.w}"/><text class="tick warn" x="${box.x + box.w - 4}" y="${sy(limit) - 5}" text-anchor="end">rating ${sig(limit)} °C</text>` : "";
-  const rpmMax = Math.max(...c.rpm.map(Math.abs), 1);
-  const tqMax = Math.max(...c.torque.map(Math.abs), 1e-9);
   const amps = c.i_peak.map((v) => v ?? 0);
-  const iMax = Math.max(...amps, 1e-9);
-  const ay = (v: number) => strip.y + strip.h - 4 - (v / iMax) * (strip.h - 8);
-  const ry = (v: number) => strip.y + strip.h / 2 - (v / rpmMax) * (strip.h / 2 - 4);
-  const ty = (v: number) => strip.y + strip.h / 2 - (v / tqMax) * (strip.h / 2 - 4);
-  const sy2 = (y: number) => y - strip.y + 24;
-  return `<svg class="chart" viewBox="0 0 540 256" role="img" aria-label="Junction temperature against time">
+  return `<svg class="chart" viewBox="${view}" role="img" aria-label="Junction temperature against time">
 ${frame(box, ticks(0, tMax), ticks(lo, hi, 4), sx, sy, "time, s", "junction temperature, °C")}
 ${limitLine}
 <path class="series sink" d="${line(c.time, c.t_sink, sx, sy)}"/>
 <path class="series ghost" d="${line(c.time, c.steady, sx, sy)}"/>
 <path class="series hot" d="${line(c.time, c.tj, sx, sy)}"/>
 </svg>
-<ul class="legend inline"><li><span class="key hot"></span>junction, followed through time</li><li><span class="key ghost"></span>junction, if each instant lasted forever</li><li><span class="key sink"></span>heatsink</li></ul>
-<svg class="chart" viewBox="0 0 540 96" role="img" aria-label="Motor speed and torque against time">
-<rect class="plot" x="${strip.x}" y="24" width="${strip.w}" height="${strip.h}"/>
-<path class="grid" d="M${strip.x} ${24 + strip.h / 2}h${strip.w}"/>
-<path class="series speed" d="${line(c.time, c.rpm, sx, (v) => sy2(ry(v)))}"/>
-<path class="series torque" d="${line(c.time, c.torque, sx, (v) => sy2(ty(v)))}"/>
-<text class="axis" x="${strip.x}" y="14">speed (up to ${sig(rpmMax)} rpm) and torque (up to ${sig(tqMax)} N·m)</text>
-</svg>
-<ul class="legend inline"><li><span class="key speed"></span>speed</li><li><span class="key torque"></span>torque</li></ul>
-<svg class="chart" viewBox="0 0 540 96" role="img" aria-label="Motor current against time">
-<rect class="plot" x="${strip.x}" y="24" width="${strip.w}" height="${strip.h}"/>
-<path class="series hot" d="${line(c.time, amps, sx, (v) => sy2(ay(v)))}"/>
-<text class="axis" x="${strip.x}" y="14">motor current, peak (up to ${sig(iMax)} A)</text>
-</svg>`;
+<ul class="legend inline"><li><span class="key hot"></span>junction, followed through time</li><li><span class="key ghost"></span>junction, if each instant lasted forever</li><li><span class="key sink"></span>${c.sink_name ?? "heatsink"}</li></ul>
+${against(c.time, c.rpm, "motor speed, rpm", "speed", "Motor speed against time")}
+${against(c.time, c.torque, "motor torque, N·m", "speed", "Motor torque against time")}
+${against(c.time, amps, "motor current, A peak", "hot", "Motor current against time")}`;
 }
 
 /** Ten PWM periods of one switch, held at the instant it works hardest: the current it
@@ -112,8 +125,8 @@ ${limitLine}
  *  turn-on and turn-off is a spike whose area is the energy lost in it. A real spike is
  *  far narrower and taller than can be drawn, so the spikes are widened and say so. */
 export function pwmChart(p: SwitchingPeriod, periods = 5): string {
-  const top = { x: 46, y: 22, w: 470, h: 46 };
-  const box = { x: 46, y: 96, w: 470, h: 96 };
+  const top = { x: 50, y: 30, w: 466, h: 46 };
+  const box = { x: 50, y: 122, w: 466, h: 100 };
   const period = 1 / p.f_sw;
   const on = Math.min(Math.max(p.duty, 0), 1);
   const edge = 0.07; // of a period: the width a spike is drawn with
@@ -143,17 +156,17 @@ export function pwmChart(p: SwitchingPeriod, periods = 5): string {
   const share = eCond + eSw > 0 ? Math.round((100 * eSw) / (eCond + eSw)) : 0;
   const span = periods * period;
   const time = span < 1e-3 ? `${sig(span * 1e6)} µs` : `${sig(span * 1e3)} ms`;
-  return `<svg class="chart pwm" viewBox="0 0 540 222" role="img" aria-label="${periods} switching periods: current through the switch, and the power it loses">
-<text class="axis" x="${top.x}" y="14">switch current: ${sig(p.current)} A, on ${Math.round(on * 100)} % of each period</text>
+  return `<svg class="chart pwm" viewBox="${FULL.view}" role="img" aria-label="${periods} switching periods: current through the switch, and the power it loses">
+<text class="axis" x="${top.x}" y="${top.y - 12}">switch current: ${sig(p.current)} A, on ${Math.round(on * 100)} % of each period</text>
 <path class="grid" d="M${top.x} ${iy(0)}h${top.w}"/><path class="series current" d="${current}"/>
-<text class="axis" x="${box.x}" y="${box.y - 8}">power lost in the switch, W</text>
+<text class="axis" x="${box.x}" y="${box.y - 10}">power lost in the switch, W</text>
 ${ticks(0, yMax, 3).map((v) => `<path class="grid" d="M${box.x} ${sy(v)}h${box.w}"/><text class="tick" x="${box.x - 8}" y="${sy(v) + 4}" text-anchor="end">${Number.isInteger(v) ? v : sig(v, 2)}</text>`).join("")}
 <rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>
 <path class="area conduction" d="${conduction}"/><path class="area switching" d="${spikes}"/>
 <text class="tick" x="${box.x}" y="${box.y + box.h + 16}">0</text><text class="tick" x="${box.x + box.w}" y="${box.y + box.h + 16}" text-anchor="end">${time} at ${sig(p.f_sw / 1000)} kHz</text>
 </svg>
 <ul class="legend inline"><li><span class="key cond"></span>conduction, ${micro(eCond)} a period</li><li><span class="key sw"></span>switching, ${micro(eSw)} a period (${share} % of the two)</li></ul>
-<p class="quiet small">Held at the instant of the turn where this switch works hardest. A switching spike lasts well under a microsecond; it is drawn wider, with its area kept equal to the energy lost.</p>`;
+<p class="quiet small caption">Held at the instant of the turn where this switch works hardest. A switching spike lasts well under a microsecond; it is drawn wider, with its area kept equal to the energy lost.</p>`;
 }
 
 /** One table of a device model against current, a line a temperature, hottest in orange.
@@ -181,24 +194,43 @@ ${frame(box, ticks(0, xMax, 4), yt, sx, sy, "current, A", `${title}, ${unit}`)}$
 <ul class="legend inline">${legend}</ul></figure>`;
 }
 
-/** One line of a limit against one condition, with a point marked on it where there is one. */
-export function limitChart(xs: number[], ys: number[], xLabel: string, yLabel: string, mark?: { x: number; y: number; label: string }): string {
-  const box = { x: 46, y: 26, w: 286, h: 150 };
+/**
+ * One line of a limit against one condition, with a point marked on it where there is one.
+ * `wide`: drawn for the full width of the panel, as the main chart of a tab; otherwise for
+ * half of it, one of a pair.
+ */
+export function limitChart(xs: number[], ys: number[], xLabel: string, yLabel: string, mark?: { x: number; y: number; label: string }, wide = false): string {
+  const { view, box } = wide ? FULL : HALF;
   const x0 = Math.min(...xs, mark?.x ?? Infinity);
   const x1 = Math.max(...xs, mark?.x ?? -Infinity);
   const top = Math.max(...ys, mark?.y ?? 0, 1e-9);
+  // The scale ends on a round value above the highest point, so that a level limit is a
+  // line inside the plot and not one drawn over its frame.
   const yt = ticks(0, top * 1.08, 4);
-  const yMax = Math.max(yt[yt.length - 1], top);
+  const step = yt.length > 1 ? yt[1] - yt[0] : top;
+  while (yt[yt.length - 1] < top * 1.04) yt.push(Number((yt[yt.length - 1] + step).toPrecision(12)));
+  const yMax = yt[yt.length - 1];
   const sx = (v: number) => box.x + ((v - x0) / Math.max(x1 - x0, 1e-9)) * box.w;
   const sy = (v: number) => box.y + box.h - (v / yMax) * box.h;
-  const dot = mark ? `<circle class="mark hot" cx="${sx(mark.x).toFixed(1)}" cy="${sy(mark.y).toFixed(1)}" r="4"/><text class="tick" x="${(sx(mark.x) + 8).toFixed(1)}" y="${(sy(mark.y) + 4).toFixed(1)}">${escape(mark.label)}</text>` : "";
-  return `<svg class="chart small" viewBox="0 0 356 212" role="img" aria-label="${escape(yLabel)} against ${escape(xLabel)}">
-${frame(box, ticks(x0, x1, 4), yt, sx, sy, xLabel, yLabel)}<path class="series read-hot" d="${line(xs, ys, sx, sy)}"/>${dot}</svg>`;
+  let dot = "";
+  if (mark) {
+    // The label sits under the point, clear of the line it is measured against, and is
+    // kept inside the plot; near the foot of the plot it goes above.
+    const cx = sx(mark.x), cy = sy(mark.y);
+    const below = cy < box.y + box.h - 30;
+    const anchor = cx > box.x + box.w - 70 ? "end" : cx < box.x + 70 ? "start" : "middle";
+    // No room under it: beside it, on the side with more room, level with the point.
+    const left = cx - box.x > box.w / 2 - 20;
+    const at = below ? { x: cx, y: cy + 20, anchor } : { x: cx + (left ? -10 : 10), y: cy + 4, anchor: left ? "end" : "start" };
+    dot = `<circle class="mark hot" cx="${cx.toFixed(1)}" cy="${cy.toFixed(1)}" r="4.5"/><text class="tick mark-label" x="${at.x.toFixed(1)}" y="${at.y.toFixed(1)}" text-anchor="${at.anchor}">${escape(mark.label)}</text>`;
+  }
+  return `<svg class="chart${wide ? "" : " small"}" viewBox="${view}" role="img" aria-label="${escape(yLabel)} against ${escape(xLabel)}">
+${frame(box, ticks(x0, x1, wide ? 5 : 4), yt, sx, sy, xLabel, yLabel)}<path class="series read-hot" d="${line(xs, ys, sx, sy)}"/>${dot}</svg>`;
 }
 
 /** Junction temperature through the motion for up to five things compared, on one chart. */
 export function overlayChart(list: { name: string; time: number[]; tj: (number | null)[] }[], limit: number): string {
-  const box = { x: 46, y: 26, w: 470, h: 200 };
+  const { view, box } = FULL;
   const tMax = Math.max(...list.map((s) => s.time[s.time.length - 1] ?? 0), 1e-9);
   const temps = list.flatMap((s) => s.tj).filter((v): v is number => v !== null);
   const lo = Math.floor((Math.min(...temps) - 2) / 10) * 10;
@@ -206,7 +238,7 @@ export function overlayChart(list: { name: string; time: number[]; tj: (number |
   const sx = (t: number) => box.x + (t / tMax) * box.w;
   const sy = (v: number) => box.y + box.h - ((v - lo) / (hi - lo)) * box.h;
   const limitLine = limit <= hi ? `<path class="limit" d="M${box.x} ${sy(limit)}h${box.w}"/><text class="tick warn" x="${box.x + box.w - 4}" y="${sy(limit) - 5}" text-anchor="end">rating ${sig(limit)} °C</text>` : "";
-  return `<svg class="chart" viewBox="0 0 540 266" role="img" aria-label="Junction temperature against time, for each one compared">
+  return `<svg class="chart" viewBox="${view}" role="img" aria-label="Junction temperature against time, for each one compared">
 ${frame(box, ticks(0, tMax), ticks(lo, hi, 4), sx, sy, "time, s", "hottest junction, °C")}${limitLine}
 ${list.map((s, k) => `<path class="series s${k}" d="${line(s.time, s.tj, sx, sy)}"/>`).join("")}</svg>`;
 }
@@ -276,11 +308,10 @@ ${compact ? "" : `<text class="axis" x="${box.x + box.w}" y="${box.y + box.h + 3
 
 /** The motion the user drew: load speed against time. */
 export function motionPreview(segments: Segment[]): string {
-  const box = { x: 40, y: 24, w: 300, h: 80 };
+  const { view, box } = HALF;
   const total = segments.reduce((s, g) => s + Math.max(g.duration, 0), 0) || 1;
-  const speeds = segments.flatMap((g) => [g.speed_start, g.speed_end]);
-  const hi = Math.max(...speeds, 1);
-  const lo = Math.min(...speeds, 0);
+  const yt = scale(segments.flatMap((g) => [g.speed_start, g.speed_end]));
+  const lo = yt[0], hi = yt[yt.length - 1];
   const sx = (t: number) => box.x + (t / total) * box.w;
   const sy = (v: number) => box.y + box.h - ((v - lo) / (hi - lo || 1)) * box.h;
   let t = 0;
@@ -290,7 +321,7 @@ export function motionPreview(segments: Segment[]): string {
     t += Math.max(g.duration, 0);
     d += `L${sx(t)} ${sy(g.speed_end)}`;
   });
-  return `<svg class="chart small" viewBox="0 0 356 142" role="img" aria-label="Load speed against time">
-${frame(box, ticks(0, total, 4), [lo, hi], sx, sy, "s", "load speed, rpm")}
+  return `<svg class="chart small" viewBox="${view}" role="img" aria-label="Load speed against time">
+${frame(box, ticks(0, total, 4), yt, sx, sy, "time, s", "load speed, rpm")}
 <path class="series hot" d="${d}"/></svg>`;
 }
