@@ -23,15 +23,26 @@ PAGE = (
 
 def point(quantity, typ, unit, *, i=None, v=None, tj=None, maximum=None) -> ReadPoint:
     return ReadPoint(
-        quantity=quantity, printed_typ=typ, printed_max=maximum, unit=unit,
-        current_a=i, voltage_v=v, tj_c=tj, page=1,
+        quantity=quantity,
+        printed_typ=typ,
+        printed_max=maximum,
+        unit=unit,
+        current_a=i,
+        voltage_v=v,
+        tj_c=tj,
+        page=1,
     )
 
 
 def read_result(points: list[ReadPoint]) -> ReadResult:
     return ReadResult(
-        vendor="Example", part_number="IPM-1", technology="Si IGBT",
-        topology=Topology.six_pack, integrated_driver=True, points=points, figures=[],
+        vendor="Example",
+        part_number="IPM-1",
+        technology="Si IGBT",
+        topology=Topology.six_pack,
+        integrated_driver=True,
+        points=points,
+        figures=[],
     )
 
 
@@ -60,8 +71,15 @@ DOC = Document(file="example.pdf", sha256="0" * 64, pages=1)
 
 @pytest.mark.parametrize(
     ("unit", "expected"),
-    [("μJ", ("J", 1e-6)), ("µJ", ("J", 1e-6)), ("mJ", ("J", 1e-3)), ("°C/W", ("K/W", 1.0)),
-     ("K/W", ("K/W", 1.0)), ("℃", ("degC", 1.0)), ("furlong", None)],
+    [
+        ("μJ", ("J", 1e-6)),
+        ("µJ", ("J", 1e-6)),
+        ("mJ", ("J", 1e-3)),
+        ("°C/W", ("K/W", 1.0)),
+        ("K/W", ("K/W", 1.0)),
+        ("℃", ("degC", 1.0)),
+        ("furlong", None),
+    ],
 )
 def test_units(unit, expected) -> None:
     assert normalise_unit(unit) == expected
@@ -134,9 +152,7 @@ def test_missing_recovery_energy_is_left_out_and_reported() -> None:
     points = [p for p in full_points() if p.quantity is not Quantity.e_rr]
     device = build_device(check(read_result(points), DOC, [PAGE], reader="test"))
     assert device.diode.e_rr is None
-    op = OperatingPoint(
-        v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80
-    )
+    op = OperatingPoint(v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80)
     assert any("recovery loss is left out" in x for x in solve(device, op).limits)
 
 
@@ -151,9 +167,7 @@ def test_built_device_reproduces_the_table_points() -> None:
     assert device.switch.thermal.r == [4.7] and device.switch.thermal.tau is None
     assert device.ratings.tj_max == 150.0
 
-    op = OperatingPoint(
-        v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80
-    )
+    op = OperatingPoint(v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80)
     r = solve(device, op)
     # The diode's drop is given at 25 °C only and carries a fifth of the loss here.
     assert r.validity is Validity.extrapolated
@@ -212,8 +226,16 @@ def test_a_recovery_row_flagged_for_more_than_its_missing_voltage_stays_out() ->
 
 def test_a_rating_filed_as_a_condition_is_taken_as_the_value():
     """A rating sits in a "Value" column; the reader may hand it over as the test voltage."""
-    filed = ReadPoint(quantity=Quantity.v_rated, printed_typ=None, printed_max=None, unit="V",
-                      current_a=None, voltage_v=600.0, tj_c=None, page=1)
+    filed = ReadPoint(
+        quantity=Quantity.v_rated,
+        printed_typ=None,
+        printed_max=None,
+        unit="V",
+        current_a=None,
+        voltage_v=600.0,
+        tj_c=None,
+        page=1,
+    )
     seen = check_point(filed, [PAGE])
     assert seen.max == 600.0 and not seen.flags
 
@@ -247,7 +269,7 @@ def test_curves_with_no_tabulated_value_are_told_apart_by_legend_colour():
     import numpy as np
 
     from motionsim.observe import figures
-    from motionsim.observe.family import _Trace, _by_colour
+    from motionsim.observe.family import _by_colour, _Trace
     from motionsim.observe.schema import ReadSeries
 
     grid = np.linspace(1, 8, 5)
@@ -272,8 +294,18 @@ def test_a_page_with_no_usable_text_is_recognised_and_its_transcript_used():
 
 def test_recovery_energy_is_estimated_from_charge_when_no_energy_is_tabulated():
     points = [p for p in full_points() if p.quantity is not Quantity.e_rr]
-    points.append(ReadPoint(quantity=Quantity.q_rr, printed_typ="30", printed_max="60", unit="nC",
-                            current_a=7.5, voltage_v=300.0, tj_c=25.0, page=1))
+    points.append(
+        ReadPoint(
+            quantity=Quantity.q_rr,
+            printed_typ="30",
+            printed_max="60",
+            unit="nC",
+            current_a=7.5,
+            voltage_v=300.0,
+            tj_c=25.0,
+            page=1,
+        )
+    )
     device = build_device(check(read_result(points), DOC, [PAGE], reader="test"))
     e_rr = device.diode.e_rr
     assert e_rr.v_ref == 300.0 and "quarter of the recovery charge" in e_rr.assumption
@@ -283,8 +315,16 @@ def test_recovery_energy_is_estimated_from_charge_when_no_energy_is_tabulated():
 
 def test_the_gate_resistor_the_energies_were_measured_with_is_kept():
     points = full_points() + [
-        ReadPoint(quantity=Quantity.rg_on_test, printed_typ="15", printed_max=None, unit="Ω",
-                  current_a=None, voltage_v=None, tj_c=None, page=1),
+        ReadPoint(
+            quantity=Quantity.rg_on_test,
+            printed_typ="15",
+            printed_max=None,
+            unit="Ω",
+            current_a=None,
+            voltage_v=None,
+            tj_c=None,
+            page=1,
+        ),
     ]
     device = build_device(check(read_result(points), DOC, [PAGE], reader="test"))
     assert device.switch.e_on.rg == 15.0 and device.switch.e_off.rg is None

@@ -60,3 +60,62 @@ def linear_device(
             thermal=FosterNetwork(r=[rth_d], tau=[0.01], source=SRC),
         ),
     )
+
+
+# ---------- two made-up SiC modules for comparisons, and a pytest option ----------
+
+SIC = """\
+schema_version: 1
+vendor: synthetic
+part_number: {name}
+technology: SiC MOSFET
+ratings: {{v_max: 650, i_nominal: 30, tj_max: 175}}
+package: {{topology: six_pack, rth_case_sink: 0.1}}
+switch:
+  kind: mosfet
+  conduction:
+    source: {{kind: synthetic}}
+    curves:
+      - {{tj: 25, current: [0, 60], value: [0.0, 3.0]}}
+      - {{tj: 150, current: [0, 60], value: [0.0, 4.2]}}
+  reverse:
+    source: {{kind: synthetic}}
+    curves:
+      - {{tj: 25, current: [0, 60], value: [3.0, 4.5]}}
+  e_on:
+    v_ref: 400
+    source: {{kind: synthetic}}
+    curves:
+      - {{tj: 25, current: [0, 60], value: [0, 0.30e-3]}}
+      - {{tj: 150, current: [0, 60], value: [0, 0.33e-3]}}
+  e_off:
+    v_ref: 400
+    source: {{kind: synthetic}}
+    curves:
+      - {{tj: 25, current: [0, 60], value: [0, 0.12e-3]}}
+      - {{tj: 150, current: [0, 60], value: [0, 0.13e-3]}}
+  e_rr:
+    v_ref: 400
+    source: {{kind: synthetic}}
+    curves:
+      - {{tj: 25, current: [0, 60], value: [0, 0.03e-3]}}
+  thermal:
+    source: {{kind: synthetic}}
+    r: {r}
+    tau: [0.001, 0.01, 0.1]
+"""
+
+
+def sic_files(folder) -> None:
+    """A SiC module, and the same one with a poor thermal path, as device files in a folder."""
+    (folder / "sic.device.yaml").write_text(SIC.format(name="SIC-650V-30A", r="[0.15, 0.4, 0.45]"))
+    (folder / "sic-hot.device.yaml").write_text(SIC.format(name="SIC-HOT", r="[0.6, 1.6, 1.8]"))
+
+
+def pytest_addoption(parser) -> None:
+    parser.addoption(
+        "--update-golden",
+        action="store_true",
+        default=False,
+        help="rewrite the golden figures from the code as it is: only where a change in results is meant",
+    )

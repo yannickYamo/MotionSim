@@ -16,11 +16,13 @@ until the voltage fits (field weakening).
 from __future__ import annotations
 
 from dataclasses import dataclass
+
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
 from scipy.optimize import brentq, minimize_scalar
 
 from motionsim.motor.stage import Unreachable
+from motionsim.text import written
 
 
 class Motor(BaseModel):
@@ -86,10 +88,12 @@ def operating_state(motor: Motor, rpm: float, torque: float, v_max: float) -> Dr
     now = motor
     for _ in range(12):
         s = _state(now.model_copy(update={"i_max": None}), rpm, torque, v_max)
-        now = motor.model_copy(update={
-            "ld": motor.ld / float(np.sqrt(1 + (s.i_d / motor.i_sat) ** 2)),
-            "lq": motor.lq / float(np.sqrt(1 + (s.i_q / motor.i_sat) ** 2)),
-        })
+        now = motor.model_copy(
+            update={
+                "ld": motor.ld / float(np.sqrt(1 + (s.i_d / motor.i_sat) ** 2)),
+                "lq": motor.lq / float(np.sqrt(1 + (s.i_q / motor.i_sat) ** 2)),
+            }
+        )
     return _state(now, rpm, torque, v_max)
 
 
@@ -104,9 +108,7 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
     else:
         span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
         lo, hi = (max(-span, floor), 0.0) if motor.ld < motor.lq else (0.0, span)
-        best = minimize_scalar(
-            lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded"
-        )
+        best = minimize_scalar(lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded")
         i_d = float(best.x)
     i_q = _iq_for(motor, torque, i_d)
     v_d, v_q = _voltages(motor, w, i_d, i_q)
@@ -128,7 +130,7 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
         deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
         if excess(deepest) > 0:
             raise Unreachable(
-                f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
+                f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs more voltage than {written(v_max, 4)} V peak "
                 "even with full field weakening"
             )
         i_d = float(brentq(excess, deepest, i_d))
@@ -136,15 +138,21 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
         v_d, v_q = _voltages(motor, w, i_d, i_q)
 
     state = DriveState(
-        i_d=i_d, i_q=i_q, v_d=v_d, v_q=v_q,
+        i_d=i_d,
+        i_q=i_q,
+        v_d=v_d,
+        v_q=v_q,
         f_out=w / (2 * np.pi),
         field_weakening=weakening,
         p_shaft=torque * w / motor.pole_pairs,
         p_copper=1.5 * motor.rs * (i_d**2 + i_q**2),
     )
     if motor.i_max is not None and state.i_rms > motor.i_max:
+        # Just over the limit, three figures would read as the limit itself.
+        figures = (written(state.i_rms, d) for d in (3, 4, 5, 9))
+        needed = next((n for n in figures if float(n) > motor.i_max), repr(float(state.i_rms)))
         raise Unreachable(
-            f"{torque:.3g} N·m at {rpm:.4g} rpm needs {state.i_rms:.3g} A rms, above the motor's "
+            f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {needed} A rms, above the motor's "
             f"{motor.i_max:g} A limit"
         )
     return state

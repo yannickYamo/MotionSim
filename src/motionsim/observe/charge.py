@@ -21,6 +21,7 @@ from motionsim.observe.schema import (
     ReadFigure,
 )
 from motionsim.observe.verify import normalise_unit
+from motionsim.text import written
 
 SAMPLES = 120
 FLAT = 0.55  # a plateau rises at less than this share of the rate the curve starts at
@@ -74,8 +75,16 @@ def plateau(charge: np.ndarray, voltage: np.ndarray) -> tuple[float, float, floa
 
 def _failed(quantity, figure, axes, flags) -> CurveObservation:
     return CurveObservation(
-        quantity=quantity, page=figure.page, label=figure.label, x=[], y=[],
-        x_axis=axes.x, y_axis=axes.y, method="vector", status=ReviewStatus.flagged, flags=flags,
+        quantity=quantity,
+        page=figure.page,
+        label=figure.label,
+        x=[],
+        y=[],
+        x_axis=axes.x,
+        y_axis=axes.y,
+        method="vector",
+        status=ReviewStatus.flagged,
+        flags=flags,
     )
 
 
@@ -94,8 +103,7 @@ def _in_units(page, frame, axes: ReadAxes, wanted: tuple[str, str], flags: list[
         agreement = figures.grid_agreement(drawn, axis, start, end)
         if agreement is not None and agreement < 0.8:
             flags.append(
-                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only "
-                f"{agreement:.0%} of the drawn grid lines"
+                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only {agreement:.0%} of the drawn grid lines"
             )
     if flags:
         return None
@@ -143,29 +151,35 @@ def digitise_gate_charge(
     else:
         level, start, end = found
         notes.append(
-            f"plateau at {level:.3g} V, from {(start - grid[0]) * 1e9:.3g} nC to "
-            f"{(end - grid[0]) * 1e9:.3g} nC after the start of the curve"
+            f"plateau at {written(level, 3)} V, from {written((start - grid[0]) * 1e9, 3)} nC to "
+            f"{written((end - grid[0]) * 1e9, 3)} nC after the start of the curve"
         )
         table = _typ(observations, Quantity.q_gs)
         if table is None:
             notes.append("no tabulated gate-source charge to compare the start of the plateau with")
         else:
             value = table.typ if table.typ is not None else table.max
-            error = abs((start - grid[0]) / value - 1) if table.typ is not None else max(
-                (start - grid[0]) / value - 1, 0.0
+            error = (
+                abs((start - grid[0]) / value - 1) if table.typ is not None else max((start - grid[0]) / value - 1, 0.0)
             )
             if error > CHARGE_TOLERANCE:
                 flags.append(
-                    f"plateau starts at {(start - grid[0]) * 1e9:.3g} nC; the tabulated "
-                    f"gate-source charge is {value * 1e9:.3g} nC"
+                    f"plateau starts at {written((start - grid[0]) * 1e9, 3)} nC; the tabulated "
+                    f"gate-source charge is {written(value * 1e9, 3)} nC"
                 )
     return CurveObservation(
-        quantity=quantity, page=figure.page, label=figure.label,
-        x=[float(f"{x:.6g}") for x in grid], y=[float(f"{y:.6g}") for y in v],
-        x_axis=axes.x, y_axis=axes.y,
-        anchor_error=None if error is None else float(f"{error:.3g}"),
-        method="vector", status=ReviewStatus.flagged if flags else ReviewStatus.unverified,
-        flags=flags, notes=notes,
+        quantity=quantity,
+        page=figure.page,
+        label=figure.label,
+        x=[float(f"{written(x, 6)}") for x in grid],
+        y=[float(f"{written(y, 6)}") for y in v],
+        x_axis=axes.x,
+        y_axis=axes.y,
+        anchor_error=None if error is None else float(f"{written(error, 3)}"),
+        method="vector",
+        status=ReviewStatus.flagged if flags else ReviewStatus.unverified,
+        flags=flags,
+        notes=notes,
     )
 
 
@@ -189,7 +203,9 @@ def digitise_capacitance(
     table = _typ(observations, Quantity.c_oss)
     if table is None or not table.voltage_v or table.typ is None:
         return _failed(
-            quantity, figure, axes,
+            quantity,
+            figure,
+            axes,
             ["no tabulated output capacitance with its voltage to tell the curves apart by"],
         )
     scored = []
@@ -211,14 +227,22 @@ def digitise_capacitance(
         flags.append("two curves fit the tabulated output capacitance about equally well")
     grid = np.geomspace(x[0], x[-1], SAMPLES) if axes.x.log else np.linspace(x[0], x[-1], SAMPLES)
     value = np.interp(grid, x, y)
-    if np.any(np.diff(value) > 0.05 * value[:-1]):
+    # Neither a step up between neighbours nor a slow climb from end to end.
+    if np.any(np.diff(value) > 0.05 * value[:-1]) or value[-1] > value[0]:
         flags.append("output capacitance does not fall with voltage")
     return CurveObservation(
-        quantity=quantity, page=figure.page, label=figure.label,
-        x=[float(f"{v:.6g}") for v in grid], y=[float(f"{c:.6g}") for c in value],
-        x_axis=axes.x, y_axis=axes.y, test_voltage_v=table.voltage_v,
-        anchor_error=float(f"{error:.3g}"), method="vector",
-        status=ReviewStatus.flagged if flags else ReviewStatus.unverified, flags=flags,
+        quantity=quantity,
+        page=figure.page,
+        label=figure.label,
+        x=[float(f"{written(v, 6)}") for v in grid],
+        y=[float(f"{written(c, 6)}") for c in value],
+        x_axis=axes.x,
+        y_axis=axes.y,
+        test_voltage_v=table.voltage_v,
+        anchor_error=float(f"{written(error, 3)}"),
+        method="vector",
+        status=ReviewStatus.flagged if flags else ReviewStatus.unverified,
+        flags=flags,
     )
 
 
@@ -233,4 +257,4 @@ def output_charge(voltage, capacitance, upto: float | None = None) -> tuple[list
         keep = v <= upto
         v, c = v[keep], c[keep]
     charge = c[0] * v[0] + np.concatenate([[0.0], np.cumsum(np.diff(v) * (c[1:] + c[:-1]) / 2)])
-    return [float(f"{x:.5g}") for x in v], [float(f"{q:.5g}") for q in charge]
+    return [float(f"{written(x, 5)}") for x in v], [float(f"{written(q, 5)}") for q in charge]

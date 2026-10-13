@@ -104,8 +104,13 @@ def estimate(tj: np.ndarray, fast: list[tuple[float, float, float]] | None = Non
     total = sum(damage)
     worst = int(np.argmax(damage))
     return Life(
-        1.0 / total, found[worst][0], found[worst][1], damage[worst] / total, len(found),
-        within_turn=worst >= len(slow), chip=chip,
+        1.0 / total,
+        found[worst][0],
+        found[worst][1],
+        damage[worst] / total,
+        len(found),
+        within_turn=worst >= len(slow),
+        chip=chip,
     )
 
 

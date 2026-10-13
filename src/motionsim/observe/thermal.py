@@ -6,7 +6,6 @@ import numpy as np
 
 from motionsim.device.schema import ReviewStatus
 from motionsim.observe import figures
-from motionsim.observe.verify import normalise_unit
 from motionsim.observe.schema import (
     AxisClaim,
     CurveObservation,
@@ -16,6 +15,8 @@ from motionsim.observe.schema import (
     ReadAxes,
     ReadFigure,
 )
+from motionsim.observe.verify import normalise_unit
+from motionsim.text import written
 
 MIN_GRID_AGREEMENT = 0.8
 PLATEAU_TOLERANCE = 0.15
@@ -87,19 +88,21 @@ def digitise_thermal(
         agreement = figures.grid_agreement(drawn, axis, start, end)
         if agreement < MIN_GRID_AGREEMENT:
             flags.append(
-                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only "
-                f"{agreement:.0%} of the drawn grid lines"
+                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only {agreement:.0%} of the drawn grid lines"
             )
 
-    spanning = [
-        c
-        for c in figures.curves_in(page, frame)
-        if np.ptp(c[:, 0]) > 0.5 * (frame.x1 - frame.x0)
-    ]
+    spanning = [c for c in figures.curves_in(page, frame) if np.ptp(c[:, 0]) > 0.5 * (frame.x1 - frame.x0)]
     if not spanning:
         return CurveObservation(
-            quantity=quantity, page=figure.page, label=figure.label, x=[], y=[],
-            x_axis=axes.x, y_axis=axes.y, method="vector", status=ReviewStatus.flagged,
+            quantity=quantity,
+            page=figure.page,
+            label=figure.label,
+            x=[],
+            y=[],
+            x_axis=axes.x,
+            y_axis=axes.y,
+            method="vector",
+            status=ReviewStatus.flagged,
             flags=flags + ["no vector curve found in the plot area"],
         )
     # Duty-cycle curves sit above the single-pulse curve at short times.
@@ -109,8 +112,11 @@ def digitise_thermal(
     # stop short. It is continued along the curve that passes through its last point.
     end = single[-1]
     longer = [
-        c for c in spanning
-        if c is not single and c[-1, 0] > end[0] + MERGE_REACH and c[0, 0] < end[0]
+        c
+        for c in spanning
+        if c is not single
+        and c[-1, 0] > end[0] + MERGE_REACH
+        and c[0, 0] < end[0]
         and abs(np.interp(end[0], c[:, 0], c[:, 1]) - end[1]) <= MERGE_REACH
     ]
     if longer:
@@ -119,8 +125,8 @@ def digitise_thermal(
         rest[:, 1] = np.minimum(rest[:, 1], end[1])  # never below where the curve had got to
         single = np.vstack([single, rest])
         notes.append("the single-pulse curve merges into the others and is followed along the shared line")
-    t, z = figures.digitise(single, frame, x_axis, y_axis) if x_axis.log and y_axis.log else (
-        np.array([]), np.array([])
+    t, z = (
+        figures.digitise(single, frame, x_axis, y_axis) if x_axis.log and y_axis.log else (np.array([]), np.array([]))
     )
 
     if t.size:
@@ -136,28 +142,25 @@ def digitise_thermal(
             # Some vendors plot impedance as a fraction of the thermal resistance.
             z = z * table
             notes.append(
-                f"curve is normalised (plateau {z[-1] / table:.3g}); scaled by the tabulated "
-                f"{table:.3g} K/W"
+                f"curve is normalised (plateau {written(z[-1] / table, 3)}); scaled by the tabulated "
+                f"{written(table, 3)} K/W"
             )
-        elif (
-            (highest := _tabulated_maximum(observations, table_quantity)) is not None
-            and abs(z[-1] / highest - 1) <= PLATEAU_TOLERANCE
-        ):
+        elif (highest := _tabulated_maximum(observations, table_quantity)) is not None and abs(
+            z[-1] / highest - 1
+        ) <= PLATEAU_TOLERANCE:
             notes.append(
                 f"the curve is the maximum thermal impedance: its plateau matches the tabulated "
-                f"maximum of {highest:.3g} K/W, not the typical {table:.3g} K/W"
+                f"maximum of {written(highest, 3)} K/W, not the typical {written(table, 3)} K/W"
             )
         elif abs(z[-1] / table - 1) > PLATEAU_TOLERANCE:
-            flags.append(
-                f"plateau {z[-1]:.3g} K/W disagrees with the tabulated {table:.3g} K/W"
-            )
+            flags.append(f"plateau {written(z[-1], 3)} K/W disagrees with the tabulated {written(table, 3)} K/W")
 
     return CurveObservation(
         quantity=quantity,
         page=figure.page,
         label=figure.label,
-        x=[float(f"{v:.6g}") for v in t],
-        y=[float(f"{v:.6g}") for v in z],
+        x=[float(f"{written(v, 6)}") for v in t],
+        y=[float(f"{written(v, 6)}") for v in z],
         x_axis=axes.x,
         y_axis=axes.y,
         method="vector",

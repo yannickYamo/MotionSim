@@ -1,0 +1,7 @@
+# Before a commit: the code formatted, and the lint rules that find mistakes. `pre-commit install` once.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.0
+    hooks:
+      - id: ruff-format
+      - id: ruff

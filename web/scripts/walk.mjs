@@ -22,7 +22,8 @@ const folder = mkdtempSync(join(tmpdir(), "motionsim-walk-"));
 const parts = ["First Maker FM-600-30", "Second Maker With A Longer Name SM-600-30B"].map((name, k) => {
   const file = join(folder, `part-${k}.device.yaml`);
   const [vendor, ...rest] = name.split(" ");
-  writeFileSync(file, made.replace(/^vendor:.*$/m, `vendor: ${vendor} ${rest.slice(0, -1).join(" ")}`).replace(/^part_number:.*$/m, `part_number: ${rest[rest.length - 1]}`));
+  // The second part is rated cooler, so its margins can never pass for the first's.
+  writeFileSync(file, made.replace(/^vendor:.*$/m, `vendor: ${vendor} ${rest.slice(0, -1).join(" ")}`).replace(/^part_number:.*$/m, `part_number: ${rest[rest.length - 1]}`).replace(/tj_max: .*/, `tj_max: ${k ? 125 : 150}`));
   return file;
 });
 
@@ -32,7 +33,7 @@ async function moves(page) {
     const seen = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && el.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true, contentVisibilityAuto: true }); };
     const out = [];
     const add = (kind, selector, text) => out.push({ kind, selector, text });
-    document.querySelectorAll("[data-tab],[data-compare],#rail [data-step],[data-zoom],[data-metric],[data-map-at],[data-add-motor],[data-drop-motor],[data-drop-load],[data-largest],[data-resize-load]").forEach((el, k) => {
+    document.querySelectorAll("[data-tab],[data-compare],#rail [data-step],[data-zoom],[data-metric],[data-map-at],[data-add-motor],[data-drop-motor],[data-drop-load],[data-largest],[data-resize-load],#switcher [data-focus],[data-drop-value]").forEach((el, k) => {
       if (!seen(el) || el.disabled) return;
       const key = Object.keys(el.dataset)[0];
       el.dataset.walk = `w${k}`;
@@ -41,9 +42,33 @@ async function moves(page) {
     document.querySelectorAll("[data-kind],[data-load]").forEach((el) => { if (seen(el.closest("label")) && !el.checked) add("check", `[${el.dataset.kind !== undefined ? "data-kind" : "data-load"}][value="${el.value}"]`, `pick ${el.value}`); });
     document.querySelectorAll("select[data-add-load]").forEach((el) => { if (seen(el) && el.options.length > 1) add("option", "select[data-add-load]", "add a load"); });
     document.querySelectorAll('select[data-bind="sweep.key"]').forEach((el) => { if (seen(el)) add("sweep", 'select[data-bind="sweep.key"]', "another setting"); });
+    document.querySelectorAll("[data-sweep-add]").forEach((el) => { if (seen(el)) add("value", "[data-sweep-add]", "add a value"); });
     return out;
   });
   return found;
+}
+
+/** Every figure on show: the readouts, the table of things compared, the tab, the drawing. */
+// What is worked out only when asked for (the largest load) is not kept across a reload.
+const shown = (page) => page.evaluate(() => Object.fromEntries(["#readouts", "#compare-table", "#tab-body", "#plate", "#switcher"].map((s) => { const el = document.querySelector(s)?.cloneNode(true); el?.querySelectorAll("[data-asked]").forEach((x) => x.remove()); return [s, (el?.textContent ?? "").replace(/\s+/g, " ").trim()]; })));
+const settle = (page) => page.waitForFunction(() => !document.body.dataset.busy && !document.querySelector(".waiting") && !document.querySelector("#readouts")?.textContent?.includes("Starting the engine") && ![...document.querySelectorAll("#compare-table td")].some((c) => c.textContent === "…"), null, { timeout: 150000 }).then(() => true, () => false);
+/** The page reloaded from what it saved shows what it showed: anything else was left over
+ *  from before the last change, or was never saved. */
+async function sameAfterReload(page, where, trail) {
+  await page.waitForLoadState("networkidle");
+  const before = await shown(page);
+  await page.reload({ waitUntil: "networkidle" });
+  await page.waitForSelector("#panel h2");
+  await page.waitForTimeout(1500);
+  if (!(await settle(page))) { failures.push(`${where}: still waiting 150 s after a reload [${trail.slice(-4).join(" > ")}]`); return; }
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(300);
+  const after = await shown(page);
+  for (const [part, text] of Object.entries(before)) {
+    if (text === after[part]) continue;
+    let k = 0; while (k < text.length && text[k] === after[part][k]) k++;
+    failures.push(`${where}: ${part} shows something else after a reload [${trail.slice(-6).join(" > ")}]: "${text.slice(Math.max(0, k - (process.env.WIDE ? 400 : 40)), k + (process.env.WIDE ? 500 : 60))}" became "${after[part].slice(Math.max(0, k - 40), k + (process.env.WIDE ? 500 : 60))}"`);
+  }
 }
 
 const browser = await chromium.launch();
@@ -70,6 +95,7 @@ for (let walk = 0; walk < walks; walk++) {
     try {
       if (move.kind === "click") await page.click(move.selector, { timeout: 8000 });
       else if (move.kind === "check") await page.check(move.selector, { timeout: 8000 });
+      else if (move.kind === "value") { await page.fill(move.selector, String(pick([3, 7, 9, 15, 25, 35, 70])), { timeout: 8000 }); await page.keyboard.press("Enter"); }
       else if (move.kind === "option") await page.selectOption(move.selector, { index: 1 }, { timeout: 8000 });
       else await page.selectOption(move.selector, pick(["f_khz", "v_dc", "t_sink", "parallel"]), { timeout: 8000 });
     } catch (e) {
@@ -85,13 +111,15 @@ for (let walk = 0; walk < walks; walk++) {
     // control that is being replaced under it.
     await page.waitForTimeout(400);
     // Nothing may stay waiting: every result the press asked for has to arrive.
-    const settled = await page.waitForFunction(() => !document.querySelector(".waiting") && ![...document.querySelectorAll("#compare-table td")].some((c) => c.textContent === "…"), null, { timeout: 150000 }).then(() => true, () => false);
+    const settled = await settle(page);
     if (!settled) { failures.push(`walk ${walk}: still waiting 150 s after [${trail.slice(-4).join(" > ")}]`); break; }
     await page.waitForLoadState("networkidle");
     const before = failures.length;
     await measure(page, `walk${walk}-${phone ? "phone" : "desk"}-${k}`);
     for (let f = before; f < failures.length; f++) failures[f] += ` (after ${trail.slice(-4).join(" > ")})`;
+    if (failures.length > before && process.env.WALK_SHOTS) await page.screenshot({ path: `${process.env.WALK_SHOTS}/walk${walk}-${k}.png` }); if (failures.length > before && process.env.WALK_SHOTS) console.log(JSON.stringify(await page.evaluate(() => { const q = (el) => { const r = el.getBoundingClientRect(); return [el.tagName, el.textContent.trim().slice(0, 20), Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)]; }; return { y: scrollY, stage: document.querySelector("#stage")?.scrollTop, hits: [...document.querySelectorAll("th, svg text")].filter((e) => /^(Verdict|Motor: mag)/.test(e.textContent.trim())).map(q) }; })));
     if (await page.$(".refusal") && /engine stopped/.test(await page.$eval("#panel", (e) => e.textContent))) failures.push(`walk ${walk}: the engine stopped after [${trail.slice(-4).join(" > ")}]`);
+    if (k % 5 === 4) await sameAfterReload(page, `walk ${walk} step ${k}`, trail);
   }
   await page.close();
 }

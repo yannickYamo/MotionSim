@@ -18,32 +18,31 @@ from motionsim.device.schema import (
 )
 from motionsim.fit.sparse import (
     MissingData,
-    _digitised,
-    _curve_source,
-    _energy,
-    _recovery_energy,
+    curve_source,
+    digitised_curves,
+    energy_of,
     extra_ratings,
     internal_gate,
+    recovery_energy_of,
+    single_value,
     spread_of,
-    _single,
-    _thermal,
-    _timing,
-    _usable,
+    thermal_of,
+    timing_of,
+    usable_rows,
 )
 from motionsim.observe.schema import Observation, ObservationSet, Quantity
+from motionsim.text import written
 
 PLATEAU_ASSUMPTION = (
     "plateau voltage not tabulated; estimated as threshold voltage times gate-source charge "
     "over gate charge at threshold"
 )
 PLATEAU_FROM_GAIN = (
-    "plateau voltage not tabulated; estimated as threshold voltage plus rated current over "
-    "the transconductance"
+    "plateau voltage not tabulated; estimated as threshold voltage plus rated current over the transconductance"
 )
 MINIMUM_GAIN = "; the transconductance is given only as a minimum, which puts the plateau high"
 THRESHOLD_CHARGE_ASSUMPTION = (
-    "gate charge at threshold not tabulated; taken as gate-source charge times threshold "
-    "voltage over plateau voltage"
+    "gate charge at threshold not tabulated; taken as gate-source charge times threshold voltage over plateau voltage"
 )
 OSS_FROM_CAPACITANCE = (
     "output charge not tabulated; estimated from the output capacitance at {v:g} V as twice "
@@ -76,18 +75,20 @@ def _source(obs: ObservationSet, rows: list[Observation], note: str) -> Source:
 
 def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionModel:
     """Channel voltage as resistance times current, with the resistance following temperature."""
-    rds = _single(obs, Quantity.rds_on, "on-resistance", allow)
+    rds = single_value(obs, Quantity.rds_on, "on-resistance", allow)
     i_top = max(i_rated, rds.current_a or 0.0)
     shape = next(
         (
-            c for c in obs.curves
-            if c.quantity is Quantity.rds_norm_curve and len(c.x) >= 5
+            c
+            for c in obs.curves
+            if c.quantity is Quantity.rds_norm_curve
+            and len(c.x) >= 5
             and (allow or c.status is not ReviewStatus.flagged)
         ),
         None,
     )
     by_temperature: dict[float, Observation] = {}
-    for o in _usable(obs, Quantity.rds_on, allow_flagged=allow):
+    for o in usable_rows(obs, Quantity.rds_on, allow_flagged=allow):
         by_temperature.setdefault(25.0 if o.tj_c is None else o.tj_c, o)
     by_temperature.setdefault(25.0 if rds.tj_c is None else rds.tj_c, rds)
     if shape is None and len(by_temperature) > 1:
@@ -95,8 +96,7 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
         values = ", ".join(f"{_printed(o)} at {t:g} °C" for t, o in sorted(by_temperature.items()))
         return ConductionModel(
             curves=[
-                Curve(tj=t, current=[0.0, i_top], value=[0.0, o.typ * i_top])
-                for t, o in sorted(by_temperature.items())
+                Curve(tj=t, current=[0.0, i_top], value=[0.0, o.typ * i_top]) for t, o in sorted(by_temperature.items())
             ],
             source=_source(obs, rows, f"on-resistance from the tables: {values}"),
         )
@@ -113,7 +113,8 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
             for t, k in zip(temperatures, factors)
         ],
         source=_source(
-            obs, [rds],
+            obs,
+            [rds],
             f"on-resistance {_printed(rds)} at 25 °C, scaled with temperature by "
             f"the digitised curve of {shape.label} (page {shape.page})",
         ),
@@ -121,29 +122,27 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
 
 
 def _reverse(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionModel | None:
-    digitised = _digitised(obs, Quantity.vf, allow)
+    digitised = digitised_curves(obs, Quantity.vf, allow)
     if digitised:
         return ConductionModel(
             curves=[Curve(tj=c.tj_c, current=c.x, value=c.y) for c in digitised],
-            source=_curve_source(obs, digitised, "; reverse voltage with the gate off"),
+            source=curve_source(obs, digitised, "; reverse voltage with the gate off"),
         )
     try:
-        v_sd = _single(obs, Quantity.v_sd, "reverse voltage", allow)
+        v_sd = single_value(obs, Quantity.v_sd, "reverse voltage", allow)
     except MissingData:
         return None
     return ConductionModel(
         curves=[Curve(tj=v_sd.tj_c or 25.0, current=[0.0, i_rated], value=[v_sd.typ, v_sd.typ])],
         basis=Basis.point,
         assumption=REVERSE_ASSUMPTION,
-        source=_source(
-            obs, [v_sd], f"{_printed(v_sd)} at {v_sd.current_a:g} A, gate off"
-        ),
+        source=_source(obs, [v_sd], f"{_printed(v_sd)} at {v_sd.current_a:g} A, gate off"),
     )
 
 
 def _optional(obs: ObservationSet, quantity: Quantity, allow: bool) -> Observation | None:
     try:
-        return _single(obs, quantity, "", allow)
+        return single_value(obs, quantity, "", allow)
     except MissingData:
         return None
 
@@ -169,9 +168,9 @@ def _gain(obs: ObservationSet, allow: bool) -> tuple[float, bool] | None:
 def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) -> ChargeModel:
     """Gate and output charge. What the tables leave out is derived from what they give,
     and each derivation is written into the model."""
-    q_gs = _single(obs, Quantity.q_gs, "gate-source charge", allow)
-    q_gd = _single(obs, Quantity.q_gd, "gate-drain charge", allow)
-    v_th = _single(obs, Quantity.v_th, "threshold voltage", allow)
+    q_gs = single_value(obs, Quantity.q_gs, "gate-source charge", allow)
+    q_gd = single_value(obs, Quantity.q_gd, "gate-drain charge", allow)
+    v_th = single_value(obs, Quantity.v_th, "threshold voltage", allow)
     q_th = _optional(obs, Quantity.q_g_th, allow)
     plateau = _optional(obs, Quantity.v_plateau, allow)
     gain = _gain(obs, allow)
@@ -196,8 +195,7 @@ def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) ->
         assumptions.append(PLATEAU_FROM_GAIN + (MINIMUM_GAIN if gain[1] else ""))
     else:
         raise MissingData(
-            "no gate plateau voltage, and neither a gate charge at threshold nor a "
-            "transconductance to estimate it from"
+            "no gate plateau voltage, and neither a gate charge at threshold nor a transconductance to estimate it from"
         )
     if v_plateau <= v_th.typ:
         raise MissingData("the gate plateau voltage is not above the threshold voltage")
@@ -223,8 +221,7 @@ def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) ->
         table = output_charge(oss_curve.x, oss_curve.y)
         charge, v_ref, scaling = table[1][-1], table[0][-1], "table"
         notes.append(
-            f"output charge is the area under the output-capacitance curve of "
-            f"{oss_curve.label} (page {oss_curve.page})"
+            f"output charge is the area under the output-capacitance curve of {oss_curve.label} (page {oss_curve.page})"
         )
     elif c_oss is not None and c_oss.voltage_v:
         charge, v_ref, scaling = 2 * c_oss.typ * c_oss.voltage_v, c_oss.voltage_v, "sqrt"
@@ -236,9 +233,9 @@ def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) ->
     return ChargeModel(
         q_gs=q_gs.typ,
         q_gd=q_gd.typ,
-        q_g_th=float(f"{q_g_th:.4g}"),
-        v_plateau=float(f"{v_plateau:.4g}"),
-        q_oss=float(f"{charge:.4g}"),
+        q_g_th=float(f"{written(q_g_th, 4)}"),
+        v_plateau=float(f"{written(v_plateau, 4)}"),
+        q_oss=float(f"{written(charge, 4)}"),
         v_ref=v_ref,
         q_oss_scaling=scaling,
         oss_voltage=table[0],
@@ -253,19 +250,19 @@ def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) ->
 def _measured(obs: ObservationSet, allow: bool):
     """Tabulated turn-on, turn-off and recovery energy, where the datasheet gives them."""
     try:
-        e_on = _energy(obs, Quantity.e_on, "turn-on energy", allow)
-        e_off = _energy(obs, Quantity.e_off, "turn-off energy", allow)
+        e_on = energy_of(obs, Quantity.e_on, "turn-on energy", allow)
+        e_off = energy_of(obs, Quantity.e_off, "turn-off energy", allow)
     except MissingData:
         return None, None, None
-    return e_on, e_off, _recovery_energy(obs, allow, e_on.v_ref)
+    return e_on, e_off, recovery_energy_of(obs, allow, e_on.v_ref)
 
 
 def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
     """Measured switching energy is used where the datasheet tabulates it; the charge model
     is built as well when the tables allow, and is required when there is no energy."""
     a = allow_flagged
-    i_rated = _single(obs, Quantity.i_rated, "current rating", a).typ
-    v_rated = _single(obs, Quantity.v_rated, "voltage rating", a).typ
+    i_rated = single_value(obs, Quantity.i_rated, "current rating", a).typ
+    v_rated = single_value(obs, Quantity.v_rated, "voltage rating", a).typ
     e_on, e_off, e_rr = _measured(obs, a)
     try:
         charge = _charge(obs, a, i_rated, v_rated)
@@ -280,12 +277,10 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
         ratings=Ratings(
             v_max=v_rated,
             i_nominal=i_rated,
-            tj_max=_single(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
+            tj_max=single_value(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
             **extra_ratings(obs, a),
         ),
-        package=Package(
-            topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline
-        ),
+        package=Package(topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline),
         switch=Chip(
             kind="mosfet",
             conduction=_conduction(obs, a, i_rated).model_copy(update={"spread": spread_of(obs, Quantity.rds_on, a)}),
@@ -295,7 +290,7 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
             e_rr=e_rr,
             reverse=_reverse(obs, a, i_rated),
             charge=charge,
-            thermal=_thermal(obs, Quantity.rth_jc_switch, "thermal resistance", a),
+            thermal=thermal_of(obs, Quantity.rth_jc_switch, "thermal resistance", a),
         ),
-        timing=_timing(obs, a),
+        timing=timing_of(obs, a),
     )

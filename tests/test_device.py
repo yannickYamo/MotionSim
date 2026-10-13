@@ -30,8 +30,22 @@ def test_unknown_field_is_rejected() -> None:
 
 def test_cli_simulate(capsys: pytest.CaptureFixture[str]) -> None:
     code = main(
-        ["simulate", str(EXAMPLE), "--vdc", "300", "--irms", "10", "--m", "0.9",
-         "--pf", "0.85", "--fsw", "8000", "--tsink", "60"]
+        [
+            "simulate",
+            str(EXAMPLE),
+            "--vdc",
+            "300",
+            "--irms",
+            "10",
+            "--m",
+            "0.9",
+            "--pf",
+            "0.85",
+            "--fsw",
+            "8000",
+            "--tsink",
+            "60",
+        ]
     )
     out = capsys.readouterr().out
     assert code == 0

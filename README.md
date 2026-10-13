@@ -6,6 +6,8 @@ MotionSim is a web page with a loss and temperature engine behind it. It works f
 
 Live page: https://yannickyamo.github.io/MotionSim/
 
+No browser needed: the same five steps run from a terminal with one command, `motionsim design run design.yaml`, and a coding agent can drive it that way. See [From the terminal, or driven by a coding agent](#from-the-terminal-or-driven-by-a-coding-agent).
+
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature, the verdict and its checks on the right](docs/images/page.png)
 
 The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. It does not read datasheet PDFs: that needs your own key and a local install, as below.
@@ -27,24 +29,24 @@ MotionSim starts from the datasheet itself, or from your own measurements. Each 
 Five steps on one page, with the power stage drawn on screen the whole time:
 
 1. **The device.** Type in a dozen figures from a transistor's datasheet (ratings, on-resistance, gate and output charge, thermal resistance), drop its datasheet (PDF) or a device file, or bring your own double-pulse measurements. A figure that cannot be right, such as an on-resistance in the wrong unit, is refused where it sits. Nothing is listed that you did not bring.
-2. **The motor.** Seven kinds: permanent-magnet (magnets on, set into or buried in the rotor), reluctance, induction, brushless DC, brushed DC with a magnet or a series field, and stepper. The kinds that suit your device's voltage come first, and one is recommended.
-3. **The supply and the design point.** Voltage, speed, torque, switching frequency, devices in parallel. And the cooling: a heatsink at a temperature you know, a heatsink in air from its K/W figure, or no heatsink, with each part standing in the air or all of them soldered to one board, where they warm each other.
-4. **The load.** Pick a kind (fan, compressor, robot joint, vehicle, washer drum, positioning axis, power tool) sized to your motor, or bring a mission profile as a CSV file. Choose how the drive starts the motor.
+2. **The motor.** Seven kinds: permanent-magnet (magnets on, set into or buried in the rotor), reluctance, induction, brushless DC, brushed DC with a magnet or a series field, and stepper. The kinds that suit your device's voltage come first, and one is marked as the usual choice: that is a default by voltage and by how many switches the package holds, not a ranking of motors.
+3. **The supply and the design point.** Voltage, speed, torque, switching frequency (up to 10 MHz, for GaN), devices in parallel. And the cooling: a heatsink at a temperature you know, a heatsink in air from its K/W figure, or no heatsink, with each part standing in the air or all of them soldered to one board, where they warm each other.
+4. **The load.** Pick a kind (fan, compressor, robot joint, vehicle, washer drum, positioning axis, power tool) sized to your motor, or bring a mission profile as a CSV file. Each kind of motor is offered the loads it is used for: a reluctance motor a pump or a compressor, not a washer drum or a wheel. Choose how the drive starts the motor.
 5. **The results.**
    - A verdict with plain-language checks, and what the part needs around it. A caution on the data means the operating point is outside what the datasheet gives, for a loss that matters there. A gate drive and a dead time you did not give are chosen, counted and stated, and the dead-time advice says what a firmware default of 500 ns would cost.
    - Conduction and switching loss, and junction temperature as a range where values are assumed.
    - Temperature through the whole motion, the motor current, and a life estimate under thermal cycling.
    - A speed-torque map, in the motor's units or the load's.
-   - **What to build**: the heatsink, the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
+   - **What to build**: the heatsink (kept to 100 °C unless you say otherwise: what is mounted on it gives out before a junction does), the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
    - **What it can drive**: the question turned round. The torque the device holds at each speed, how that moves with switching frequency and heatsink temperature, and how much heavier your load could be.
-   - Up to five devices, loads or motors compared side by side, or one setting tried at up to five values. Each device shows its verdict, its margin to the junction limit running and held still, and what its switching loss rests on. Losses too close to tell apart are marked level, and devices compared on unlike data are said to be.
+   - Up to five devices, loads or motors compared side by side, or one setting (switching frequency, supply voltage, heatsink or air temperature, devices in parallel) tried at two to five values, each added as a column. The table gives each one's verdict, its margin to the junction limit running and held still, and every loss and temperature of the hottest switch position: the switch conducting, turning on and turning off, the diode, each junction's peak, average and swing, the case, and what the switching does to the link capacitor and the motor current. Losses too close to tell apart are marked level, and devices compared on unlike data are said to be.
    - A setup you can save to a file, and the whole result as a report: a PDF, or a Markdown file to keep or to hand to a coding agent.
 
 ![The first step: a transistor typed in from its datasheet figures, with the made-up parts and the device file drop beside it](docs/images/device.png)
 
 ![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
 
-An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away.
+An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away. What you enter is kept in your browser from one visit to the next; Reset, at the top right, clears it.
 
 ## Install and run
 
@@ -59,6 +61,8 @@ motionsim serve
 ```
 
 The page opens at `http://127.0.0.1:4310/`. It answers only requests from your own machine. It needs Python 3.11 or later.
+
+The same install gives the `motionsim` command: `motionsim --help` lists what it does, and `motionsim design init` followed by `motionsim design run` takes a part from datasheet figures to a verdict without opening the page.
 
 ### Reading datasheets needs your own API key, and that is why it is local
 
@@ -95,9 +99,16 @@ synthetic LINEAR-600V-30A (Si IGBT)
   efficiency             98.18 %
   Tj switch  average      79.8 °C   peak   84.2 °C
   Tj diode   average      75.6 °C   peak   77.8 °C
+  T case                  64.5 °C
+  margin to Tj max        40.8 °C
   hottest junction        76.8 to 109.2 °C across the thermal assumptions
+    - heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip
   data support        interpolated
+  not modelled
+    - losses use each chip's average temperature over the output period
 ```
+
+The margin is counted from the top of the range.
 
 With a datasheet of your own:
 
@@ -121,7 +132,7 @@ motionsim propose a.device.yaml b.device.yaml --vdc 48 --motor examples/motor_ro
     --fsw 20000 --tsink 50 --tdead 2e-7 --rpm 1000 --torque 1
 ```
 
-A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature. In place of `--tsink`, cooling to air is `--tair` with `--rth-heatsink` (a heatsink's K/W), or with `--rth-ja` or `--no-heatsink` for none (add `--board-area` and `--copper` for parts soldered to one board). A dead time left open is filled in and said, as on the page.
+A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature. In place of `--tsink`, cooling to air is `--tair` with `--rth-heatsink` (a heatsink's K/W), or with `--rth-ja` or `--no-heatsink` for none (add `--board-area` and `--copper` for parts soldered to one board). A dead time left open is filled in, as on the page.
 
 ## From the terminal, or driven by a coding agent
 
@@ -133,7 +144,7 @@ motionsim design run design.yaml --md report.md              # fit, verdict, mot
 motionsim design run design.yaml --json                      # the same, for a program to read
 ```
 
-`my_part.yaml` is a device file, or the figures typed from a datasheet (`motionsim template device`). The exit status says how it went: 0 the part passes, 3 it does not, 2 the design cannot be run as written, with the reason and the figure at issue in the output.
+`my_part.yaml` is a device file, or the figures typed from a datasheet (`motionsim template device`). A design may name up to five devices, which are compared at the design point and through the motion, and several motors under `motors:`, which are compared on one inverter; `--csv table.csv` writes the comparison as a table. The exit status says how it went: 0 the part passes, 3 it does not (at the design point, or through the motion), 2 the design cannot be run as written, with the reason and the figure at issue in the output.
 
 `motionsim agent` prints a guide written for coding agents: the loop, the design file, what comes back, and what to do with a refusal. There is no service to host and nothing to register: an agent that can run a command can use the tool. [AGENTS.md](AGENTS.md) points to it.
 

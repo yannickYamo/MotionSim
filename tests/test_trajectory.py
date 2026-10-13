@@ -16,8 +16,12 @@ NETWORK = FosterNetwork(r=[0.3, 0.7], tau=[0.002, 0.05], source=Source(kind="syn
 
 def device():
     d = linear_device(
-        sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6, topology=Topology.six_pack,
+        sw_curves=[line(25.0, 0.9, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
+        topology=Topology.six_pack,
     )
     d.switch.thermal = NETWORK
     d.diode.thermal = NETWORK
@@ -34,7 +38,9 @@ def test_a_sine_drive_written_as_a_trajectory_matches_the_engine(tmp_path) -> No
     conditions = dict(v_dc=V_REF, f_sw=8000.0, t_sink=60.0)
     trajectory = load_trajectory(write(tmp_path, example(f_out=50.0, i_rms=10.0, m=0.8, pf=0.85, n=2000)))
     outcome = run(device(), trajectory, OperatingPoint(i_rms=0, modulation_index=0, power_factor=1, **conditions))
-    direct = solve(device(), OperatingPoint(i_rms=10.0, modulation_index=0.8, power_factor=0.85, f_out=50.0, **conditions))
+    direct = solve(
+        device(), OperatingPoint(i_rms=10.0, modulation_index=0.8, power_factor=0.85, f_out=50.0, **conditions)
+    )
     r = outcome.result
     assert len(r.roles) == 6
     assert r.p_inverter == pytest.approx(direct.p_inverter, rel=0.005)
@@ -68,9 +74,7 @@ def test_from_a_cold_start_a_constant_load_follows_the_transient_impedance(tmp_p
     outcome = run(d, trajectory, op)
     hottest = max(outcome.result.roles, key=lambda r: max(r.switch.total, r.diode.total))
     loss = max(hottest.switch.total, hottest.diode.total)
-    assert outcome.tj_from_start[-1] - 50.0 == pytest.approx(
-        loss * float(zth(NETWORK, trajectory.duration)), rel=0.01
-    )
+    assert outcome.tj_from_start[-1] - 50.0 == pytest.approx(loss * float(zth(NETWORK, trajectory.duration)), rel=0.01)
     assert outcome.peak_from_start < outcome.result.tj_switch_peak  # not yet settled
 
 

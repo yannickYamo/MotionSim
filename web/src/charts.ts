@@ -18,16 +18,18 @@ interface Box { x: number; y: number; w: number; h: number }
 
 /** Every drawing that takes the width of the panel is this size, and every one that takes
  *  half of it is that size: charts set one above another line up, axis for axis. */
-const FULL = { view: "0 0 540 254", box: { x: 50, y: 28, w: 466, h: 184 } };
-const HALF = { view: "0 0 356 220", box: { x: 46, y: 26, w: 286, h: 150 } };
+const FULL = { view: "0 0 540 272", box: { x: 56, y: 36, w: 460, h: 184 } };
+const HALF = { view: "0 0 356 236", box: { x: 48, y: 32, w: 286, h: 150 } };
 
 /** A scale on round values that holds everything from lo to hi, with zero always on it. */
-function scale(values: number[], wanted = 4): number[] {
+export function scale(values: number[], wanted = 4): number[] {
   const lo = Math.min(0, ...values), hi = Math.max(0, ...values);
   const yt = ticks(lo, hi > lo ? hi : lo + 1, wanted);
   const step = yt.length > 1 ? yt[1] - yt[0] : 1;
-  while (yt[0] > lo - step * 1e-9 && yt[0] > lo) yt.unshift(Number((yt[0] - step).toPrecision(12)));
-  while (yt[yt.length - 1] < hi) yt.push(Number((yt[yt.length - 1] + step).toPrecision(12)));
+  // The scale ends on a round value beyond the highest and the lowest point, so that a level
+  // stretch is a line inside the plot and not one drawn over its frame.
+  while (yt[yt.length - 1] < hi || (hi > 0 && yt[yt.length - 1] < hi * 1.03)) yt.push(Number((yt[yt.length - 1] + step).toPrecision(12)));
+  while (lo < 0 && yt[0] > lo * 1.03) yt.unshift(Number((yt[0] - step).toPrecision(12)));
   return yt;
 }
 
@@ -52,7 +54,7 @@ function frame(box: Box, xt: number[], yt: number[], sx: (v: number) => number, 
   const grid =
     xt.map((v) => `<path class="grid" d="M${sx(v)} ${box.y}v${box.h}"/><text class="tick" x="${sx(v)}" y="${box.y + box.h + 16}" text-anchor="middle">${tickText(v)}</text>`).join("") +
     yt.map((v) => `<path class="grid" d="M${box.x} ${sy(v)}h${box.w}"/><text class="tick" x="${box.x - 8}" y="${sy(v) + 4}" text-anchor="end">${tickText(v)}</text>`).join("");
-  return `${grid}<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/><text class="axis" x="${box.x + box.w}" y="${box.y + box.h + 34}" text-anchor="end">${escape(xLabel)}</text><text class="axis" x="${box.x}" y="${box.y - 10}">${escape(yLabel)}</text>`;
+  return `${grid}<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/><text class="axis" x="${box.x + box.w}" y="${box.y + box.h + 42}" text-anchor="end">${escape(xLabel)}</text><text class="axis" x="${box.x}" y="${box.y - 16}">${escape(yLabel)}</text>`;
 }
 
 function line(xs: number[], ys: (number | null)[], sx: (v: number) => number, sy: (v: number) => number): string {
@@ -125,8 +127,8 @@ ${against(c.time, amps, "motor current, A peak", "hot", "Motor current against t
  *  turn-on and turn-off is a spike whose area is the energy lost in it. A real spike is
  *  far narrower and taller than can be drawn, so the spikes are widened and say so. */
 export function pwmChart(p: SwitchingPeriod, periods = 5): string {
-  const top = { x: 50, y: 30, w: 466, h: 46 };
-  const box = { x: 50, y: 122, w: 466, h: 100 };
+  const top = { x: 56, y: 36, w: 460, h: 46 };
+  const box = { x: 56, y: 132, w: 460, h: 100 };
   const period = 1 / p.f_sw;
   const on = Math.min(Math.max(p.duty, 0), 1);
   const edge = 0.07; // of a period: the width a spike is drawn with
@@ -157,9 +159,9 @@ export function pwmChart(p: SwitchingPeriod, periods = 5): string {
   const span = periods * period;
   const time = span < 1e-3 ? `${sig(span * 1e6)} µs` : `${sig(span * 1e3)} ms`;
   return `<svg class="chart pwm" viewBox="${FULL.view}" role="img" aria-label="${periods} switching periods: current through the switch, and the power it loses">
-<text class="axis" x="${top.x}" y="${top.y - 12}">switch current: ${sig(p.current)} A, on ${Math.round(on * 100)} % of each period</text>
+<text class="axis" x="${top.x}" y="${top.y - 16}">switch current: ${sig(p.current)} A, on ${Math.round(on * 100)} % of each period</text>
 <path class="grid" d="M${top.x} ${iy(0)}h${top.w}"/><path class="series current" d="${current}"/>
-<text class="axis" x="${box.x}" y="${box.y - 10}">power lost in the switch, W</text>
+<text class="axis" x="${box.x}" y="${box.y - 14}">power lost in the switch, W</text>
 ${ticks(0, yMax, 3).map((v) => `<path class="grid" d="M${box.x} ${sy(v)}h${box.w}"/><text class="tick" x="${box.x - 8}" y="${sy(v) + 4}" text-anchor="end">${Number.isInteger(v) ? v : sig(v, 2)}</text>`).join("")}
 <rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>
 <path class="area conduction" d="${conduction}"/><path class="area switching" d="${spikes}"/>
@@ -262,13 +264,31 @@ export type Metric = "loss" | "tj" | "efficiency";
 export interface MapAxes { speed: number; torque: number; speedLabel: string; torqueLabel: string; speedUnit: string; torqueUnit: string }
 export const AT_MOTOR: MapAxes = { speed: 1, torque: 1, speedLabel: "speed, rpm", torqueLabel: "torque, N·m", speedUnit: "rpm", torqueUnit: "N·m" };
 
-export function heatMap(g: MapGrid, metric: Metric, axes: MapAxes = AT_MOTOR, compact = false): string {
-  const box = { x: 52, y: 22, w: 440, h: 300 };
+/** The lowest and highest value of a metric over several maps: the one scale they are all
+ *  drawn on when they are set side by side, so that a colour means the same in each. */
+export function sharedRange(grids: MapGrid[], metric: Metric): { lo: number; hi: number } | null {
+  const flat = grids.flatMap((g) => g[metric].flat()).filter((v): v is number => v !== null);
+  return flat.length ? { lo: Math.min(...flat), hi: Math.max(...flat) } : null;
+}
+
+/** The key to a map's colours. */
+export function mapScale(lo: number, hi: number, metric: Metric): string {
+  const unit = metric === "loss" ? "W" : metric === "tj" ? "°C" : "%";
+  const k = metric === "efficiency" ? 100 : 1;
+  return `<p class="scale"><span>${sig(lo * k)} ${unit}</span><span class="ramp${metric === "efficiency" ? " reverse" : ""}"></span><span>${sig(hi * k)} ${unit}</span><span class="swatch none"></span><span>cannot be reached</span></p>`;
+}
+
+/**
+ * `range`: the scale to draw on, when this map stands beside others; its own lowest and
+ * highest otherwise. With a range given the key is left to whoever sets the maps together.
+ */
+export function heatMap(g: MapGrid, metric: Metric, axes: MapAxes = AT_MOTOR, compact = false, range?: { lo: number; hi: number }): string {
+  const box = compact ? { x: 72, y: 22, w: 420, h: 300 } : { x: 56, y: 26, w: 436, h: 296 };
   const data = g[metric];
   const flat = data.flat().filter((v): v is number => v !== null);
   if (!flat.length) return `<p class="quiet">The motor reaches no point of this range. Lower the top speed or torque.</p>`;
-  const lo = Math.min(...flat);
-  const hi = Math.max(...flat);
+  const lo = range?.lo ?? Math.min(...flat);
+  const hi = range?.hi ?? Math.max(...flat);
   const nx = g.rpm.length;
   const ny = g.torque.length;
   const cw = box.w / nx;
@@ -299,11 +319,11 @@ export function heatMap(g: MapGrid, metric: Metric, axes: MapAxes = AT_MOTOR, co
   const xl = g.rpm.map((v, b) => (b % everyX === 0 || b === nx - 1 ? `<text class="tick" x="${box.x + (b + 0.5) * cw}" y="${box.y + box.h + 16}" text-anchor="middle">${exact(v * axes.speed)}</text>` : "")).join("");
   const yl = g.torque.map((v, a) => (a % everyY === 0 || a === ny - 1 ? `<text class="tick" x="${box.x - 8}" y="${box.y + box.h - (a + 0.5) * ch + 4}" text-anchor="end">${exact(v * axes.torque)}</text>` : "")).join("");
   const title = metric === "loss" ? "power-stage loss" : metric === "tj" ? "hottest junction" : "shaft power over DC power";
-  return `<svg class="chart map" viewBox="0 0 520 362" role="img" aria-label="${title} over speed and torque">
+  return `<svg class="chart map" viewBox="0 0 520 ${compact ? 350 : 374}" role="img" aria-label="${title} over speed and torque">
 <defs><pattern id="hatch-map" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><path d="M0 0v8" class="hatch-line"/></pattern></defs>
 ${cells}<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>${xl}${yl}
-${compact ? "" : `<text class="axis" x="${box.x + box.w}" y="${box.y + box.h + 34}" text-anchor="end">${axes.speedLabel}</text><text class="axis" x="${box.x}" y="${box.y - 8}">${axes.torqueLabel}</text>`}</svg>
-<p class="scale"><span>${sig(lo * scale)} ${unit}</span><span class="ramp${metric === "efficiency" ? " reverse" : ""}"></span><span>${sig(hi * scale)} ${unit}</span><span class="swatch none"></span><span>cannot be reached</span></p>`;
+${compact ? "" : `<text class="axis" x="${box.x + box.w}" y="${box.y + box.h + 42}" text-anchor="end">${axes.speedLabel}</text><text class="axis" x="${box.x}" y="${box.y - 10}">${axes.torqueLabel}</text>`}</svg>
+${range ? "" : mapScale(lo, hi, metric)}`;
 }
 
 /** The motion the user drew: load speed against time. */

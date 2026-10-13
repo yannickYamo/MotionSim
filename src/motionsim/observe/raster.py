@@ -66,7 +66,10 @@ def find_plot(dark: np.ndarray, x0: float, top: float, scale: float) -> Raster |
     if len(rows) < 2 or len(columns) < 2:
         return None
     return Raster(
-        dark=area, x0=x0 + c0 * scale, top=top + r0 * scale, scale=scale,
+        dark=area,
+        x0=x0 + c0 * scale,
+        top=top + r0 * scale,
+        scale=scale,
         rows=tuple((int(a), int(b)) for a, b in rows),
         columns=tuple((int(a), int(b)) for a, b in columns),
     )
@@ -159,7 +162,7 @@ def trace(raster: Raster) -> list[np.ndarray]:
     shared part as its own beginning.
     """
     ink = _without_lines(raster)
-    height, width = ink.shape
+    _height, width = ink.shape
     columns = [_runs(ink[:, x]) for x in range(width)]
     thickness = [b - a + 1 for runs in columns for a, b in runs]
     if not thickness:
@@ -184,9 +187,9 @@ def trace(raster: Raster) -> list[np.ndarray]:
                     continue
                 lo, hi = track.span
                 near = [
-                    k for k, (a, b) in enumerate(runs)
-                    if a <= hi + track.reach() and b >= lo - track.reach()
-                    and not (lost and k in taken)
+                    k
+                    for k, (a, b) in enumerate(runs)
+                    if a <= hi + track.reach() and b >= lo - track.reach() and not (lost and k in taken)
                 ]
                 if not near:
                     track.missing += 1
@@ -201,10 +204,9 @@ def trace(raster: Raster) -> list[np.ndarray]:
             if len(group) < 2:
                 continue
             free = [
-                j for j, (a, b) in enumerate(runs)
-                if j not in chosen and all(
-                    a <= t.span[1] + t.reach() and b >= t.span[0] - t.reach() for t in group
-                )
+                j
+                for j, (a, b) in enumerate(runs)
+                if j not in chosen and all(a <= t.span[1] + t.reach() and b >= t.span[0] - t.reach() for t in group)
             ]
             aim = float(np.mean([t.predicted() for t in group]))
             nearest = sorted(free, key=lambda j: abs((runs[j][0] + runs[j][1]) / 2 - aim))
@@ -222,9 +224,9 @@ def trace(raster: Raster) -> list[np.ndarray]:
             if not followers:
                 # A branch leaving a stroke starts with that stroke's history.
                 parents = [
-                    t for t in alive
-                    if t.missing == 0 and t.xs[-1] == x - 1
-                    and a <= t.span[1] + REACH and b >= t.span[0] - REACH
+                    t
+                    for t in alive
+                    if t.missing == 0 and t.xs[-1] == x - 1 and a <= t.span[1] + REACH and b >= t.span[0] - REACH
                 ]
                 if parents:
                     parent = min(parents, key=lambda t: abs(t.ys[-1] - (a + b) / 2))
@@ -305,10 +307,12 @@ def trace(raster: Raster) -> list[np.ndarray]:
         if not twin:
             kept.append(track)
     return [
-        np.column_stack([
-            raster.x0 + (np.array(t.xs) + 0.5) * raster.scale,
-            raster.top + (np.array(t.ys) + 0.5) * raster.scale,
-        ])
+        np.column_stack(
+            [
+                raster.x0 + (np.array(t.xs) + 0.5) * raster.scale,
+                raster.top + (np.array(t.ys) + 0.5) * raster.scale,
+            ]
+        )
         for t in kept
     ]
 

@@ -69,9 +69,7 @@ def _table(data: DoublePulse, field: str, file: str) -> SwitchingEnergy | None:
     curves = []
     for tj in sorted(by_temperature):
         rows = sorted(by_temperature[tj].items())
-        curves.append(
-            Curve(tj=tj, current=[0.0] + [i for i, _ in rows], value=[0.0] + [e for _, e in rows])
-        )
+        curves.append(Curve(tj=tj, current=[0.0] + [i for i, _ in rows], value=[0.0] + [e for _, e in rows]))
     conditions = ", ".join(
         f"{name} {value:g}"
         for name, value in (("Rg on", data.rg_on), ("Rg off", data.rg_off), ("drive", data.v_drive))

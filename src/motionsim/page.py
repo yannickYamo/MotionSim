@@ -11,6 +11,7 @@ cannot work.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 from dataclasses import replace
@@ -26,7 +27,11 @@ from motionsim.engine import OperatingPoint, Pwm, ThermalRunaway
 from motionsim.engine.limits import hottest
 from motionsim.load import LOAD_TEMPLATE, PROFILE_TEMPLATE, Load, Profile
 from motionsim.motor import TEMPLATES, Unreachable
-from motionsim.motor.machines import _ADAPTER
+from motionsim.motor.machines import ADAPTER
+from motionsim.text import written
+
+# Faults and timings only: never a device file, a datasheet's content or a key.
+log = logging.getLogger("motionsim")
 
 EXAMPLE = Path(__file__).parent / "example_device.yaml"
 # The made-up parts the page can be tried with: an IGBT for mains voltages, and a
@@ -37,7 +42,13 @@ EXAMPLES = {"example": EXAMPLE, "example-mosfet": Path(__file__).parent / "examp
 # templates, so the page and `motionsim template` never drift apart.
 FIELDS = {
     "pmsm": [
-        ("magnets", "Magnets", "", "surface: on the rotor face, inner or outer rotor alike. inset: set into the face. interior: buried, adds reluctance torque", ["surface", "inset", "interior"]),
+        (
+            "magnets",
+            "Magnets",
+            "",
+            "surface: on the rotor face, inner or outer rotor alike. inset: set into the face. interior: buried, adds reluctance torque",
+            ["surface", "inset", "interior"],
+        ),
         ("pole_pairs", "Pole pairs", "", "Number of magnet poles divided by two", None),
         ("kv", "Speed constant Kv", "rpm/V", "From the motor's catalogue page", None),
         ("l", "Phase inductance", "H", "Line-to-line inductance divided by two", None),
@@ -73,13 +84,25 @@ FIELDS = {
         ("r", "Armature resistance", "Ω", "", None),
         ("l", "Armature inductance", "H", "Sets the current ripple; leave empty if unknown", None),
         ("i_max", "Current limit", "A", "", None),
-        ("drive", "Drive", "", "unipolar: one leg chops, lower loss. bipolar: both legs switch", ["unipolar", "bipolar"]),
+        (
+            "drive",
+            "Drive",
+            "",
+            "unipolar: one leg chops, lower loss. bipolar: both legs switch",
+            ["unipolar", "bipolar"],
+        ),
     ],
     "dc_series": [
         ("k", "Torque constant", "N·m/A²", "Torque over current squared, from one point of the motor's curve", None),
         ("r", "Resistance", "Ω", "Armature and field together", None),
         ("i_max", "Current limit", "A", "", None),
-        ("drive", "Drive", "", "unipolar: one leg chops, lower loss. bipolar: both legs switch", ["unipolar", "bipolar"]),
+        (
+            "drive",
+            "Drive",
+            "",
+            "unipolar: one leg chops, lower loss. bipolar: both legs switch",
+            ["unipolar", "bipolar"],
+        ),
     ],
     "stepper": [
         ("steps_per_rev", "Steps per turn", "", "200 for a 1.8 degree motor", None),
@@ -92,21 +115,57 @@ FIELDS = {
 # Figures a motor may be given beyond its catalogue ones. All optional: left empty, the
 # effect they describe is left out, and the result says so.
 OPTIONAL = {
-    "p_iron": ("Iron loss", "W", "No-load loss in the motor's steel, at the speed below. From a no-load test or the maker."),
+    "p_iron": (
+        "Iron loss",
+        "W",
+        "No-load loss in the motor's steel, at the speed below. From a no-load test or the maker.",
+    ),
     "n_iron": ("at speed", "rpm", "The speed that iron loss was measured at."),
-    "i_sat": ("Saturation current", "A peak", "Where an inductance has fallen to about 70% of its small-current value."),
+    "i_sat": (
+        "Saturation current",
+        "A peak",
+        "Where an inductance has fallen to about 70% of its small-current value.",
+    ),
 }
-OPTIONAL_FOR = {"pmsm": ["p_iron", "n_iron", "i_sat"], "synrm": ["p_iron", "n_iron", "i_sat"],
-                "induction": ["p_iron", "n_iron"], "bldc": ["p_iron", "n_iron"]}
+OPTIONAL_FOR = {
+    "pmsm": ["p_iron", "n_iron", "i_sat"],
+    "synrm": ["p_iron", "n_iron", "i_sat"],
+    "induction": ["p_iron", "n_iron"],
+    "bldc": ["p_iron", "n_iron"],
+}
 # Family, name and what it is, in the order the page lists them: the usual tree of motor
 # types, from machines fed with alternating current to those with brushes.
 MOTOR_NAMES = {
-    "pmsm": ("Synchronous", "Permanent-magnet", "Magnets on or in the rotor, sinusoidal currents: robot joints, e-bikes, compressors, washers"),
-    "bldc": ("Synchronous", "Brushless DC", "The same kind of motor driven in six steps (block, or trapezoidal, commutation)"),
-    "synrm": ("Synchronous", "Reluctance", "A shaped steel rotor with no magnets: pumps and fans where magnets are unwanted"),
-    "induction": ("Induction", "Three-phase induction", "Squirrel-cage rotor: industrial pumps, fans, conveyors"),
-    "dc": ("Brushed DC", "Permanent-magnet DC", "Two wires, brushes, magnets in the stator; also a separately excited field"),
-    "dc_series": ("Brushed DC", "Series-wound DC", "Field winding in series with the armature: power tools, starters, universal motors"),
+    "pmsm": (
+        "Synchronous",
+        "Permanent-magnet",
+        "Magnets on or in the rotor, sinusoidal currents: robot joints, e-bikes, compressors, washers",
+    ),
+    "bldc": (
+        "Synchronous",
+        "Brushless DC",
+        "The same kind of motor driven in six steps (block, or trapezoidal, commutation)",
+    ),
+    "synrm": (
+        "Synchronous",
+        "Reluctance",
+        "A shaped steel rotor with no magnets: pumps, fans and compressors where magnets are unwanted",
+    ),
+    "induction": (
+        "Induction",
+        "Three-phase induction",
+        "Squirrel-cage rotor: industrial pumps, fans, conveyors, belt-driven washers",
+    ),
+    "dc": (
+        "Brushed DC",
+        "Permanent-magnet DC",
+        "Two wires, brushes, magnets in the stator; also a separately excited field",
+    ),
+    "dc_series": (
+        "Brushed DC",
+        "Series-wound DC",
+        "Field winding in series with the armature: power tools, starters, universal motors",
+    ),
     "stepper": ("Stepper", "Bipolar stepper", "Two phases on two H-bridges, microstepped"),
 }
 # A design point that works with each example motor, so no screen opens on an error.
@@ -129,7 +188,9 @@ class Refused(Exception):
         self.reason, self.fix, self.field = reason, fix, field
 
 
-def _number(value, name: str, *, low: float | None = None, high: float | None = None, field: str | None = None) -> float:
+def _number(
+    value, name: str, *, low: float | None = None, high: float | None = None, field: str | None = None
+) -> float:
     """field: the page's own name for the input, where it differs from the words used."""
     field = field or name
     try:
@@ -139,10 +200,117 @@ def _number(value, name: str, *, low: float | None = None, high: float | None = 
     if not math.isfinite(x):
         raise Refused(f"{name} is not a number", f"enter a value for {name}", field)
     if low is not None and x < low:
-        raise Refused(f"{name} cannot be below {low:g}", f"raise {name}", field)
+        raise Refused(f"{name} cannot be below {written(low, 6)}", f"raise {name}", field)
     if high is not None and x > high:
-        raise Refused(f"{name} cannot be above {high:g}", f"lower {name}", field)
+        most = f"{high:,.0f}" if high >= 1e6 and high == int(high) else written(high, 6)
+        raise Refused(f"{name} cannot be above {most}", f"lower {name}", field)
     return x
+
+
+def _count(value, name: str, *, low: int, high: int, field: str) -> int:
+    """A whole number of things: 2.5 devices is a slip, not 2."""
+    x = _number(1 if value in ("", None) else value, name, low=low, high=high, field=field)
+    if x != int(x):
+        raise Refused(f"{name} has to be a whole number, and {x:g} was given", f"give a whole number for {name}", field)
+    return int(x)
+
+
+NEEDS = {
+    "/api/stage": ("motor", "conditions"),
+    "/api/proposal": ("motor", "conditions", "devices"),
+    "/api/cycle": ("motor", "conditions", "device"),
+    "/api/map": ("motor", "conditions", "device"),
+    "/api/capability": ("motor", "conditions", "device"),
+    "/api/largest": ("motor", "conditions", "device"),
+    "/api/recommend": ("motor", "conditions", "device"),
+    "/api/fit": ("motor", "device"),
+    "/api/suggest": ("device",),
+}
+
+
+def asked(route: str, data) -> None:
+    """A request that does not hold what its route needs is refused in words, here, before
+    anything is worked out: a missing motor is the asker's slip, not a fault of the engine."""
+    if not isinstance(data, dict):
+        raise Refused(
+            "the request is not a set of names and values", "send an object with the names this address takes"
+        )
+    for name in NEEDS.get(route, ()):
+        value = data.get(name)
+        if name in ("motor", "conditions") and not isinstance(value, dict):
+            raise Refused(
+                f"the request has no {name}, or it is not a set of names and values", f"give the {name}", name
+            )
+        if name == "device" and not (isinstance(value, str) and value):
+            raise Refused("no device is named", "name the device", "device")
+        if name == "devices" and not (
+            isinstance(value, list) and value and all(isinstance(x, str) and x for x in value)
+        ):
+            raise Refused("no device chosen", "pick at least one device in the Devices step", "devices")
+    for name in ("start", "heatsink", "load", "profile"):
+        if data.get(name) is not None and not isinstance(data[name], dict):
+            raise Refused(f"the {name} is not a set of names and values", f"give the {name}'s figures by name", name)
+
+
+def finite(value):
+    """An answer as it can be written: a figure that is not a number goes as none at all,
+    which every reader of JSON takes, where NaN is taken by none."""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [finite(v) for v in value]
+    return value
+
+
+UNWORKABLE = (ArithmeticError, ValueError, RecursionError)
+
+
+def unworkable(exc: Exception) -> dict:
+    """The refusal for figures that passed every check by name and still cannot be worked
+    with: said in words, with what the engine made of them, and not as a fault of the tool."""
+    return {
+        "refused": f"these figures cannot be worked with: {reason_of(exc)}",
+        "fix": "look for a figure that is zero, far too large or small, or of the wrong kind",
+        "field": "",
+    }
+
+
+def _named(loc) -> str:
+    """Where in a set of figures something is wrong, in words: stretch 1's duration, not segments.0.duration."""
+    out = []
+    parts = [str(x) for x in loc]
+    for k, part in enumerate(parts):
+        if part == "segments":
+            continue
+        if part.isdigit():
+            out.append(f"stretch {int(part) + 1}" if k and parts[k - 1] == "segments" else f"item {int(part) + 1}")
+        else:
+            out.append(part)  # by the name it is given under, so that a mistyped one is seen
+    return ", ".join(out)
+
+
+def reason_of(exc: Exception) -> str:
+    """What a set of figures was refused for, in a line: the name of the figure and what is
+    wrong with it, not the address of a web page about the error."""
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            first = errors()[0]
+            where = _named(first.get("loc", ()))
+            message = str(first.get("msg", "")).removeprefix("Value error, ")
+            message = "should be" + message.removeprefix("Input should be") if message.startswith("Input") else message
+            return (
+                f"{where} {message}"
+                if where and message.startswith("should")
+                else f"{where}: {message}"
+                if where
+                else message
+            )
+        except (IndexError, TypeError, AttributeError):
+            pass
+    return str(exc).splitlines()[0].strip() if str(exc).strip() else type(exc).__name__
 
 
 def _motor(data: dict):
@@ -151,8 +319,9 @@ def _motor(data: dict):
     cleaned = {k: v for k, v in data.items() if v not in ("", None)}
     # A working temperature comes with the motor's figures and is not one of them.
     hot = cleaned.pop("t_motor", None)
+    cleaned.setdefault("type", "pmsm")  # as a motor file read from the terminal is taken
     try:
-        machine = _ADAPTER.validate_python(cleaned)
+        machine = ADAPTER.validate_python(cleaned)
         if hot is None:
             return machine
         from motionsim.motor.machines import at_temperature
@@ -162,9 +331,7 @@ def _motor(data: dict):
         first = exc.errors()[0]
         field = str(first["loc"][-1]) if first["loc"] else ""
         field = {"ld": "l", "lq": "l", "flux_linkage": "kv"}.get(field, field)  # as the form names them
-        label = next(
-            (lab for key, lab, *_ in FIELDS.get(str(cleaned.get("type")), []) if key == field), field
-        )
+        label = next((lab for key, lab, *_ in FIELDS.get(str(cleaned.get("type")), []) if key == field), field)
         message = first["msg"].removeprefix("Value error, ")
         known = FIELDS.get(str(cleaned.get("type")), [])
         if not field or field == str(cleaned.get("type")):
@@ -179,15 +346,32 @@ def _motor(data: dict):
         elif message.startswith("input should be"):
             message = "should be" + message.removeprefix("input should be")
         subject = label.lower() if label else "a motor value"
-        raise Refused(f"{subject} {message}" if label else message,
-                      "correct the motor's values in step 1", field) from None
+        raise Refused(f"{subject} {message}" if label else message, "correct the motor's values", field) from None
+
+
+def _pwm(name) -> Pwm:
+    try:
+        return Pwm(name)
+    except ValueError:
+        raise Refused(
+            f"there is no modulation called {name}", f"one of {', '.join(x.value for x in Pwm)}", "pwm"
+        ) from None
 
 
 def _conditions(data: dict, motor) -> OperatingPoint:
     pwm = data.get("pwm") or motor.default_pwm.value
     floor = {"rg_on": 0.01, "rg_off": 0.01, "v_drive": 0.1}  # a gate resistance is never nothing
+    most = {"rg_on": 1e4, "rg_off": 1e4, "v_drive": 100, "l_loop": 1e-3}
+    words = {
+        "rg_on": "turn-on gate resistance",
+        "rg_off": "turn-off gate resistance",
+        "v_drive": "gate drive voltage",
+        "l_loop": "loop inductance",
+    }
     optional = lambda key: (  # noqa: E731
-        None if data.get(key) in ("", None) else _number(data[key], key, low=floor.get(key, 0))
+        None
+        if data.get(key) in ("", None)
+        else _number(data[key], words.get(key, key), low=floor.get(key, 0), high=most.get(key), field=key)
     )
     # Cooling: a heatsink held at a temperature, a heatsink in air, or no heatsink at all.
     # In air, t_sink is the air's temperature and the engine works out the rest.
@@ -201,25 +385,40 @@ def _conditions(data: dict, motor) -> OperatingPoint:
         air = data.get("t_ambient")
         t_sink = _number(40 if air in ("", None) else air, "air temperature", low=-40, high=120, field="t_ambient")
     if cooling == "board" and data.get("board_area") in ("", None):
-        raise Refused("the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area")
+        raise Refused(
+            "the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area"
+        )
     if cooling == "heatsink":
         if data.get("rth_sink") in ("", None):
-            raise Refused("the heatsink's thermal resistance is needed", "give it in K/W, from the heatsink's data: a smaller figure is a bigger heatsink", "rth_sink")
+            raise Refused(
+                "the heatsink's thermal resistance is needed",
+                "give it in K/W, from the heatsink's data: a smaller figure is a bigger heatsink",
+                "rth_sink",
+            )
         rth_sink = _number(data["rth_sink"], "heatsink thermal resistance", low=0.001, high=500, field="rth_sink")
     return OperatingPoint(
-        v_dc=_number(data.get("v_dc"), "supply voltage", low=1, high=2000),
-        i_rms=0.0, modulation_index=0.0, power_factor=1.0,
-        f_sw=_number(data.get("f_sw"), "switching frequency", low=100, high=2e6),
-        t_sink=t_sink, rth_sink=rth_sink,
-        pwm=Pwm(pwm), t_dead=_number(data.get("t_dead", 0) or 0, "dead time", low=0, high=1e-4),
-        t_min_pulse=_number(data.get("t_min_pulse", 0) or 0, "shortest pulse", low=0, high=1e-4),
-        v_drive=optional("v_drive"), rg_on=optional("rg_on"), rg_off=optional("rg_off"),
+        v_dc=_number(data.get("v_dc"), "supply voltage", low=1, high=2000, field="v_dc"),
+        i_rms=0.0,
+        modulation_index=0.0,
+        power_factor=1.0,
+        # Up to 10 MHz: a GaN stage switches in megahertz, and nothing here stops at a technology.
+        f_sw=_number(data.get("f_sw"), "switching frequency", low=100, high=1e7, field="f_sw"),
+        t_sink=t_sink,
+        rth_sink=rth_sink,
+        pwm=_pwm(pwm),
+        t_dead=_number(data.get("t_dead", 0) or 0, "dead time", low=0, high=1e-4, field="t_dead"),
+        t_min_pulse=_number(data.get("t_min_pulse", 0) or 0, "shortest pulse", low=0, high=1e-4, field="t_min_pulse"),
+        v_drive=optional("v_drive"),
+        rg_on=optional("rg_on"),
+        rg_off=optional("rg_off"),
         l_loop=optional("l_loop"),
-        parallel=int(_number(data.get("parallel") or 1, "devices in parallel", low=1, high=12)),
+        parallel=_count(data.get("parallel", 1), "devices in parallel", low=1, high=12, field="parallel"),
     )
 
 
 COOLING = ("held", "heatsink", "none", "board")
+
+
 def _free_air(device, conditions: dict, packages: int | None = None):
     """With no heatsink: what lies between a package's case and the air, standing alone
     or soldered to a board with the others (see cooling.py)."""
@@ -228,13 +427,24 @@ def _free_air(device, conditions: dict, packages: int | None = None):
     kind = conditions.get("cooling") or "held"
     if kind not in ("none", "board"):
         return None
-    given = lambda key, name: None if conditions.get(key) in ("", None) else _number(conditions[key], name, low=0.01, high=100000, field=key)  # noqa: E731
+
+    def given(key: str, name: str) -> float | None:
+        return (
+            None
+            if conditions.get(key) in ("", None)
+            else _number(conditions[key], name, low=0.01, high=100000, field=key)
+        )
+
     area = given("board_area", "board area") if kind == "board" else None
     if kind == "board" and area is None:
-        raise Refused("the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area")
+        raise Refused(
+            "the board's area is needed", "give the area of the board the power stage is on, in cm²", "board_area"
+        )
     try:
         return no_heatsink(
-            device, given("rth_ja", "junction to air"), board_area=area,
+            device,
+            given("rth_ja", "junction to air"),
+            board_area=area,
             copper=given("copper", "copper area") if kind == "board" else None,
             copper_ref=given("copper_ref", "the datasheet's copper area") if kind == "board" else None,
             packages=packages,
@@ -280,8 +490,15 @@ def _switching_period(device, design, op: OperatingPoint) -> dict:
 
 
 def _gate_out(gate) -> dict:
-    return {"kind": gate.kind, "v_drive": gate.v_drive, "rg_on": gate.rg_on, "rg_off": gate.rg_off,
-            "lines": gate.lines, "t_dead": gate.t_dead}
+    return {
+        "kind": gate.kind,
+        "v_drive": gate.v_drive,
+        "rg_on": gate.rg_on,
+        "rg_off": gate.rg_off,
+        "lines": gate.lines,
+        # The dead time in use, chosen here or given.
+        "t_dead": gate.t_dead if gate.t_dead is not None else (gate.op.t_dead or None),
+    }
 
 
 def _unreachable(exc: Unreachable, v_dc: float) -> Refused:
@@ -299,29 +516,53 @@ def _unreachable(exc: Unreachable, v_dc: float) -> Refused:
 
 def _losses(sw, d) -> dict:
     return {
-        "conduction": sw.conduction, "turn_on": sw.turn_on, "turn_off": sw.turn_off,
-        "dead_time": sw.dead_time, "recovery": sw.recovery,
-        "diode_conduction": d.conduction, "diode_recovery": d.recovery,
+        "conduction": sw.conduction,
+        "turn_on": sw.turn_on,
+        "turn_off": sw.turn_off,
+        "dead_time": sw.dead_time,
+        "recovery": sw.recovery,
+        "diode_conduction": d.conduction,
+        "diode_recovery": d.recovery,
         "total": sw.total + d.total,
     }
 
 
 def _result(r, tj_max: float, parallel: int = 1) -> dict:
     # The roles hold one device of each position; with devices in parallel there are more.
-    conduction = parallel * sum(x.count * (x.switch.conduction + x.switch.dead_time + x.diode.conduction) for x in r.roles)
+    conduction = parallel * sum(
+        x.count * (x.switch.conduction + x.switch.dead_time + x.diode.conduction) for x in r.roles
+    )
     switching = parallel * sum(
-        x.count * (x.switch.turn_on + x.switch.turn_off + x.switch.recovery + x.diode.recovery)
-        for x in r.roles
+        x.count * (x.switch.turn_on + x.switch.turn_off + x.switch.recovery + x.diode.recovery) for x in r.roles
     )
     return {
-        "loss": r.p_inverter, "conduction": conduction, "switching": switching,
-        "efficiency": r.efficiency, "tj_peak": hottest(r), "tj_range": r.tj_peak_range,
-        "tj_max": tj_max, "t_case": r.t_case, "t_sink": r.t_sink, "validity": r.validity.value, "notes": r.notes,
-        "limits": r.limits, "assumptions": r.assumptions, "warnings": r.rating_warnings,
+        "loss": r.p_inverter,
+        "conduction": conduction,
+        "switching": switching,
+        "efficiency": r.efficiency,
+        "tj_peak": hottest(r),
+        "tj_range": r.tj_peak_range,
+        "tj_max": tj_max,
+        "t_case": r.t_case,
+        "t_sink": r.t_sink,
+        "validity": r.validity.value,
+        "notes": r.notes,
+        "limits": r.limits,
+        "assumptions": r.assumptions,
+        "warnings": r.rating_warnings,
         "hottest": _losses(r.switch, r.diode),
         "positions": [
-            {"name": x.name, "count": x.count, **_losses(x.switch, x.diode),
-             "tj": x.hottest, "tj_switch": x.tj_switch_peak, "tj_diode": x.tj_diode_peak}
+            {
+                "name": x.name,
+                "count": x.count,
+                **_losses(x.switch, x.diode),
+                "tj": x.hottest,
+                "tj_switch": x.tj_switch_peak,
+                "tj_diode": x.tj_diode_peak,
+                # Averages over the output period, beside the peaks within it.
+                "tj_switch_mean": x.tj_switch,
+                "tj_diode_mean": x.tj_diode,
+            }
             for x in r.roles
         ],
     }
@@ -334,16 +575,22 @@ def _checks(checks) -> list[dict]:
 
 def _stage(stage, motor, pwm: Pwm) -> dict:
     return {
-        "positions": sum(r.count for r in stage.roles), "i_peak": stage.i_peak,
-        "p_shaft": stage.p_shaft, "p_electrical": stage.p_electrical,
-        "p_motor_loss": stage.p_motor_loss, "scheme": motor.scheme(pwm),
+        "positions": sum(r.count for r in stage.roles),
+        "i_peak": stage.i_peak,
+        "p_shaft": stage.p_shaft,
+        "p_electrical": stage.p_electrical,
+        "p_motor_loss": stage.p_motor_loss,
+        "scheme": motor.scheme(pwm),
         "summary": [{"label": a, "value": b, "unit": c} for a, b, c in stage.summary],
         "notes": stage.notes,
         "roles": [
-            {"name": r.name, "count": r.count,
-             "forward": float(np.mean(r.d_switch * (r.current > 0))),
-             "reverse": float(np.mean(r.d_reverse * (r.current > 0))),
-             "switching": float(np.mean(r.switch_events + r.reverse_events) > 0)}
+            {
+                "name": r.name,
+                "count": r.count,
+                "forward": float(np.mean(r.d_switch * (r.current > 0))),
+                "reverse": float(np.mean(r.d_reverse * (r.current > 0))),
+                "switching": float(np.mean(r.switch_events + r.reverse_events) > 0),
+            }
             for r in stage.roles
         ],
     }
@@ -376,10 +623,15 @@ class Workspace:
         point = any(t is not None and t.basis.value == "point" for t in tables)
         measured = sw.e_on is not None and sw.e_off is not None
         return {
-            "id": key, "name": f"{device.vendor} {device.part_number}",
-            "technology": device.technology, "v_max": device.ratings.v_max,
-            "i_nominal": device.ratings.i_nominal, "tj_max": device.ratings.tj_max,
-            "i_pulsed": device.ratings.i_pulsed, "t_sc": device.ratings.t_sc,
+            "id": key,
+            # A copy carrying the user's own measurements is named as one, to be told from the part it came from.
+            "name": f"{device.vendor} {device.part_number}" + (", measured" if key.endswith("-measured") else ""),
+            "technology": device.technology,
+            "v_max": device.ratings.v_max,
+            "i_nominal": device.ratings.i_nominal,
+            "tj_max": device.ratings.tj_max,
+            "i_pulsed": device.ratings.i_pulsed,
+            "t_sc": device.ratings.t_sc,
             "positions": device.package.topology.positions,
             "integrated_driver": device.package.integrated_driver,
             "example": key in EXAMPLES,
@@ -393,7 +645,12 @@ class Workspace:
         for key, path in self.paths().items():
             try:
                 out.append(self.summary(key, load_device(path)))
-            except Exception:  # an unreadable file is not the page's problem
+            except (
+                OSError,
+                yaml.YAMLError,
+                ValueError,
+                TypeError,
+            ):  # a file that is not a device model is not the page's problem
                 continue
         return out
 
@@ -402,24 +659,39 @@ def setup(workspace: Workspace) -> dict:
     motors = {}
     for kind, (family, label, about) in MOTOR_NAMES.items():
         values = yaml.safe_load(TEMPLATES[kind])
-        motor = _ADAPTER.validate_python(values)
+        motor = ADAPTER.validate_python(values)
         motors[kind] = {
-            "family": family, "label": label, "about": about, "start": STARTING[kind],
+            "family": family,
+            "label": label,
+            "about": about,
+            "start": STARTING[kind],
             "values": {k: v for k, v in values.items() if k not in ("name",)},
             "fields": [
                 # A figure the motor can be described without may be left empty on the page.
-                {"key": key, "label": lab, "unit": unit, "help": text_, "options": options,
-                 "required": key not in type(motor).model_fields or type(motor).model_fields[key].is_required()}
+                {
+                    "key": key,
+                    "label": lab,
+                    "unit": unit,
+                    "help": text_,
+                    "options": options,
+                    "required": key not in type(motor).model_fields or type(motor).model_fields[key].is_required(),
+                }
                 for key, lab, unit, text_, options in FIELDS[kind]
             ],
-            "fixed_scheme": motor.fixed_scheme, "default_pwm": motor.default_pwm.value,
-            "optional": [{"key": key, "label": OPTIONAL[key][0], "unit": OPTIONAL[key][1], "help": OPTIONAL[key][2]}
-                         for key in OPTIONAL_FOR.get(kind, [])],
+            "fixed_scheme": motor.fixed_scheme,
+            "default_pwm": motor.default_pwm.value,
+            "optional": [
+                {"key": key, "label": OPTIONAL[key][0], "unit": OPTIONAL[key][1], "help": OPTIONAL[key][2]}
+                for key in OPTIONAL_FOR.get(kind, [])
+            ],
         }
     return {
-        "motors": motors, "pwm": [p.value for p in Pwm],
-        "load": yaml.safe_load(LOAD_TEMPLATE), "profile": yaml.safe_load(PROFILE_TEMPLATE),
-        "devices": workspace.listing(), "typed": typed_form(),
+        "motors": motors,
+        "pwm": [p.value for p in Pwm],
+        "load": yaml.safe_load(LOAD_TEMPLATE),
+        "profile": yaml.safe_load(PROFILE_TEMPLATE),
+        "devices": workspace.listing(),
+        "typed": typed_form(),
         "can_read": bool(os.environ.get("ANTHROPIC_API_KEY")),
     }
 
@@ -428,9 +700,24 @@ def setup(workspace: Workspace) -> dict:
 # the power of k it scales with. Turns go up by k, so voltage constants go up by k,
 # resistances and inductances by k squared, and currents down by k. Power and torque stay.
 REWIND = {
-    "kv": -1, "kt": 1, "ke": 1, "flux_linkage": 1, "k": 2,
-    "l": 2, "ld": 2, "lq": 2, "lm": 2, "lls": 2, "llr": 2, "rs": 2, "rr": 2, "r": 2,
-    "i_max": -1, "i_magnetising": -1, "i_phase": -1, "i_sat": -1,
+    "kv": -1,
+    "kt": 1,
+    "ke": 1,
+    "flux_linkage": 1,
+    "k": 2,
+    "l": 2,
+    "ld": 2,
+    "lq": 2,
+    "lm": 2,
+    "lls": 2,
+    "llr": 2,
+    "rs": 2,
+    "rr": 2,
+    "r": 2,
+    "i_max": -1,
+    "i_magnetising": -1,
+    "i_phase": -1,
+    "i_sat": -1,
 }
 
 
@@ -441,7 +728,9 @@ def rewound(kind: str, values: dict, v_supply: float) -> dict:
     out = {}
     for key, value in values.items():
         power = REWIND.get(key)
-        out[key] = value if power is None or not isinstance(value, (int, float)) else float(f"{value * k**power:.4g}")
+        out[key] = (
+            value if power is None or not isinstance(value, (int, float)) else float(f"{written(value * k**power, 4)}")
+        )
     return out
 
 
@@ -458,7 +747,8 @@ def suggest(data: dict, workspace: Workspace) -> dict:
         "v_supply": bus,
         "motors": {
             kind: {
-                "fit": fit.fit, "why": fit.why,
+                "fit": fit.fit,
+                "why": fit.why,
                 "values": rewound(kind, base[kind]["values"], bus),
                 "start": {**STARTING[kind], "v_dc": bus},
             }
@@ -504,9 +794,10 @@ def motor_fit(data: dict, workspace: Workspace) -> dict:
 
     motor = _motor(data["motor"])
     device = workspace.device(data["device"])
-    parallel = max(int(data.get("parallel") or 1), 1)
+    parallel = int(_number(data.get("parallel") or 1, "devices in parallel", low=1, high=12, field="parallel"))
     bus, fits = motors_for(device.ratings.v_max, device.package.topology.positions)
-    v_dc = _number(data["v_dc"], "supply voltage", low=1, high=2000) if data.get("v_dc") else float(bus)
+    given = data.get("v_dc") not in ("", None)
+    v_dc = _number(data["v_dc"], "supply voltage", low=1, high=2000, field="v_dc") if given else float(bus)
     lines: list[dict] = []
     say = lambda level, text: lines.append({"level": level, "text": text})  # noqa: E731
     kind = data["motor"].get("type")
@@ -515,10 +806,19 @@ def motor_fit(data: dict, workspace: Workspace) -> dict:
 
     top_rpm, _ = _reach(motor, v_dc, torque=0.0)
     if top_rpm <= 1.0:
-        say("caution", f"from {v_dc:g} V this motor does not turn at all: it is wound for a much higher voltage, or one of its "
-                       "figures is in the wrong unit")
-        return {"v_supply": v_dc, "top_rpm": 0.0, "i_peak": None, "i_rated": device.ratings.i_nominal * parallel,
-                "level": "caution", "lines": lines}
+        say(
+            "caution",
+            f"from {v_dc:g} V this motor does not turn at all: it is wound for a much higher voltage, or one of its "
+            "figures is in the wrong unit",
+        )
+        return {
+            "v_supply": v_dc,
+            "top_rpm": 0.0,
+            "i_peak": None,
+            "i_rated": device.ratings.i_nominal * parallel,
+            "level": "caution",
+            "lines": lines,
+        }
     # The most current it can ask for is at standstill, where no back-EMF opposes it.
     torque, hardest = _reach(motor, v_dc, rpm=0.0)
     i_peak = None if hardest is None else float(hardest.i_peak)
@@ -530,10 +830,12 @@ def motor_fit(data: dict, workspace: Workspace) -> dict:
     if asked not in ("", None):
         asked = abs(_number(asked, "speed"))
         if top_rpm < asked:
-            say("caution",
-                f"from {v_dc:g} V this motor reaches about {float(f'{top_rpm:.2g}'):,.0f} rpm with no load, short of the "
+            say(
+                "caution",
+                f"from {v_dc:g} V this motor reaches about {float(f'{written(top_rpm, 2)}'):,.0f} rpm with no load, short of the "
                 f"{asked:,.0f} rpm of the design point: it is wound for a higher voltage than this part suits. Lower the "
-                "speed in the next step, or use a motor wound for this voltage")
+                "speed in the next step, or use a motor wound for this voltage",
+            )
         else:
             say("ok", f"from {v_dc:g} V this motor reaches the {asked:,.0f} rpm of the design point")
     if i_peak is not None and torque not in (0.0, float("inf")):
@@ -541,18 +843,30 @@ def motor_fit(data: dict, workspace: Workspace) -> dict:
         share = rated / i_peak
         if i_peak > rated * 1.02:
             fix = (
-                f"use {math.ceil(i_peak / device.ratings.i_nominal)} of this part in parallel, a part rated for {float(f'{i_peak:.2g}'):g} A, "
+                f"use {math.ceil(i_peak / device.ratings.i_nominal)} of this part in parallel, a part rated for {float(f'{written(i_peak, 2)}'):g} A, "
                 "or a current limit in the drive at what the part can carry"
             )
-            say("caution",
-                f"{what} this motor draws {i_peak:.3g} A peak, and the part is rated {rated:g} A"
+            say(
+                "caution",
+                f"{what} this motor draws {written(i_peak, 3)} A peak, and the part is rated {rated:g} A"
                 + (f" ({parallel} in parallel)" if parallel > 1 else "")
-                + f": the part can take it to about {100 * share:.0f}% of the {torque:.3g} N·m it can give. To use all of the motor, {fix}")
+                + f": the part can take it to about {100 * share:.0f}% of the {written(torque, 3)} N·m it can give. To use all of the motor, {fix}",
+            )
         else:
-            say("ok", f"{what} this motor draws {i_peak:.3g} A peak for {torque:.3g} N·m, within the part's {rated:g} A rating")
+            say(
+                "ok",
+                f"{what} this motor draws {written(i_peak, 3)} A peak for {written(torque, 3)} N·m, within the part's {rated:g} A rating",
+            )
     level = "caution" if any(x["level"] == "caution" for x in lines) else "ok"
-    return {"v_supply": v_dc, "top_rpm": None if top_rpm == float("inf") else top_rpm, "i_peak": i_peak,
-            "i_rated": rated, "torque": None if torque == float("inf") else torque, "level": level, "lines": lines}
+    return {
+        "v_supply": v_dc,
+        "top_rpm": None if top_rpm == float("inf") else top_rpm,
+        "i_peak": i_peak,
+        "i_rated": rated,
+        "torque": None if torque == float("inf") else torque,
+        "level": level,
+        "lines": lines,
+    }
 
 
 # Which kinds of load each kind of motor usually drives, most usual first.
@@ -566,10 +880,16 @@ LOADS_MAINS = {
 LOADS_FOR = {
     "pmsm": ["joint", "fan", "vehicle", "drum", "conveyor"],
     "bldc": ["fan", "vehicle", "tool", "conveyor"],
-    "synrm": ["fan", "conveyor", "drum"],
+    # A reluctance motor is a pump, fan and compressor machine: its low power factor and
+    # torque for its size keep it out of washers and off wheels, and it is offered neither.
+    "synrm": ["fan", "conveyor"],
+    # Induction: the same, and the belt-driven washer, which it drove for decades.
     "induction": ["fan", "conveyor", "drum"],
     "dc": ["conveyor", "joint", "vehicle"],
-    "dc_series": ["tool", "conveyor"],  # a series motor cannot brake a vehicle by itself
+    # A series motor runs away with no load on it and cannot brake by itself, so it is
+    # offered loads whose torque is always there and stops them: a tool at work, a compressor
+    # or conveyor. Not a fan, which has to be braked to a stop in the time given, nor a vehicle.
+    "dc_series": ["tool", "conveyor"],
     "stepper": ["axis", "conveyor"],
 }
 G = 9.81
@@ -577,7 +897,7 @@ G = 9.81
 
 def _round_gear(ratio: float) -> float:
     """A gear ratio as one would be bought: at least 1, to two figures."""
-    return float(f"{max(ratio, 1.0):.2g}")
+    return float(f"{written(max(ratio, 1.0), 2)}")
 
 
 def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None) -> list[dict]:
@@ -590,7 +910,7 @@ def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None
     """
     w = max(abs(rpm), 1.0) * math.pi / 30  # rad/s at the motor
     t = max(abs(torque), 1e-6)
-    r = lambda x: float(f"{x:.3g}")  # noqa: E731
+    r = lambda x: float(f"{written(x, 3)}")  # noqa: E731
     rotor = r(0.05 * t * 0.1 / w)  # a rotor that half a tenth of the torque spins up in 0.1 s
 
     def ramp(top: float, up: float, hold: float, down: float) -> list[dict]:
@@ -598,7 +918,7 @@ def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None
         # hair more than its design speed.
         scale = 10 ** (math.floor(math.log10(abs(top))) - 2) if top else 1.0
         top = math.trunc(top / scale) * scale
-        top = float(f"{top:.6g}")
+        top = float(f"{written(top, 6)}")
         return [
             {"duration": up, "speed_start": 0, "speed_end": top},
             {"duration": hold, "speed_start": top, "speed_end": top},
@@ -607,18 +927,33 @@ def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None
 
     every = {}
     every["fan"] = {
-        "label": "Fan or pump", "about": "Torque grows with the square of speed; light at the start, full at top speed",
-        "load": {"gear_ratio": 1, "gear_efficiency": 1, "motor_inertia": rotor, "inertia": r(0.15 * t * 4 / w),
-                 "fan_coefficient": r(0.8 * t / w**2), "friction_coulomb": r(0.02 * t)},
+        "label": "Fan or pump",
+        "about": "Torque grows with the square of speed; light at the start, full at top speed",
+        "load": {
+            "gear_ratio": 1,
+            "gear_efficiency": 1,
+            "motor_inertia": rotor,
+            "inertia": r(0.15 * t * 4 / w),
+            "fan_coefficient": r(0.8 * t / w**2),
+            "friction_coulomb": r(0.02 * t),
+        },
         "fields": ["fan_coefficient", "inertia", "friction_coulomb", "gear_ratio"],
-        "segments": ramp(rpm, 4, 6, 4), "start_angle_deg": 0,
+        "segments": ramp(rpm, 4, 6, 4),
+        "start_angle_deg": 0,
     }
     every["conveyor"] = {
-        "label": "Conveyor or compressor", "about": "A steady torque at any speed, there from the first turn",
-        "load": {"gear_ratio": 1, "gear_efficiency": 1, "motor_inertia": rotor, "inertia": r(0.2 * t * 2 / w),
-                 "constant_torque": r(0.7 * t)},
+        "label": "Conveyor or compressor",
+        "about": "A steady torque at any speed, there from the first turn",
+        "load": {
+            "gear_ratio": 1,
+            "gear_efficiency": 1,
+            "motor_inertia": rotor,
+            "inertia": r(0.2 * t * 2 / w),
+            "constant_torque": r(0.7 * t),
+        },
         "fields": ["constant_torque", "inertia", "gear_ratio", "gear_efficiency"],
-        "segments": ramp(rpm, 2, 6, 2), "start_angle_deg": 0,
+        "segments": ramp(rpm, 2, 6, 2),
+        "start_angle_deg": 0,
     }
     # Gear ratios follow the motor's speed, so the load turns at the speed such a load does:
     # a joint at some tens of rpm, a drum at about 1200, a wheel at a road speed for the power.
@@ -627,9 +962,16 @@ def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None
     gear, eff, arm = _round_gear(min(max(0.5 * n / 20, 5), 200)), 0.85, 0.25
     mass = 0.5 * t * gear * eff / (G * arm)
     every["joint"] = {
-        "label": "Robot joint", "about": "A weight on an arm behind a gearbox: swings up, then holds against gravity",
-        "load": {"gear_ratio": gear, "gear_efficiency": eff, "motor_inertia": rotor, "inertia": r(mass * arm**2),
-                 "friction_coulomb": r(0.05 * t * gear), "gravity": {"mass": r(mass), "arm": arm}},
+        "label": "Robot joint",
+        "about": "A weight on an arm behind a gearbox: swings up, then holds against gravity",
+        "load": {
+            "gear_ratio": gear,
+            "gear_efficiency": eff,
+            "motor_inertia": rotor,
+            "inertia": r(mass * arm**2),
+            "friction_coulomb": r(0.05 * t * gear),
+            "gravity": {"mass": r(mass), "arm": arm},
+        },
         "fields": ["mass", "arm", "gear_ratio", "gear_efficiency", "inertia", "friction_coulomb", "start_angle_deg"],
         "segments": ramp(0.5 * rpm / gear, 0.3, 0.45, 0.3) + [{"duration": 2.0, "speed_start": 0, "speed_end": 0}],
         "start_angle_deg": 0,
@@ -640,49 +982,84 @@ def load_presets(kind: str, rpm: float, torque: float, v_dc: float | None = None
     v = w / gear * radius
     carried = 0.55 * t * gear * eff / (radius * (v / up))
     every["vehicle"] = {
-        "label": "Wheeled vehicle", "about": "A mass on wheels: pulls away, cruises against drag, brakes and gives energy back",
-        "load": {"gear_ratio": gear, "gear_efficiency": eff, "motor_inertia": rotor,
-                 "vehicle": {"mass": r(carried), "wheel_radius": radius, "rolling_resistance": 0.015,
-                             "drag_area": r(0.2 * t * gear / (radius * 0.6 * v**2)), "slope_percent": 0}},
+        "label": "Wheeled vehicle",
+        "about": "A mass on wheels: pulls away, cruises against drag, brakes and gives energy back",
+        "load": {
+            "gear_ratio": gear,
+            "gear_efficiency": eff,
+            "motor_inertia": rotor,
+            "vehicle": {
+                "mass": r(carried),
+                "wheel_radius": radius,
+                "rolling_resistance": 0.015,
+                "drag_area": r(0.2 * t * gear / (radius * 0.6 * v**2)),
+                "slope_percent": 0,
+            },
+        },
         "fields": ["v_mass", "wheel_radius", "gear_ratio", "rolling_resistance", "drag_area", "slope_percent"],
-        "segments": ramp(rpm / gear, up, 6, 3), "start_angle_deg": 0,
+        "segments": ramp(rpm / gear, up, 6, 3),
+        "start_angle_deg": 0,
     }
     gear, eff = _round_gear(n / 1200), 0.9
     spin, tumble = rpm / gear, (45 if n / gear > 300 else 0.08 * n / gear) * (1 if rpm >= 0 else -1)
     every["drum"] = {
-        "label": "Washer drum", "about": "A heavy drum on a belt: tumbles one way and the other, then spins up",
-        "load": {"gear_ratio": gear, "gear_efficiency": eff, "motor_inertia": rotor,
-                 "inertia": r(0.4 * t * gear * eff * 8 / (w / gear)), "friction_coulomb": r(0.3 * t * gear)},
+        "label": "Washer drum",
+        "about": "A heavy drum on a belt: tumbles one way and the other, then spins up",
+        "load": {
+            "gear_ratio": gear,
+            "gear_efficiency": eff,
+            "motor_inertia": rotor,
+            "inertia": r(0.4 * t * gear * eff * 8 / (w / gear)),
+            "friction_coulomb": r(0.3 * t * gear),
+        },
         "fields": ["inertia", "friction_coulomb", "gear_ratio", "gear_efficiency"],
-        "segments": ramp(tumble, 1, 3, 1) + ramp(-tumble, 1, 3, 1) + ramp(spin, 8, 4, 8), "start_angle_deg": 0,
+        "segments": ramp(tumble, 1, 3, 1) + ramp(-tumble, 1, 3, 1) + ramp(spin, 8, 4, 8),
+        "start_angle_deg": 0,
     }
     every["axis"] = {
-        "label": "Positioning axis", "about": "Short moves there and back with a pause between: a slide, a screw, a turntable",
-        "load": {"gear_ratio": 1, "gear_efficiency": 1, "motor_inertia": rotor, "inertia": r(0.5 * t * 0.1 / w),
-                 "friction_coulomb": r(0.1 * t)},
+        "label": "Positioning axis",
+        "about": "Short moves there and back with a pause between: a slide, a screw, a turntable",
+        "load": {
+            "gear_ratio": 1,
+            "gear_efficiency": 1,
+            "motor_inertia": rotor,
+            "inertia": r(0.5 * t * 0.1 / w),
+            "friction_coulomb": r(0.1 * t),
+        },
         "fields": ["inertia", "friction_coulomb", "gear_ratio"],
-        "segments": ramp(rpm, 0.1, 0.3, 0.1) + [{"duration": 0.5, "speed_start": 0, "speed_end": 0}] + ramp(-rpm, 0.1, 0.3, 0.1),
+        "segments": ramp(rpm, 0.1, 0.3, 0.1)
+        + [{"duration": 0.5, "speed_start": 0, "speed_end": 0}]
+        + ramp(-rpm, 0.1, 0.3, 0.1),
         "start_angle_deg": 0,
     }
     every["tool"] = {
-        "label": "Power tool", "about": "Short bursts at nearly full torque, with rests between",
-        "load": {"gear_ratio": 1, "gear_efficiency": 1, "motor_inertia": rotor, "inertia": r(0.1 * t * 0.3 / w),
-                 "constant_torque": r(0.85 * t)},
+        "label": "Power tool",
+        "about": "Short bursts at nearly full torque, with rests between",
+        "load": {
+            "gear_ratio": 1,
+            "gear_efficiency": 1,
+            "motor_inertia": rotor,
+            "inertia": r(0.1 * t * 0.3 / w),
+            "constant_torque": r(0.85 * t),
+        },
         "fields": ["constant_torque", "inertia", "gear_ratio"],
-        "segments": ramp(rpm, 0.3, 2, 0.3) + [{"duration": 1.0, "speed_start": 0, "speed_end": 0}], "start_angle_deg": 0,
+        "segments": ramp(rpm, 0.3, 2, 0.3) + [{"duration": 1.0, "speed_start": 0, "speed_end": 0}],
+        "start_angle_deg": 0,
     }
     # In words, how each load's speed comes from the motor's: the two must be seen to agree.
     for key, item in every.items():
         g = item["load"]["gear_ratio"]
         top = max(abs(sg["speed_end"]) for sg in item["segments"])
         via = "directly on the motor shaft" if g == 1 else f"through a {g:g}:1 gear"
-        say = lambda v: f"{v:,.0f}" if abs(v) >= 100 else f"{v:.3g}"  # noqa: E731
+        say = lambda v: f"{v:,.0f}" if abs(v) >= 100 else f"{written(v, 3)}"  # noqa: E731
         item["link"] = (
             f"Driven {via}: the load's top speed of {say(top)} rpm is {say(top * g)} rpm at the motor, "
             f"against your design speed of {say(n)} rpm."
         )
         if key == "vehicle":
-            item["link"] += f" That is {top * math.pi / 30 * item['load']['vehicle']['wheel_radius'] * 3.6:.3g} km/h on the road."
+            item["link"] += (
+                f" That is {written(top * math.pi / 30 * item['load']['vehicle']['wheel_radius'] * 3.6, 3)} km/h on the road."
+            )
     mains = v_dc is not None and v_dc >= 150
     order = (LOADS_MAINS if mains else {}).get(kind) or LOADS_FOR.get(kind, ["conveyor"])
     return [{"id": key, **every[key]} for key in order]
@@ -712,8 +1089,10 @@ def stage(data: dict) -> dict:
     return {
         "stage": _stage(st, motor, op.pwm),
         "advice": {
-            "lines": advice.lines, "v_minimum": advice.v_minimum,
-            "v_comfortable": advice.v_comfortable, "i_peak": advice.i_peak,
+            "lines": advice.lines,
+            "v_minimum": advice.v_minimum,
+            "v_comfortable": advice.v_comfortable,
+            "i_peak": advice.i_peak,
             "i_stall": advice.i_stall,
         },
     }
@@ -744,19 +1123,31 @@ def proposal(data: dict, workspace: Workspace) -> dict:
             fix = "open Gate drive under Supply and point, and give the drive voltage and gate resistors"
         elif problem and "no stable temperature" in problem:
             fix = "this device overheats here: lower the current or switching frequency, or pick a larger part"
-        out.append({
-            "id": by_object[id(c.device)], "name": f"{c.device.vendor} {c.device.part_number}",
-            "technology": c.device.technology, "level": word[c.level], "problem": problem, "fix": fix,
-            "result": None if c.design is None else _result(c.design.result, c.device.ratings.tj_max, gates[id(c.device)].op.parallel),
-            "stall_tj": None if c.stall is None else hottest(c.stall.result),
-            "margin": c.margin, "stall_margin": c.stall_margin,
-            "switching": None if c.footing is None else {"kind": c.footing.kind, "text": c.footing.text},
-            "efficiency": None if c.design is None else c.design.system_efficiency,
-            "checks": _checks(c.checks), "needs": c.needs,
-            "gate": _gate_out(gates[id(c.device)]),
-            "pwm": None if c.design is None else _switching_period(c.device, c.design, gates[id(c.device)].op),
-            "link": None if c.design is None else {"capacitor_rms": c.design.capacitor_rms, "ripple_pp": c.design.ripple_pp},
-        })
+        out.append(
+            {
+                "id": by_object[id(c.device)],
+                "name": f"{c.device.vendor} {c.device.part_number}",
+                "technology": c.device.technology,
+                "level": word[c.level],
+                "problem": problem,
+                "fix": fix,
+                "result": None
+                if c.design is None
+                else _result(c.design.result, c.device.ratings.tj_max, gates[id(c.device)].op.parallel),
+                "stall_tj": None if c.stall is None else hottest(c.stall.result),
+                "margin": c.margin,
+                "stall_margin": c.stall_margin,
+                "switching": None if c.footing is None else {"kind": c.footing.kind, "text": c.footing.text},
+                "efficiency": None if c.design is None else c.design.system_efficiency,
+                "checks": _checks(c.checks),
+                "needs": c.needs,
+                "gate": _gate_out(gates[id(c.device)]),
+                "pwm": None if c.design is None else _switching_period(c.device, c.design, gates[id(c.device)].op),
+                "link": None
+                if c.design is None
+                else {"capacitor_rms": c.design.capacitor_rms, "ripple_pp": c.design.ripple_pp},
+            }
+        )
     return {"candidates": out, "explain": explain(candidates), "level": LEVEL}
 
 
@@ -767,8 +1158,11 @@ def _inrush(data: dict, op: OperatingPoint) -> dict | None:
     if not c_link:
         return None
     r = data.get("precharge")
-    found = inrush(op.v_dc, _number(c_link, "DC-link capacitance", low=1e-9),
-                   _number(r, "precharge resistance", low=1e-3) if r else None)
+    found = inrush(
+        op.v_dc,
+        _number(c_link, "DC-link capacitance", low=1e-9),
+        _number(r, "precharge resistance", low=1e-3) if r else None,
+    )
     return {"energy": found.energy, "peak": found.peak, "time": found.time}
 
 
@@ -787,21 +1181,29 @@ def _mission(given) -> list | None:
         rpm = [float(v) for v in given["rpm"]]
         torque = [float(v) for v in given["torque"]]
     except (KeyError, TypeError, ValueError):
-        raise Refused("the mission profile is not three columns of numbers",
-                      "give time in seconds, speed in rpm and torque in N·m, one row an instant", "mission") from None
+        raise Refused(
+            "the mission profile is not three columns of numbers",
+            "give time in seconds, speed in rpm and torque in N·m, one row an instant",
+            "mission",
+        ) from None
     if not (len(time) == len(rpm) == len(torque)) or len(time) < 2:
-        raise Refused("the mission profile needs at least two rows, with all three columns filled",
-                      "check the file", "mission")
+        raise Refused(
+            "the mission profile needs at least two rows, with all three columns filled", "check the file", "mission"
+        )
     if any(b <= a for a, b in zip(time, time[1:])) or not all(map(math.isfinite, time + rpm + torque)):
         raise Refused("the mission profile's time does not run forward", "sort the rows by time", "mission")
     if len(time) > MOST_POINTS:
         # Thin by keeping, in each stretch, the instant that asks the most torque.
         edges = np.linspace(0, len(time), MOST_POINTS + 1).astype(int)
-        keep = sorted({int(a + np.argmax(np.abs(torque[a:b]))) for a, b in zip(edges, edges[1:]) if b > a} | {0, len(time) - 1})
+        keep = sorted(
+            {int(a + np.argmax(np.abs(torque[a:b]))) for a, b in zip(edges, edges[1:]) if b > a} | {0, len(time) - 1}
+        )
         time, rpm, torque = [time[k] for k in keep], [rpm[k] for k in keep], [torque[k] for k in keep]
     spans = [b - a for a, b in zip(time, time[1:])]
     spans.append(spans[-1])
-    return [Sample(t - time[0], dt, n * math.pi / 30, 0.0, 0.0, n, tq) for t, dt, n, tq in zip(time, spans, rpm, torque)]
+    return [
+        Sample(t - time[0], dt, n * math.pi / 30, 0.0, 0.0, n, tq) for t, dt, n, tq in zip(time, spans, rpm, torque)
+    ]
 
 
 def _life(trace, tj, duration: float) -> dict:
@@ -814,8 +1216,12 @@ def _life(trace, tj, duration: float) -> dict:
     return {
         "repeats": None if endless else life.repeats,
         "hours": None if endless else life.repeats * duration / 3600,
-        "swing": life.swing, "swing_mean": life.swing_mean, "swing_share": life.swing_share, "swings": life.swings,
-        "chip": life.chip, "within_turn": life.within_turn,
+        "swing": life.swing,
+        "swing_mean": life.swing_mean,
+        "swing_share": life.swing_share,
+        "swings": life.swings,
+        "chip": life.chip,
+        "within_turn": life.within_turn,
     }
 
 
@@ -828,7 +1234,7 @@ def _start(data: dict, motor, op: OperatingPoint):
     from motionsim.starting import Start
 
     given = data.get("start") or {}
-    kind = data["motor"]["type"]
+    kind = data["motor"].get("type", "pmsm")
     c = data["conditions"]
     lines: list[str] = []
     number = lambda key, name, **limits: (  # noqa: E731
@@ -840,22 +1246,25 @@ def _start(data: dict, motor, op: OperatingPoint):
         flux = number("flux_time", "flux build-up time", low=0, high=30)
         flux = usual if flux is None else flux
         lines.append(
-            f"before any torque, the magnetising current is held for {flux:.2g} s to build the "
+            f"before any torque, the magnetising current is held for {written(flux, 2)} s to build the "
             "rotor flux" + ("" if given.get("flux_time") not in ("", None) else ": three rotor time constants")
         )
         return Start(flux_time=flux), {"applies": "flux", "method": "sensor", "flux_time": flux, "lines": lines}
     if kind not in SENSORLESS:
-        why = "a stepper is driven open loop at its set current all the time" if kind == "stepper" else \
-            "a brushed motor commutates itself, so the drive has no rotor position to find"
+        why = (
+            "a stepper is driven open loop at its set current all the time"
+            if kind == "stepper"
+            else "a brushed motor commutates itself, so the drive has no rotor position to find"
+        )
         return None, {"applies": "none", "method": "sensor", "lines": [why]}
     method = given.get("method") or "sensor"
     if method not in ("sensor", "injection", "open_loop"):
         raise Refused("that way of starting is not known", "pick one of the three listed", "start")
     if method != "open_loop":
         lines.append(
-            "the drive knows where the rotor is from the first instant, so it applies only the "
-            "current the torque needs" if method == "sensor" else
-            "the rotor position is found at standstill by injecting a test signal, so the drive "
+            "the drive knows where the rotor is from the first instant, so it applies only the current the torque needs"
+            if method == "sensor"
+            else "the rotor position is found at standstill by injecting a test signal, so the drive "
             "applies only the current the torque needs; this needs a rotor whose inductance "
             "differs along and across its poles, which magnets on the rotor face barely give"
         )
@@ -871,15 +1280,23 @@ def _start(data: dict, motor, op: OperatingPoint):
     handover = number("handover_rpm", "handover speed", low=0)
     handover = 0.1 * abs(_number(c.get("rpm"), "speed")) if handover is None else handover
     lines += [
-        f"alignment: {peak / math.sqrt(2):.3g} A rms held still for {align:g} s, to swing the rotor to a known position",
-        f"open-loop ramp: the same current up to {handover:.3g} rpm, whatever the load asks for",
+        f"alignment: {written(peak / math.sqrt(2), 3)} A rms held still for {align:g} s, to swing the rotor to a known position",
+        f"open-loop ramp: the same current up to {written(handover, 3)} rpm, whatever the load asks for",
         "above that the drive reads the rotor from the back-EMF and the current drops to what the torque needs",
     ]
     if current is None:
-        lines.append("start current taken as the current at your design point; a drive is usually set between half and all of the rated current")
+        lines.append(
+            "start current taken as the current at your design point; a drive is usually set between half and all of the rated current"
+        )
     start = Start(method="open_loop", current=peak, align_time=align, handover_rpm=handover)
-    return start, {"applies": "method", "method": method, "current": peak / math.sqrt(2), "align_time": align,
-                   "handover_rpm": handover, "lines": lines}
+    return start, {
+        "applies": "method",
+        "method": method,
+        "current": peak / math.sqrt(2),
+        "align_time": align,
+        "handover_rpm": handover,
+        "lines": lines,
+    }
 
 
 def cycle(data: dict, workspace: Workspace) -> dict:
@@ -894,34 +1311,51 @@ def cycle(data: dict, workspace: Workspace) -> dict:
     try:
         load = Load.model_validate(data["load"])
         profile = Profile.model_validate(data["profile"])
-    except Exception as exc:
+    except (ValueError, TypeError, KeyError) as exc:  # figures that do not make a load or a motion
         if mission is None:
-            raise Refused(f"the load or motion values do not fit: {str(exc).splitlines()[-1].strip()}",
-                          "check the load and motion values") from None
+            raise Refused(
+                f"the load or motion values do not fit: {reason_of(exc)}",
+                "check the load and motion values",
+            ) from None
         load = profile = None
     sink = None
     h = data.get("heatsink")
     h = h if isinstance(h, dict) else {}
     if op.rth_sink is not None and h.get("capacity"):
         # A heatsink in air with its heat capacity given: followed from cold, as it warms.
-        sink = Heatsink(rth=op.rth_sink, capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1), t_ambient=op.t_sink)
+        sink = Heatsink(
+            rth=op.rth_sink, capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1), t_ambient=op.t_sink
+        )
     elif op.rth_sink is None and op.rth_free is None and h.get("rth") and h.get("capacity"):
         sink = Heatsink(
             rth=_number(h["rth"], "heatsink resistance", low=0.01),
             capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1),
             t_ambient=_number(h.get("t_ambient", op.t_sink), "ambient temperature", low=-40, high=150),
         )
-    repeats = int(_number(data.get("repeats", 1), "repeats", low=1, high=50))
+    repeats = _count(data.get("repeats", 1), "repeats", low=1, high=50, field="repeats")
     start, starting = _start(data, motor, op)
     try:
-        run, trace = follow(device, motor, load, profile, op, heatsink=sink, repeats=repeats, start=start,
-                            samples=mission, per_segment=6 if data.get("coarse") else 12)
+        run, trace = follow(
+            device,
+            motor,
+            load,
+            profile,
+            op,
+            heatsink=sink,
+            repeats=repeats,
+            start=start,
+            samples=mission,
+            per_segment=6 if data.get("coarse") else 12,
+        )
     except ValueError as exc:
         raise Refused(str(exc), "open Gate drive under Supply and point" if "gate" in str(exc) else "") from None
     if not run.solved:
         problem = next(s.problem for s in run.steps if s.problem)
-        raise Refused(f"no instant of this motion can be reached: {problem}",
-                      "slow the motion, lighten the load or raise the supply voltage", "motion")
+        raise Refused(
+            f"no instant of this motion can be reached: {problem}",
+            "slow the motion, lighten the load or raise the supply voltage",
+            "motion",
+        )
     count = len(run.steps)
     start = len(trace.time) - count
     worst = run.steps[trace.peak_index % count]
@@ -931,14 +1365,19 @@ def cycle(data: dict, workspace: Workspace) -> dict:
     shift = trace.peak - hottest(result)
     span = result.tj_peak_range
     reached = replace(
-        result, tj_switch_peak=result.tj_switch_peak + shift,
+        result,
+        tj_switch_peak=result.tj_switch_peak + shift,
         tj_diode_peak=result.tj_diode_peak + shift,
         tj_peak_range=None if span is None else (span[0] + shift, span[1] + shift),
     )
     checks = guard.check(device, op, reached, max(s.point.stage.i_peak for s in run.solved))
     c_link = data.get("c_link")
-    link = dclink.returned(run, op.v_dc, device.ratings.v_max,
-                           capacitance=_number(c_link, "DC-link capacitance", low=1e-9) if c_link else None)
+    link = dclink.returned(
+        run,
+        op.v_dc,
+        device.ratings.v_max,
+        capacitance=_number(c_link, "DC-link capacitance", low=1e-9) if c_link else None,
+    )
     checks += dclink.check(link, op.v_dc, device.ratings.v_max, supply=data.get("supply", "one-way"))
     # Over the motion: the instant with the most ripple, what the capacitor carries on
     # average (which is what heats it), and a trip at the motion's top speed.
@@ -947,18 +1386,24 @@ def cycle(data: dict, workspace: Workspace) -> dict:
     checks += [c for c in guard.ripple_checks(hardest, op) if c.topic == "ripple"]
     checks += [c for c in guard.ripple_checks(most, op) if c.topic == "link capacitor"]
     lasting = sum(s.sample.duration for s in run.solved)
-    capacitor_mean = math.sqrt(sum((s.point.capacitor_rms or 0.0) ** 2 * s.sample.duration for s in run.solved) / lasting) if lasting else 0.0
+    capacitor_mean = (
+        math.sqrt(sum((s.point.capacitor_rms or 0.0) ** 2 * s.sample.duration for s in run.solved) / lasting)
+        if lasting
+        else 0.0
+    )
     tripped = guard.trip_check(motor, max(abs(s.sample.motor_rpm) for s in run.steps), op.v_dc, device.ratings.v_max)
     if tripped is not None:
         checks.append(tripped)
     failed = [s for s in run.steps if s.point is None]
     if failed:
-        checks.append(guard.Check(guard.Level.fail, "motion",
-                                  f"the motor cannot follow part of this motion: {failed[0].problem}"))
+        checks.append(
+            guard.Check(guard.Level.fail, "motion", f"the motor cannot follow part of this motion: {failed[0].problem}")
+        )
     clean = lambda a: [None if not math.isfinite(v) else float(v) for v in a]  # noqa: E731
     return {
         "time": clean(trace.time[start:] - (trace.time[start] - run.steps[0].sample.duration)),
-        "tj": clean(trace.tj[start:]), "steady": clean(trace.steady[start:]),
+        "tj": clean(trace.tj[start:]),
+        "steady": clean(trace.steady[start:]),
         "t_sink": clean(trace.t_sink[start:]),
         "sink_name": "each package's case, on average" if op.rth_free is not None else "heatsink",
         "rpm": [s.sample.motor_rpm for s in run.steps],
@@ -968,17 +1413,26 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         "start": starting,
         "life": _life(trace, trace.tj[start:], run.duration),
         "inrush": _inrush(data, op),
-        "p_dc": [None if s.point is None else s.point.stage.p_electrical + s.point.result.p_inverter
-                 for s in run.steps],
+        "p_dc": [
+            None if s.point is None else s.point.stage.p_electrical + s.point.result.p_inverter for s in run.steps
+        ],
         "summary": {
-            "duration": run.duration, "peak": trace.peak, "forever": float(np.nanmax(trace.steady)),
-            "tj_max": device.ratings.tj_max, "mean_loss": run.mean_loss,
-            "shaft_energy": run.shaft_energy, "loss_energy": run.loss_energy,
-            "rms_torque": run.rms_torque, "returned": link.energy, "returned_peak": link.peak_power,
-            "v_link_peak": link.v_peak, "c_needed": link.capacitance_needed,
+            "duration": run.duration,
+            "peak": trace.peak,
+            "forever": float(np.nanmax(trace.steady)),
+            "tj_max": device.ratings.tj_max,
+            "mean_loss": run.mean_loss,
+            "shaft_energy": run.shaft_energy,
+            "loss_energy": run.loss_energy,
+            "rms_torque": run.rms_torque,
+            "returned": link.energy,
+            "returned_peak": link.peak_power,
+            "v_link_peak": link.v_peak,
+            "c_needed": link.capacitance_needed,
             "sink_peak": float(trace.t_sink.max()),
             "capacitor_rms": capacitor_mean if most.capacitor_rms is not None else None,
-            "capacitor_rms_worst": most.capacitor_rms, "ripple_pp_worst": hardest.ripple_pp,
+            "capacitor_rms_worst": most.capacitor_rms,
+            "ripple_pp_worst": hardest.ripple_pp,
         },
         "checks": _checks(checks),
     }
@@ -1001,9 +1455,15 @@ def speed_torque(data: dict, workspace: Workspace) -> dict:
     except ValueError as exc:
         raise Refused(str(exc), "open Gate drive under Supply and point" if "gate" in str(exc) else "") from None
     grid = lambda a: [[None if not math.isfinite(v) else float(v) for v in row] for row in a]  # noqa: E731
-    return {"rpm": rpm.tolist(), "torque": torque.tolist(), "loss": grid(m.p_inverter),
-            "tj": grid(m.tj_peak), "efficiency": grid(m.efficiency), "reason": m.reason,
-            "tj_max": device.ratings.tj_max}
+    return {
+        "rpm": rpm.tolist(),
+        "torque": torque.tolist(),
+        "loss": grid(m.p_inverter),
+        "tj": grid(m.tj_peak),
+        "efficiency": grid(m.efficiency),
+        "reason": m.reason,
+        "tj_max": device.ratings.tj_max,
+    }
 
 
 def capability(data: dict, workspace: Workspace) -> dict:
@@ -1018,20 +1478,43 @@ def capability(data: dict, workspace: Workspace) -> dict:
     op = _gate(device, op, motor, data["conditions"]).op
     rpm = abs(_number(data["conditions"].get("rpm"), "speed")) or 1.0
     torque = abs(_number(data["conditions"].get("torque"), "torque")) or 1.0
-    speeds = [rpm if k == 1.0 else float(f"{rpm * k:.4g}") for k in (0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)]
+    speeds = [
+        rpm if k == 1.0 else float(f"{written(rpm * k, 4)}") for k in (0.0, 0.1, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0)
+    ]
     edge = envelope(device, motor, speeds, op, torque)
     here = edge[speeds.index(rpm)] if rpm in speeds else torque_limit(device, motor, rpm, op, torque)
-    frequencies = [float(f"{op.f_sw * k:.3g}") for k in (0.25, 0.5, 1.0, 2.0, 4.0)]
+    frequencies = [float(f"{written(op.f_sw * k, 3)}") for k in (0.25, 0.5, 1.0, 2.0, 4.0)]
     sinks = [op.t_sink + k for k in (-20.0, 0.0, 20.0, 40.0)]
-    words = {"junction": "a junction reaches its rating", "motor": "the motor itself: its current limit, or its reach on this supply",
-             "current rating": "the device's current rating", "none found": "nothing within reach"}
-    row = lambda found: {"torque": found.torque, "why": words.get(found.reason, found.reason), "tj": found.tj, "current": found.current}  # noqa: E731
+    words = {
+        "junction": "a junction reaches its rating",
+        "motor": "the motor itself: its current limit, or its reach on this supply",
+        "current rating": "the device's current rating",
+        "none found": "nothing within reach",
+    }
+
+    def row(found) -> dict:
+        return {
+            "torque": found.torque,
+            "why": words.get(found.reason, found.reason),
+            "tj": found.tj,
+            "current": found.current,
+        }
+
     return {
-        "rpm": speeds, "edge": [row(x) for x in edge],
-        "design": {"rpm": rpm, "torque": torque, **row(here), "share": torque / here.torque if here.torque > 0 else None,
-                   "power": here.torque * rpm * math.pi / 30, "rated": device.ratings.i_nominal},
-        "f_sw": frequencies, "by_f_sw": [row(x) for x in against(device, motor, rpm, op, "f_sw", frequencies, torque)],
-        "t_sink": sinks, "by_t_sink": [row(x) for x in against(device, motor, rpm, op, "t_sink", sinks, torque)],
+        "rpm": speeds,
+        "edge": [row(x) for x in edge],
+        "design": {
+            "rpm": rpm,
+            "torque": torque,
+            **row(here),
+            "share": torque / here.torque if here.torque > 0 else None,
+            "power": here.torque * rpm * math.pi / 30,
+            "rated": device.ratings.i_nominal,
+        },
+        "f_sw": frequencies,
+        "by_f_sw": [row(x) for x in against(device, motor, rpm, op, "f_sw", frequencies, torque)],
+        "t_sink": sinks,
+        "by_t_sink": [row(x) for x in against(device, motor, rpm, op, "t_sink", sinks, torque)],
     }
 
 
@@ -1048,8 +1531,11 @@ def _scaled(data: dict, k: float) -> dict:
     if load.get("gravity"):
         load["gravity"] = {**load["gravity"], "mass": load["gravity"]["mass"] * k}
     if load.get("vehicle"):
-        load["vehicle"] = {**load["vehicle"], "mass": load["vehicle"]["mass"] * k,
-                           "drag_area": (load["vehicle"].get("drag_area") or 0.0) * k}
+        load["vehicle"] = {
+            **load["vehicle"],
+            "mass": load["vehicle"]["mass"] * k,
+            "drag_area": (load["vehicle"].get("drag_area") or 0.0) * k,
+        }
     out = {**data, "load": load}
     if data.get("mission"):
         out["mission"] = {**data["mission"], "torque": [t * k for t in data["mission"]["torque"]]}
@@ -1059,18 +1545,29 @@ def _scaled(data: dict, k: float) -> dict:
 def largest(data: dict, workspace: Workspace) -> dict:
     """How much heavier the load could be before the device, the motor or the link gives:
     the load is scaled up until a check fails, and what failed is named."""
+
     def tried(k: float, coarse: bool = True) -> tuple[bool, str, dict | None]:
         # The search steps through the motion in half as many instants; the answer it
         # settles on is then worked out in full.
         try:
             out = cycle({**_scaled(data, k), "coarse": coarse}, workspace)
         except Refused as exc:
+            # The load as it stands refused for a figure that is wrong, not for being too
+            # much, is the asker's to put right: it is not an answer to how much more.
+            if k == 1.0 and exc.field not in ("motion", ""):
+                raise
             return False, exc.reason, None
         except ThermalRunaway:
             return False, "no stable junction temperature", None
         failing = [c["message"] for c in out["checks"] if c["level"] == "fail"]
         return (not failing), (failing[0] if failing else ""), out
 
+    try:
+        _scaled(data, 1.0)
+    except (TypeError, KeyError, ValueError, AttributeError) as exc:
+        raise Refused(
+            f"the load or motion values do not fit: {reason_of(exc)}", "check the load and motion values", "load"
+        ) from None
     fine, why, at = tried(1.0)
     if not fine:
         low, high = 0.0, 1.0
@@ -1083,7 +1580,13 @@ def largest(data: dict, workspace: Workspace) -> dict:
                 break
             low, at, high = high, found, 2 * high
         else:
-            return {"scale": low, "open": True, "why": "", "peak": at["summary"]["peak"], "tj_max": at["summary"]["tj_max"]}
+            return {
+                "scale": low,
+                "open": True,
+                "why": "",
+                "peak": at["summary"]["peak"],
+                "tj_max": at["summary"]["tj_max"],
+            }
     for _ in range(6):  # to a part in sixty of the last doubling: finer says nothing more
         middle = (low + high) / 2
         fine, why_middle, found = tried(middle)
@@ -1094,8 +1597,13 @@ def largest(data: dict, workspace: Workspace) -> dict:
     if low > 0:
         fine, _, full = tried(low, coarse=False)
         at = full if fine else at
-    return {"scale": low, "open": False, "why": why,
-            "peak": None if at is None else at["summary"]["peak"], "tj_max": None if at is None else at["summary"]["tj_max"]}
+    return {
+        "scale": low,
+        "open": False,
+        "why": why,
+        "peak": None if at is None else at["summary"]["peak"],
+        "tj_max": None if at is None else at["summary"]["tj_max"],
+    }
 
 
 def recommendations(data: dict, workspace: Workspace) -> dict:
@@ -1119,25 +1627,46 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
     else:
         # Worked out with what the user gave, plus the usual values where they gave none.
         probe = replace(op, l_loop=op.l_loop if op.l_loop is not None else recommend.USUAL_LOOP)
-        resistors = recommend.gate_resistors(device, probe, st.i_peak,
-                                             driver_peak=data.get("driver_peak") or None)
+        # Each device of those in parallel switches its own share in its own loop: the same
+        # current the gate drive in use was chosen at, so the two never say different things.
+        from motionsim.engine.solver import hot_share
+
+        resistors = recommend.gate_resistors(
+            device,
+            probe,
+            max(st.i_peak * hot_share(device, op.parallel), 1e-3),
+            driver_peak=None
+            if data.get("driver_peak") in ("", None)
+            else _number(data["driver_peak"], "gate driver peak current", low=1e-3, high=1000, field="driver_peak"),
+        )
         resistors = recommend.Recommendation(
-            resistors.topic, resistors.value,
-            [ln for ln in gate.lines if ln.startswith(("gate drive taken", "loop inductance taken"))] + resistors.lines
-            + ([f"you gave {asked.rg_on:g} ohm on and {asked.rg_off:g} ohm off; the results use yours"]
-               if asked.rg_on is not None and asked.rg_off is not None else
-               ["the results use these values, since you gave none"]),
+            resistors.topic,
+            resistors.value,
+            [ln for ln in gate.lines if ln.startswith(("gate drive taken", "loop inductance taken"))]
+            + resistors.lines
+            + (
+                [f"you gave {asked.rg_on:g} ohm on and {asked.rg_off:g} ohm off; the results use yours"]
+                if asked.rg_on is not None and asked.rg_off is not None
+                else ["the results use these values, since you gave none"]
+            ),
         )
     dead = recommend.dead_time(device, op)
     if dead.value.get("t_dead") and op.t_dead < recommend.COMMON_FIRMWARE and device.diode is None:
         # What a longer dead time would cost: firmware is often left at its default.
         try:
             now = at_speed_and_torque(device, motor, rpm, torque, op, spread=False).result.p_inverter
-            then = at_speed_and_torque(device, motor, rpm, torque, replace(op, t_dead=recommend.COMMON_FIRMWARE), spread=False).result.p_inverter
-            dead = recommend.Recommendation(dead.topic, {**dead.value, "loss_at_common": then}, dead.lines + [
-                f"open motor-control firmware often runs 300 to 800 ns by default: at {recommend.COMMON_FIRMWARE * 1e9:.0f} ns "
-                f"the stage would lose {then:.3g} W, {then - now:.2g} W more than at the {op.t_dead * 1e9:.0f} ns used here",
-            ])
+            then = at_speed_and_torque(
+                device, motor, rpm, torque, replace(op, t_dead=recommend.COMMON_FIRMWARE), spread=False
+            ).result.p_inverter
+            dead = recommend.Recommendation(
+                dead.topic,
+                {**dead.value, "loss_at_common": then},
+                dead.lines
+                + [
+                    f"open motor-control firmware often runs 300 to 800 ns by default: at {recommend.COMMON_FIRMWARE * 1e9:.0f} ns "
+                    f"the stage would lose {written(then, 3)} W, {written(then - now, 2)} W more than at the {op.t_dead * 1e9:.0f} ns used here",
+                ],
+            )
         except (Unreachable, ThermalRunaway, ValueError):
             pass
     out = [
@@ -1159,7 +1688,13 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
         worst, loss = float("-inf"), 0.0
         for speed in (rpm, 0.0):
             try:
-                point = at_speed_and_torque(device, motor, speed, torque, replace(op, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None))
+                point = at_speed_and_torque(
+                    device,
+                    motor,
+                    speed,
+                    torque,
+                    replace(op, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None),
+                )
             except Unreachable:
                 continue
             top = point.result.tj_peak_range[1] if point.result.tj_peak_range else hottest(point.result)
@@ -1172,18 +1707,36 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
         in_air = (data["conditions"].get("cooling") or "held") != "held"
         air = data["conditions"].get("t_ambient") if in_air else data.get("t_ambient")
         ambient = _number(40 if air in ("", None) else air, "air temperature", low=-40, high=120, field="t_ambient")
-        sink = recommend.heatsink(device, ambient, evaluate)
+        most = data["conditions"].get("t_sink_max")
+        sink = recommend.heatsink(
+            device,
+            ambient,
+            evaluate,
+            sink_limit=None
+            if most in ("", None)
+            else _number(most, "highest heatsink temperature", low=-40, high=250, field="t_sink_max"),
+        )
         alone = _alone_in_air(device, motor, rpm, torque, op, ambient) if sink.value.get("loss") else None
         if alone is not None:
-            sink = recommend.Recommendation(sink.topic, {**sink.value, "rth_ja": alone}, sink.lines + [
-                f"With no heatsink at all, a package may have up to {alone:.0f} K/W from junction to air (RthJA on the "
-                "datasheet) for the same margin, counting the hardest-worked one, running and held still. A TO-220 "
-                "standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60",
-            ])
+            sink = recommend.Recommendation(
+                sink.topic,
+                {**sink.value, "rth_ja": alone},
+                sink.lines
+                + [
+                    f"With no heatsink at all, a package may have up to {alone:.0f} K/W from junction to air (RthJA on the "
+                    "datasheet) for its hottest junction to stay 25 °C under its rating, counting the hardest-worked one, running and held still. A TO-220 "
+                    "standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60",
+                ],
+            )
         elif sink.value.get("loss"):
-            sink = recommend.Recommendation(sink.topic, sink.value, sink.lines + [
-                "With no heatsink at all the hardest-worked package would pass that limit whatever its path to the air",
-            ])
+            sink = recommend.Recommendation(
+                sink.topic,
+                sink.value,
+                sink.lines
+                + [
+                    "With no heatsink at all the hardest-worked package's junction would come within 25 °C of its rating whatever its path to the air",
+                ],
+            )
         out.append(sink)
     except ValueError as exc:
         out.append(recommend.Recommendation("heatsink", lines=[str(exc)]))
@@ -1231,7 +1784,7 @@ def _report(data: dict, workspace: Workspace) -> dict:
     document `motionsim design run` writes."""
     from motionsim import design
 
-    return {"markdown": design.markdown(design.run(data, workspace))}
+    return {"markdown": design.markdown(design.run(data, workspace, strict=False))}
 
 
 def curves(key: str, workspace: Workspace) -> dict:
@@ -1242,16 +1795,21 @@ def curves(key: str, workspace: Workspace) -> dict:
         if model is None:
             return None
         return {
-            "unit": unit, "basis": model.basis.value, "assumption": model.assumption,
-            "source": model.source.note, "page": model.source.page,
+            "unit": unit,
+            "basis": model.basis.value,
+            "assumption": model.assumption,
+            "source": model.source.note,
+            "page": model.source.page,
             "curves": [{"tj": c.tj, "x": c.current, "y": c.value} for c in model.curves],
         }
 
     sw, d = device.switch, device.diode
     out = {
         "summary": workspace.summary(key, device),
-        "conduction": table(sw.conduction, "V"), "e_on": table(sw.e_on, "J"),
-        "e_off": table(sw.e_off, "J"), "reverse": table(sw.reverse, "V"),
+        "conduction": table(sw.conduction, "V"),
+        "e_on": table(sw.e_on, "J"),
+        "e_off": table(sw.e_off, "J"),
+        "reverse": table(sw.reverse, "V"),
         "diode": None if d is None else table(d.conduction, "V"),
         "e_rr": table((d or sw).e_rr, "J"),
         "thermal": {"r": sw.thermal.r, "tau": sw.thermal.tau, "source": sw.thermal.source.note},
@@ -1289,17 +1847,25 @@ def _reading(key: str, workspace: Workspace) -> dict | None:
         return (", ".join(parts) or "none") + f" {o.unit}"
 
     return {
-        "document": obs.document.file, "pages": obs.document.pages,
+        "document": obs.document.file,
+        "pages": obs.document.pages,
         "from_images": len(obs.document.transcribed),
         "values": [
-            {"what": o.quantity.value, "printed": printed(o), "at": conditions(o), "page": o.page,
-             "flags": o.flags}
+            {"what": o.quantity.value, "printed": printed(o), "at": conditions(o), "page": o.page, "flags": o.flags}
             for o in obs.observations
         ],
         "figures": [
-            {"what": c.quantity.value, "label": c.label, "page": c.page, "tj": c.tj_c,
-             "points": len(c.x), "flags": c.flags, "notes": c.notes,
-             "within": c.anchor_error, "method": c.method}
+            {
+                "what": c.quantity.value,
+                "label": c.label,
+                "page": c.page,
+                "tj": c.tj_c,
+                "points": len(c.x),
+                "flags": c.flags,
+                "notes": c.notes,
+                "within": c.anchor_error,
+                "method": c.method,
+            }
             for c in obs.curves
         ],
     }
@@ -1320,23 +1886,52 @@ ROUTES = {
 }
 
 
+def plain(data, room: list[int] | None = None):
+    """What a file held, once it is known to be of a size a device or a design could be. A
+    few lines of YAML can name one list inside another until it stands for millions of
+    figures; that is refused before anything tries to read them."""
+    room = [200_000] if room is None else room
+    room[0] -= 1
+    if room[0] < 0:
+        raise ValueError("the file stands for far more figures than a device or a design holds")
+    for inner in data.values() if isinstance(data, dict) else data if isinstance(data, list) else ():
+        plain(inner, room)
+    return data
+
+
 def add_device(name: str, text: str, workspace: Workspace) -> dict:
     """Put a device file the user supplied into the workspace, after checking it loads."""
     import re
 
     from pydantic import ValidationError
 
+    if not isinstance(name, str) or not isinstance(text, str):
+        raise Refused("a device file comes as a name and its text", "send the file's name and what it holds", "")
+
     key = re.sub(r"[^a-z0-9]+", "-", name.lower().removesuffix(".yaml").removesuffix(".device")).strip("-")
+    key = key[:80].strip("-")
     if not key or key in EXAMPLES:
         key = "device"
     try:
-        device = Device.model_validate(yaml.safe_load(text))
-    except (ValidationError, yaml.YAMLError, TypeError) as exc:
-        detail = str(exc).splitlines()[0][:160]
+        device = Device.model_validate(plain(yaml.safe_load(text)))
+    except (ValidationError, yaml.YAMLError, TypeError, ValueError, RecursionError) as exc:
+        detail = reason_of(exc)[:160]
         raise Refused(
             f"that file is not a device model: {detail}",
             "choose a .device.yaml file written by `motionsim build`",
         ) from None
+    # The same file dropped again replaces what it held; another part under a name that
+    # reads the same (a space for a dash) is another device and does not write over the first.
+    base, n = key, 1
+    while key in workspace.paths():
+        try:
+            held = workspace.device(key)
+        except (OSError, ValueError, yaml.YAMLError):
+            break
+        if (held.vendor, held.part_number) == (device.vendor, device.part_number):
+            break
+        n += 1
+        key = f"{base}-{n}"
     (workspace.folder / f"{key}.device.yaml").write_text(text, encoding="utf-8")
     return {"device": workspace.summary(key, device)}
 
@@ -1346,9 +1941,12 @@ def typed_form() -> dict:
     from motionsim.fit.typed import FIGURES, OUTLINES, TECHNOLOGIES
 
     return {
-        "technologies": list(TECHNOLOGIES), "outlines": list(OUTLINES),
-        "fields": [{"key": key, "label": label, "unit": unit, "required": required, "help": text_}
-                   for key, label, unit, _, required, text_ in FIGURES],
+        "technologies": list(TECHNOLOGIES),
+        "outlines": list(OUTLINES),
+        "fields": [
+            {"key": key, "label": label, "unit": unit, "required": required, "help": text_}
+            for key, label, unit, _, required, text_ in FIGURES
+        ],
     }
 
 
@@ -1385,6 +1983,8 @@ def add_measurement(key: str, name: str, text: str, workspace: Workspace) -> dic
     from motionsim.device import save_device
     from motionsim.measured import DoublePulse, apply_double_pulse
 
+    if not all(isinstance(x, str) for x in (key, name, text)):
+        raise Refused("measurements come as the device's name, the file's name and its text", "send all three", "")
     device = workspace.device(key)
     try:
         data = DoublePulse.model_validate(json.loads(text))
@@ -1410,26 +2010,48 @@ def call(route: str, payload: str, workspace: Workspace) -> str:
     """
     try:
         data = json.loads(payload or "{}")
+    except (ValueError, RecursionError):
+        data = None
+    if not isinstance(data, dict):
+        return json.dumps({"status": 400, "body": {"error": "the request has to be a JSON object"}})
+    try:
+        if route != "/api/setup" and not route.startswith("/api/device/"):
+            asked(route, data)
         if route == "/api/setup":
             body = setup(workspace)
         elif route == "/api/device":
-            body = add_device(data["name"], data["text"], workspace)
+            body = add_device(data.get("name"), data.get("text"), workspace)
         elif route == "/api/typed":
             body = add_typed(data.get("figures"), workspace)
         elif route == "/api/measure":
-            body = add_measurement(data["device"], data["name"], data["text"], workspace)
+            body = add_measurement(data.get("device"), data.get("name"), data.get("text"), workspace)
         elif route.startswith("/api/device/"):
             body = curves(route.rsplit("/", 1)[1], workspace)
         elif route in ROUTES:
             body = ROUTES[route](data, workspace)
         else:
             return json.dumps({"status": 404, "body": {"error": "no such address"}})
-        return json.dumps({"status": 200, "body": body})
+        return json.dumps({"status": 200, "body": finite(body)})
+    except OverflowError:
+        return json.dumps(
+            {
+                "status": 422,
+                "body": {
+                    "refused": "a figure is too large or too small to work with",
+                    "fix": "check the figures given",
+                    "field": "",
+                },
+            }
+        )
     except Refused as exc:
         return json.dumps({"status": 422, "body": {"refused": exc.reason, "fix": exc.fix, "field": exc.field}})
     except ThermalRunaway:
         return json.dumps({"status": 422, "body": RUNAWAY})
-    except Exception as exc:  # a fault of ours: say so plainly
+    except UNWORKABLE as exc:
+        log.info("refused %s: %r", route, exc)
+        return json.dumps({"status": 422, "body": unworkable(exc)})
+    except Exception as exc:  # a fault of ours: say so plainly, and keep where it happened
+        log.exception("fault answering %s", route)
         return json.dumps({"status": 500, "body": {"error": f"{type(exc).__name__}: {exc}"}})
 
 

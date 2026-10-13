@@ -10,10 +10,10 @@ from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
+from test_mosfet import fet
 
 from motionsim import page, server
 from motionsim.device import save_device
-from test_mosfet import fet
 
 EXAMPLE = Path(__file__).parent.parent / "examples" / "synthetic_igbt_600v_30a.yaml"
 
@@ -64,13 +64,16 @@ def test_a_transistor_without_gate_drive_is_run_with_the_best_resistors_and_says
     assert mine["gate"]["kind"] == "given" and mine["result"]["loss"] > candidate["result"]["loss"]
 
 
-@pytest.mark.parametrize(("changes", "reason", "fix"), [
-    ({"rpm": 60000}, "cannot do that from 48 V", "lower the speed"),
-    ({"torque": 50}, "more voltage", "or the torque"),
-    ({"rpm": 100, "torque": 5}, "limit", "lower the torque"),
-    ({"v_dc": -5}, "supply voltage cannot be below", "raise supply voltage"),
-    ({"f_sw": "fast"}, "switching frequency is not a number", "enter a value"),
-])
+@pytest.mark.parametrize(
+    ("changes", "reason", "fix"),
+    [
+        ({"rpm": 60000}, "cannot do that from 48 V", "lower the speed"),
+        ({"torque": 50}, "more voltage", "or the torque"),
+        ({"rpm": 100, "torque": 5}, "limit", "lower the torque"),
+        ({"v_dc": -5}, "supply voltage cannot be below", "raise supply voltage"),
+        ({"f_sw": "fast"}, "switching frequency is not a number", "enter a value"),
+    ],
+)
 def test_impossible_inputs_are_refused_with_what_to_change(workspace, changes, reason, fix) -> None:
     with pytest.raises(server.Refused) as caught:
         server.stage(request(workspace, **changes))
@@ -101,8 +104,7 @@ def test_a_motion_nothing_can_follow_is_refused(workspace) -> None:
     info = server.setup(workspace)
     profile = {"segments": [{"duration": 0.001, "speed_start": 0, "speed_end": 5000}]}
     with pytest.raises(server.Refused, match="no instant of this motion"):
-        server.cycle({**request(workspace), "device": "example", "load": info["load"],
-                      "profile": profile}, workspace)
+        server.cycle({**request(workspace), "device": "example", "load": info["load"], "profile": profile}, workspace)
 
 
 def test_reading_needs_a_key_and_a_pdf(workspace, monkeypatch) -> None:
@@ -120,8 +122,7 @@ def test_over_http_a_refusal_is_a_422_with_reason_and_fix(workspace) -> None:
     address = f"http://127.0.0.1:{httpd.server_address[1]}"
 
     def post(path: str, data: dict):
-        call = urllib.request.Request(address + path, json.dumps(data).encode(),
-                                      {"Content-Type": "application/json"})
+        call = urllib.request.Request(address + path, json.dumps(data).encode(), {"Content-Type": "application/json"})
         return json.load(urllib.request.urlopen(call))
 
     try:
@@ -133,8 +134,9 @@ def test_over_http_a_refusal_is_a_422_with_reason_and_fix(workspace) -> None:
         assert json.load(urllib.request.urlopen(address + "/api/setup"))["devices"]
         # Another site in the same browser cannot reach the engine, whatever it posts.
         for headers in ({"Origin": "https://example.com"}, {"Host": "attacker.example"}):
-            foreign = urllib.request.Request(address + "/api/read?name=a.pdf", b"%PDF-1.7",
-                                             {"Content-Type": "text/plain", **headers})
+            foreign = urllib.request.Request(
+                address + "/api/read?name=a.pdf", b"%PDF-1.7", {"Content-Type": "text/plain", **headers}
+            )
             with pytest.raises(urllib.error.HTTPError) as blocked:
                 urllib.request.urlopen(foreign)
             assert blocked.value.code == 403
@@ -156,7 +158,7 @@ def test_the_same_interface_as_text_in_text_out(workspace) -> None:
     assert refused["status"] == 422 and refused["body"]["fix"]
     assert json.loads(page.call("/api/setup", "", workspace))["body"]["devices"]
     assert json.loads(page.call("/api/nowhere", "{}", workspace))["status"] == 404
-    assert json.loads(page.call("/api/stage", "not json", workspace))["status"] == 500
+    assert json.loads(page.call("/api/stage", "not json", workspace))["status"] == 400
 
 
 def test_a_device_file_can_be_added_and_a_wrong_file_is_refused(workspace) -> None:
@@ -183,7 +185,8 @@ def test_the_engine_packed_for_the_browser_is_the_engine_in_this_tree() -> None:
         names = set(z.namelist())
         stale = [n for n in names if z.read(n) != (package.parent / n).read_bytes()]
     source = {
-        str(Path("motionsim") / p.relative_to(package)) for p in package.rglob("*")
+        str(Path("motionsim") / p.relative_to(package))
+        for p in package.rglob("*")
         if p.suffix in {".py", ".yaml"} and "webui" not in p.parts and "__pycache__" not in p.parts
     }
     assert not stale, f"rebuild the page: {stale[:3]}"
@@ -193,10 +196,14 @@ def test_the_engine_packed_for_the_browser_is_the_engine_in_this_tree() -> None:
 def test_measured_switching_data_makes_a_second_device_beside_the_first(workspace) -> None:
     from motionsim import page
 
-    data = {"v_dc": 300, "energy_unit": "uJ", "points": [
-        {"tj": 25, "current": 10, "e_on": 300, "e_off": 200},
-        {"tj": 25, "current": 30, "e_on": 900, "e_off": 600},
-    ]}
+    data = {
+        "v_dc": 300,
+        "energy_unit": "uJ",
+        "points": [
+            {"tj": 25, "current": 10, "e_on": 300, "e_off": 200},
+            {"tj": 25, "current": 30, "e_on": 900, "e_off": 600},
+        ],
+    }
     added = page.add_measurement("example", "bench.json", json.dumps(data), workspace)
     assert added["device"]["id"] == "example-measured"
     ids = [d["id"] for d in page.setup(workspace)["devices"]]
@@ -214,11 +221,19 @@ def test_every_load_offered_for_a_motor_can_be_followed_within_its_design_torque
         offered = page.load_presets(kind, start["rpm"], start["torque"])
         assert offered and len({p["id"] for p in offered}) == len(offered)
         for preset in offered:
-            out = server.cycle({
-                "motor": {"type": kind, **motor["values"]}, "conditions": {**start, "t_sink": 60},
-                "supply": "battery", "device": "example", "load": preset["load"],
-                "profile": {"start_angle_deg": preset["start_angle_deg"], "segments": preset["segments"]},
-            }, workspace)
+            out = server.cycle(
+                {
+                    "motor": {"type": kind, **motor["values"]},
+                    "conditions": {**start, "t_sink": 60},
+                    "supply": "battery",
+                    # A low-voltage motor gets the low-voltage part: the other's drop alone
+                    # takes a sixth of 24 V.
+                    "device": "example" if start["v_dc"] > 100 else "example-mosfet",
+                    "load": preset["load"],
+                    "profile": {"start_angle_deg": preset["start_angle_deg"], "segments": preset["segments"]},
+                },
+                workspace,
+            )
             assert not [c for c in out["checks"] if c["topic"] == "motion"], (kind, preset["id"])
             assert max(abs(t) for t in out["torque"]) <= 1.05 * start["torque"], (kind, preset["id"])
             assert max(abs(n) for n in out["rpm"]) <= 1.001 * start["rpm"], (kind, preset["id"])
@@ -251,8 +266,11 @@ def test_an_open_loop_start_holds_its_current_until_the_handover_and_heats_the_s
     start = page.STARTING["pmsm"]
     fan = next(p for p in page.load_presets("pmsm", start["rpm"], start["torque"]) if p["id"] == "fan")
     request_ = {
-        "motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "conditions": {**start, "t_sink": 60},
-        "supply": "battery", "device": "example", "load": fan["load"],
+        "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+        "conditions": {**start, "t_sink": 60},
+        "supply": "battery",
+        "device": "example",
+        "load": fan["load"],
         "profile": {"start_angle_deg": 0, "segments": fan["segments"]},
     }
     sensed = server.cycle(request_, workspace)
@@ -268,7 +286,9 @@ def test_an_open_loop_start_holds_its_current_until_the_handover_and_heats_the_s
     above = [(n, i) for n, i in zip(blind["rpm"], blind["i_peak"]) if abs(n) >= used["handover_rpm"]]
     assert below and all(i == pytest.approx(peak) for i in below)
     # Past the handover the two drives ask the same of the stage.
-    assert [i for _, i in above] == pytest.approx([i for n, i in zip(sensed["rpm"], sensed["i_peak"]) if abs(n) >= used["handover_rpm"]])
+    assert [i for _, i in above] == pytest.approx(
+        [i for n, i in zip(sensed["rpm"], sensed["i_peak"]) if abs(n) >= used["handover_rpm"]]
+    )
     # A fan asks for almost nothing at low speed, so the held current is what heats the start.
     assert blind["p_stage"][1] > 3 * sensed["p_stage"][0]
     assert blind["summary"]["loss_energy"] > sensed["summary"]["loss_energy"]
@@ -282,11 +302,17 @@ def test_induction_builds_flux_first_and_brushed_motors_need_no_start(workspace)
     for kind, applies in (("induction", "flux"), ("dc", "none"), ("stepper", "none")):
         start = page.STARTING[kind]
         preset = page.load_presets(kind, start["rpm"], start["torque"])[0]
-        out = server.cycle({
-            "motor": {"type": kind, **motors[kind]["values"]}, "conditions": {**start, "t_sink": 60},
-            "supply": "battery", "device": "example", "load": preset["load"],
-            "profile": {"start_angle_deg": 0, "segments": preset["segments"]},
-        }, workspace)
+        out = server.cycle(
+            {
+                "motor": {"type": kind, **motors[kind]["values"]},
+                "conditions": {**start, "t_sink": 60},
+                "supply": "battery",
+                "device": "example",
+                "load": preset["load"],
+                "profile": {"start_angle_deg": 0, "segments": preset["segments"]},
+            },
+            workspace,
+        )
         assert out["start"]["applies"] == applies
         if kind == "induction":
             assert out["rpm"][0] == 0 and out["torque"][0] == 0 and out["i_peak"][0] > 0
@@ -305,8 +331,12 @@ def test_charging_the_link_costs_as_much_as_it_stores() -> None:
 def test_what_a_device_can_drive_and_how_much_heavier_the_load_could_be(workspace) -> None:
     motors = server.setup(workspace)["motors"]
     start = page.STARTING["pmsm"]
-    request_ = {"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "conditions": {**start, "t_sink": 60},
-                "supply": "battery", "device": "example"}
+    request_ = {
+        "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+        "conditions": {**start, "t_sink": 60},
+        "supply": "battery",
+        "device": "example",
+    }
     can = page.capability(request_, workspace)
     here = can["design"]
     assert here["torque"] > 0 and here["why"]
@@ -314,11 +344,16 @@ def test_what_a_device_can_drive_and_how_much_heavier_the_load_could_be(workspac
     by_f = [x["torque"] for x in can["by_f_sw"]]
     assert by_f == sorted(by_f, reverse=True)
     fan = next(p for p in page.load_presets("pmsm", start["rpm"], start["torque"]) if p["id"] == "conveyor")
-    found = page.largest({**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, workspace)
+    found = page.largest(
+        {**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, workspace
+    )
     assert found["scale"] >= 1.0 and (found["open"] or found["why"])
     # Just past the limit the same request fails; at it, it does not.
     if not found["open"]:
-        over = page._scaled({**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, 1.05 * found["scale"])
+        over = page._scaled(
+            {**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}},
+            1.05 * found["scale"],
+        )
         try:
             failing = [c for c in server.cycle(over, workspace)["checks"] if c["level"] == "fail"]
         except server.Refused:

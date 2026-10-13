@@ -19,9 +19,7 @@ from motionsim.transient import Heatsink, follow
 
 SRC = Source(kind="synthetic")
 NETWORK = FosterNetwork(r=[0.3, 0.7], tau=[0.002, 0.05], source=SRC)
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
 PMSM = Pmsm(pole_pairs=4, flux_linkage=0.1, l=0.008, rs=1.0)
 DC = BrushedDc(type="dc", kt=0.5, r=1.0)
 
@@ -29,8 +27,11 @@ DC = BrushedDc(type="dc", kt=0.5, r=1.0)
 def device():
     """Losses that do not depend on temperature, so heating has a closed form."""
     d = linear_device(
-        sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6,
+        sw_curves=[line(25.0, 0.9, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
     )
     d.switch.thermal = NETWORK
     d.diode.thermal = NETWORK
@@ -63,10 +64,12 @@ def test_a_short_pulse_heats_the_chip_by_power_times_transient_impedance() -> No
 
 def test_cooling_between_pulses_follows_the_network() -> None:
     load = Load(inertia=0.01)
-    profile = Profile(segments=[
-        Segment(duration=0.02, speed_start=0, speed_end=600),  # accelerate: torque
-        Segment(duration=0.03, speed_start=600, speed_end=600),  # coast: none
-    ])
+    profile = Profile(
+        segments=[
+            Segment(duration=0.02, speed_start=0, speed_end=600),  # accelerate: torque
+            Segment(duration=0.03, speed_start=600, speed_end=600),  # coast: none
+        ]
+    )
     cycle, trace = follow(device(), DC, load, profile, BASE, per_segment=1)
     role = max(cycle.steps[0].point.result.roles, key=lambda r: r.hottest)
     loss = role.switch.total
@@ -113,11 +116,13 @@ def test_standstill_starts_at_the_worst_rotor_position() -> None:
 
 def test_repeating_a_motion_carries_the_heat_over() -> None:
     load = Load(inertia=0.01)
-    profile = Profile(segments=[
-        Segment(duration=0.02, speed_start=0, speed_end=600),
-        Segment(duration=0.01, speed_start=600, speed_end=600),
-        Segment(duration=0.02, speed_start=600, speed_end=0),
-    ])
+    profile = Profile(
+        segments=[
+            Segment(duration=0.02, speed_start=0, speed_end=600),
+            Segment(duration=0.01, speed_start=600, speed_end=600),
+            Segment(duration=0.02, speed_start=600, speed_end=0),
+        ]
+    )
     _, once = follow(device(), DC, load, profile, BASE)
     _, thrice = follow(device(), DC, load, profile, BASE, repeats=3)
     assert thrice.time[-1] == pytest.approx(3 * once.time[-1])
@@ -128,8 +133,13 @@ def test_life_counts_the_swing_of_every_turn_of_the_motor() -> None:
     """A chip heats and cools once a turn. Turning slowly those swings are large and are what
     wears it out; turning fast with the same current they are small. The life has to show it."""
     from motionsim.lifetime import worst_of
+
     device = linear_device(
-        sw_curves=[line(25.0, 1.0, 0.03)], d_curves=[line(25.0, 1.0, 0.03)], k_on=4e-5, k_off=4e-5, k_rr=1e-5,
+        sw_curves=[line(25.0, 1.0, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.03)],
+        k_on=4e-5,
+        k_off=4e-5,
+        k_rr=1e-5,
     )
     motor = Pmsm(type="pmsm", pole_pairs=4, kv=60, l=0.0005, rs=0.05)
     op = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=10000.0, t_sink=60.0)
@@ -148,5 +158,6 @@ def test_life_counts_the_swing_of_every_turn_of_the_motor() -> None:
     label = slow.chip
     counted = sum(c for _, _, c in slow_trace.swings.get(label, []))
     from motionsim.lifetime import rainflow
+
     in_trace = sum(c for s, _, c in rainflow(slow_trace.chips[label]) if s > 0.5 * slow.swing)
     assert 100 <= counted + in_trace <= 140

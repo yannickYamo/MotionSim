@@ -13,6 +13,7 @@ import yaml
 from motionsim.device.schema import Device, ReviewStatus, Topology
 from motionsim.fit.sparse import MissingData
 from motionsim.observe.schema import Document, Observation, ObservationSet, Quantity
+from motionsim.text import written
 
 TYPED = "typed in by hand"
 TECHNOLOGIES = ("Si MOSFET", "SiC MOSFET", "GaN HEMT")
@@ -23,18 +24,67 @@ FIGURES: list[tuple[str, str, str, float, bool, str]] = [
     ("v_rated", "Voltage rating", "V", 1.0, True, "Drain-source voltage, VDS or V(BR)DSS."),
     ("i_rated", "Current rating", "A", 1.0, True, "Continuous drain current, ID, at 25 °C case."),
     ("tj_max", "Highest junction temperature", "°C", 1.0, True, "Often 150 or 175."),
-    ("rth_jc", "Thermal resistance, junction to case", "K/W", 1.0, True, "RthJC or RθJC. Not the junction-to-ambient figure."),
-    ("rds_on", "On-resistance at 25 °C", "mΩ", 1e-3, True, "RDS(on), typical, at the gate voltage you will drive it with."),
-    ("rds_on_hot", "On-resistance when hot", "mΩ", 1e-3, False, "From the table, or the 25 °C value times the factor in the figure of on-resistance against temperature. Left empty, the 25 °C value is used at any temperature and the result says so."),
-    ("rds_hot_tj", "at a junction temperature of", "°C", 1.0, False, "The temperature the hot value is given at. 125 if left empty."),
+    (
+        "rth_jc",
+        "Junction-to-case resistance",
+        "K/W",
+        1.0,
+        True,
+        "RthJC or RθJC. Not the junction-to-ambient figure.",
+    ),
+    (
+        "rds_on",
+        "On-resistance at 25 °C",
+        "mΩ",
+        1e-3,
+        True,
+        "RDS(on), typical, at the gate voltage you will drive it with.",
+    ),
+    (
+        "rds_on_hot",
+        "On-resistance when hot",
+        "mΩ",
+        1e-3,
+        False,
+        "From the table, or the 25 °C value times the factor in the figure of on-resistance against temperature. Left empty, the 25 °C value is used at any temperature and the result says so.",
+    ),
+    (
+        "rds_hot_tj",
+        "at a junction temperature of",
+        "°C",
+        1.0,
+        False,
+        "The temperature the hot value is given at. 125 if left empty.",
+    ),
     ("v_th", "Gate threshold voltage", "V", 1.0, True, "VGS(th), typical."),
-    ("v_plateau", "Gate plateau voltage", "V", 1.0, True, "Vplateau, or the height of the flat step in the gate-charge figure."),
+    (
+        "v_plateau",
+        "Gate plateau voltage",
+        "V",
+        1.0,
+        True,
+        "Vplateau, or the height of the flat step in the gate-charge figure.",
+    ),
     ("q_gs", "Gate-source charge", "nC", 1e-9, True, "Qgs."),
     ("q_gd", "Gate-drain charge", "nC", 1e-9, True, "Qgd, also called the Miller charge."),
-    ("q_oss", "Output charge", "nC", 1e-9, False, "Qoss. If the datasheet gives only the output capacitance, leave this empty and fill in the next one."),
+    (
+        "q_oss",
+        "Output charge",
+        "nC",
+        1e-9,
+        False,
+        "Qoss. If the datasheet gives only the output capacitance, leave this empty and fill in the next one.",
+    ),
     ("c_oss", "Output capacitance", "pF", 1e-12, False, "Coss. Used only when no output charge is given."),
     ("oss_v", "at a drain voltage of", "V", 1.0, False, "The voltage the output charge or capacitance is given at."),
-    ("q_rr", "Reverse-recovery charge", "nC", 1e-9, False, "Qrr of the body diode. Left empty, recovery loss is left out."),
+    (
+        "q_rr",
+        "Reverse-recovery charge",
+        "nC",
+        1e-9,
+        False,
+        "Qrr of the body diode. Left empty, recovery loss is left out.",
+    ),
     ("q_rr_current", "measured at a current of", "A", 1.0, False, "The diode current in the recovery test conditions."),
     ("v_sd", "Body-diode voltage", "V", 1.0, False, "VSD, typical. Left empty, dead-time loss is left out."),
     ("rg_internal", "Internal gate resistance", "Ω", 1.0, False, "RG or RG(int), where the datasheet gives it."),
@@ -90,9 +140,18 @@ def _said(key: str) -> str:
 # What a figure can be, in the units it is typed in: outside these it is in another unit, or
 # is another figure. Wide enough for every power transistor made.
 _BOUNDS = {
-    "rds_on": (0.05, 20000.0), "rds_on_hot": (0.05, 40000.0), "q_gs": (0.05, 5000.0), "q_gd": (0.05, 5000.0),
-    "q_oss": (0.05, 50000.0), "c_oss": (1.0, 100000.0), "q_rr": (0.05, 100000.0), "v_th": (0.3, 15.0),
-    "v_plateau": (0.5, 20.0), "v_sd": (0.2, 10.0), "v_rated": (5.0, 20000.0), "rg_internal": (0.01, 200.0),
+    "rds_on": (0.05, 20000.0),
+    "rds_on_hot": (0.05, 40000.0),
+    "q_gs": (0.05, 5000.0),
+    "q_gd": (0.05, 5000.0),
+    "q_oss": (0.05, 50000.0),
+    "c_oss": (1.0, 100000.0),
+    "q_rr": (0.05, 100000.0),
+    "v_th": (0.3, 15.0),
+    "v_plateau": (0.5, 20.0),
+    "v_sd": (0.2, 10.0),
+    "v_rated": (5.0, 20000.0),
+    "rg_internal": (0.01, 200.0),
 }
 
 
@@ -116,7 +175,8 @@ def _values(given: dict) -> dict[str, float]:
         if not low <= value <= high:
             raise Mistyped(
                 f"{_said(key)} of {value:g} {_UNIT[key]} is outside what a power transistor has "
-                f"({low:g} to {high:g} {_UNIT[key]}): check the unit", key,
+                f"({low:g} to {high:g} {_UNIT[key]}): check the unit",
+                key,
             )
         out[key] = value
     return out
@@ -129,18 +189,24 @@ def _sanity(v: dict[str, float]) -> None:
     if "rds_hot_tj" in v and "rds_on_hot" not in v:
         raise Mistyped("a hot temperature is given with no hot on-resistance to go with it", "rds_on_hot")
     if v["v_plateau"] >= v["v_rated"]:
-        raise Mistyped("the plateau voltage is a gate voltage, a few volts: this one is not below the part's voltage rating", "v_plateau")
+        raise Mistyped(
+            "the plateau voltage is a gate voltage, a few volts: this one is not below the part's voltage rating",
+            "v_plateau",
+        )
     if v["v_plateau"] <= v["v_th"]:
         raise Mistyped("the plateau voltage has to be above the threshold voltage", "v_plateau")
     if v["rds_on"] * 1e-3 * v["i_rated"] > 0.2 * v["v_rated"]:
         raise Mistyped(
             f"{v['rds_on']:g} mΩ at {v['i_rated']:g} A would drop more than a fifth of the voltage rating: "
-            "check that the on-resistance is in milliohm", "rds_on",
+            "check that the on-resistance is in milliohm",
+            "rds_on",
         )
     if "rds_on_hot" in v and v["rds_on_hot"] < v["rds_on"]:
         raise Mistyped("the hot on-resistance is below the 25 °C one: it rises with temperature", "rds_on_hot")
     if v.get("rds_hot_tj", 125.0) <= 25.0 or v.get("rds_hot_tj", 125.0) > v["tj_max"]:
-        raise Mistyped("the hot temperature has to be above 25 °C and not above the highest junction temperature", "rds_hot_tj")
+        raise Mistyped(
+            "the hot temperature has to be above 25 °C and not above the highest junction temperature", "rds_hot_tj"
+        )
     if v["rth_jc"] > 20:
         raise Mistyped("more than 20 K/W is a junction-to-ambient figure: the junction-to-case one is needed", "rth_jc")
     if ("q_oss" in v or "c_oss" in v) and "oss_v" not in v:
@@ -172,16 +238,30 @@ def from_figures(given: dict) -> Device:
 
     def row(quantity: Quantity, key: str, *, current=None, voltage=None, tj=None) -> Observation:
         return Observation(
-            quantity=quantity, typ=float(f"{v[key] * _SCALE[key]:.9g}"), max=None, printed_typ=f"{v[key]:g}",
-            printed_max=None, unit=_UNIT[key], current_a=current, voltage_v=voltage, tj_c=tj,
-            page=1, status=ReviewStatus.unverified, flags=[],
+            quantity=quantity,
+            typ=float(f"{written(v[key] * _SCALE[key], 9)}"),
+            max=None,
+            printed_typ=f"{v[key]:g}",
+            printed_max=None,
+            unit=_UNIT[key],
+            current_a=current,
+            voltage_v=voltage,
+            tj_c=tj,
+            page=1,
+            status=ReviewStatus.unverified,
+            flags=[],
         )
 
     rows = [
-        row(Quantity.v_rated, "v_rated"), row(Quantity.i_rated, "i_rated"), row(Quantity.tj_max, "tj_max"),
-        row(Quantity.rth_jc_switch, "rth_jc"), row(Quantity.rds_on, "rds_on", tj=25.0),
-        row(Quantity.v_th, "v_th"), row(Quantity.v_plateau, "v_plateau"),
-        row(Quantity.q_gs, "q_gs"), row(Quantity.q_gd, "q_gd", voltage=v.get("oss_v")),
+        row(Quantity.v_rated, "v_rated"),
+        row(Quantity.i_rated, "i_rated"),
+        row(Quantity.tj_max, "tj_max"),
+        row(Quantity.rth_jc_switch, "rth_jc"),
+        row(Quantity.rds_on, "rds_on", tj=25.0),
+        row(Quantity.v_th, "v_th"),
+        row(Quantity.v_plateau, "v_plateau"),
+        row(Quantity.q_gs, "q_gs"),
+        row(Quantity.q_gd, "q_gd", voltage=v.get("oss_v")),
     ]
     if "rds_on_hot" in v:
         rows.append(row(Quantity.rds_on, "rds_on_hot", tj=v.get("rds_hot_tj", 125.0)))
@@ -196,10 +276,16 @@ def from_figures(given: dict) -> Device:
     if "rg_internal" in v:
         rows.append(row(Quantity.rg_internal, "rg_internal"))
     observations = ObservationSet(
-        document=Document(file=TYPED, sha256="", pages=0), reader="typed",
-        vendor=str(given.get("vendor") or "").strip() or "Typed in", part_number=part,
-        technology=technology, topology=Topology.discrete, integrated_driver=False,
-        outline=outline, observations=rows, figures=[],
+        document=Document(file=TYPED, sha256="", pages=0),
+        reader="typed",
+        vendor=str(given.get("vendor") or "").strip() or "Typed in",
+        part_number=part,
+        technology=technology,
+        topology=Topology.discrete,
+        integrated_driver=False,
+        outline=outline,
+        observations=rows,
+        figures=[],
     )
     from motionsim.fit.fet import build_fet
 
@@ -212,6 +298,7 @@ def from_figures(given: dict) -> Device:
 
 def _without_pages(device: Device) -> Device:
     """A typed figure has no page to point at."""
+
     def strip(node):
         if isinstance(node, dict):
             if node.get("document") == TYPED:

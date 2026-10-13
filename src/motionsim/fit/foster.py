@@ -28,9 +28,7 @@ def _fit_order(t: np.ndarray, z: np.ndarray, order: int) -> FosterFit:
     # Time constants stay inside the measured span: a stage outside it is not supported by data.
     lower = np.log(np.concatenate([np.full(order, 1e-9), np.full(order, t.min() / 2)]))
     upper = np.log(np.concatenate([np.full(order, 1e3), np.full(order, t.max() * 2)]))
-    fit = least_squares(
-        lambda p: np.log(_model(p, t)) - np.log(z), start, bounds=(lower, upper)
-    )
+    fit = least_squares(lambda p: np.log(_model(p, t)) - np.log(z), start, bounds=(lower, upper))
     r, tau = np.exp(fit.x[:order]), np.exp(fit.x[order:])
     keep = np.argsort(tau)
     worst = float(np.abs(_model(fit.x, t) / z - 1).max())

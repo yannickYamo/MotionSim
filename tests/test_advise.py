@@ -74,9 +74,17 @@ def test_an_example_motor_wound_for_another_voltage_is_the_same_machine(tmp_path
     motors = page.setup(workspace)["motors"]
     for kind, motor in motors.items():
         start = page.STARTING[kind]
-        own = page.stage({"motor": {"type": kind, **motor["values"]}, "conditions": {**start, "t_sink": 60}, "supply": "one-way"})
+        own = page.stage(
+            {"motor": {"type": kind, **motor["values"]}, "conditions": {**start, "t_sink": 60}, "supply": "one-way"}
+        )
         for bus in (24, 400):
             wound = page.rewound(kind, motor["values"], bus)
-            other = page.stage({"motor": {"type": kind, **wound}, "conditions": {**start, "v_dc": bus, "t_sink": 60}, "supply": "one-way"})
+            other = page.stage(
+                {
+                    "motor": {"type": kind, **wound},
+                    "conditions": {**start, "v_dc": bus, "t_sink": 60},
+                    "supply": "one-way",
+                }
+            )
             # Same shaft power from the same machine: current times voltage is unchanged.
             assert other["stage"]["i_peak"] * bus == pytest.approx(own["stage"]["i_peak"] * start["v_dc"], rel=0.02)

@@ -14,8 +14,12 @@ from motionsim.engine.modulation import waveform
 
 def device(v0=1.0, r=0.02, k=20e-6, **kw):
     return linear_device(
-        sw_curves=[line(25.0, v0, r)], d_curves=[line(25.0, 1.0, 0.02)],
-        k_on=k, k_off=k, k_rr=k / 4, **kw,
+        sw_curves=[line(25.0, v0, r)],
+        d_curves=[line(25.0, 1.0, 0.02)],
+        k_on=k,
+        k_off=k,
+        k_rr=k / 4,
+        **kw,
     )
 
 
@@ -33,9 +37,7 @@ def test_every_scheme_delivers_the_same_fundamental_voltage(pwm: Pwm) -> None:
 
 @pytest.mark.parametrize("pwm", [Pwm.third_harmonic, Pwm.space_vector])
 def test_continuous_schemes_switch_as_often_as_sine(pwm: Pwm) -> None:
-    assert solve(device(), op(pwm=pwm)).switch.turn_on == pytest.approx(
-        solve(device(), op()).switch.turn_on, rel=1e-6
-    )
+    assert solve(device(), op(pwm=pwm)).switch.turn_on == pytest.approx(solve(device(), op()).switch.turn_on, rel=1e-6)
 
 
 def test_discontinuous_pwm_halves_switching_loss_at_unity_power_factor() -> None:

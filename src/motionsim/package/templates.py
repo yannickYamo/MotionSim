@@ -61,7 +61,7 @@ class PackageModel:
         out = np.zeros((n, n))
         at = 0
         for b in blocks:
-            out[at:at + b.shape[0], at:at + b.shape[0]] = b
+            out[at : at + b.shape[0], at : at + b.shape[0]] = b
             at += b.shape[0]
         return out
 
@@ -99,7 +99,9 @@ def _six_pack(i_rated: float, variant: str, interface: str, *, substrate: bool) 
     margin = 1.0e-3
     rail, w, h = _row(
         ["HS switch U", "HS diode U", "HS switch V", "HS diode V", "HS switch W", "HS diode W"],
-        [sw, d, sw, d, sw, d], gap, margin,
+        [sw, d, sw, d, sw, d],
+        gap,
+        margin,
     )
     plates = [Plate(w, h, rail)]
     for phase in "UVW":
@@ -119,7 +121,9 @@ def _six_pack(i_rated: float, variant: str, interface: str, *, substrate: bool) 
     footprint = sum(p.width * p.height for p in plates) * 1.6  # leads and moulding around the copper
     return PackageModel(
         name="ceramic-substrate module" if substrate else "moulded leadframe module",
-        plates=tuple(plates), stack=stack, footprint=footprint,
+        plates=tuple(plates),
+        stack=stack,
+        footprint=footprint,
         interface_resistance=t_if / (k_if * footprint),
     )
 
@@ -145,9 +149,11 @@ def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, dio
         chips = (ChipSite("switch", width / 2, height / 2, sw, sw),)
     k_if, t_if = INTERFACE[interface][variant]
     return PackageModel(
-        name=outline, plates=(Plate(width, height, chips),),
+        name=outline,
+        plates=(Plate(width, height, chips),),
         stack=Stack(COPPER, thickness, k_if, t_if, k_die=SILICON),
-        footprint=width * height, interface_resistance=t_if / (k_if * width * height),
+        footprint=width * height,
+        interface_resistance=t_if / (k_if * width * height),
     )
 
 
@@ -155,8 +161,12 @@ TEMPLATES = ("leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263
 
 
 def build(
-    template: str, i_rated: float, variant: str = "typical", interface: str = "grease",
-    *, diode: bool = True,
+    template: str,
+    i_rated: float,
+    variant: str = "typical",
+    interface: str = "grease",
+    *,
+    diode: bool = True,
 ) -> PackageModel:
     if template == "leadframe-module":
         return _six_pack(i_rated, variant, interface, substrate=False)
@@ -194,7 +204,10 @@ def summarise(model: PackageModel) -> Summary:
 
 @lru_cache(maxsize=256)
 def summary(
-    template: str, i_rated: float, variant: str = "typical", interface: str = "grease",
+    template: str,
+    i_rated: float,
+    variant: str = "typical",
+    interface: str = "grease",
     diode: bool = True,
 ) -> Summary:
     """Cached summarise(build(...)): the calculation takes a noticeable fraction of a second."""
@@ -203,7 +216,10 @@ def summary(
 
 @lru_cache(maxsize=256)
 def response_shape(
-    template: str, i_rated: float, variant: str = "typical", interface: str = "grease",
+    template: str,
+    i_rated: float,
+    variant: str = "typical",
+    interface: str = "grease",
     chip: str = "switch",
 ) -> tuple[tuple[float, float], ...]:
     """Shape of a chip's thermal step response in a generic package of this kind.

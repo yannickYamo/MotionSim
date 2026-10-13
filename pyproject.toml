@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "motionsim"
-version = "0.3.0"
+version = "0.3.1"
 description = "From any power-semiconductor datasheet to the losses and junction temperatures of a motor drive, on a local page"
 readme = "README.md"
 license = "Apache-2.0"
@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pytest-cov", "hypothesis", "ruff==0.17.0", "mypy", "types-PyYAML", "pre-commit"]
 
 [project.scripts]
 motionsim = "motionsim.cli:main"
@@ -40,3 +40,37 @@ packages = ["src/motionsim"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+# The rules that find mistakes, and the ones that keep imports and idiom even. Complexity
+# rules are left for when the long functions have been split, not silenced one by one now.
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "E501",    # a sentence for the user is not broken to fit a column
+    "RUF001",  # the degree sign, the micro sign and the multiplication dot are meant
+    "RUF002",
+    "RUF003",
+    "B905",    # lists zipped here are built side by side, of one length by construction
+    "RUF005",  # [*a, b] against a + [b]: neither is a mistake
+    "RUF007",  # zip(a, a[1:]) is read at a glance; pairwise is not yet
+    "UP042",   # str and Enum together keep the values plain strings in the files written
+    "E741",    # l is an inductance and I a current, as they are written everywhere
+    "SIM102",  # two conditions that are two thoughts stay two ifs
+    "SIM108",  # an if and an else that each say something stay an if and an else
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E731"]  # a one-line helper inside a test reads better as a lambda
+
+[tool.coverage.run]
+source = ["motionsim"]
+branch = true
+
+[tool.coverage.report]
+# Measured at 81% on the public tree (the reader's tests on real datasheets are not shipped).
+# Held a little under that, and raised as tests land.
+fail_under = 78

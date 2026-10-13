@@ -31,7 +31,7 @@ export interface Losses {
   conduction: number; turn_on: number; turn_off: number; dead_time: number; recovery: number;
   diode_conduction: number; diode_recovery: number; total: number;
 }
-export interface Position extends Losses { name: string; count: number; tj: number; tj_switch: number; tj_diode: number }
+export interface Position extends Losses { name: string; count: number; tj: number; tj_switch: number; tj_diode: number; tj_switch_mean: number; tj_diode_mean: number }
 export interface Result {
   loss: number; conduction: number; switching: number; efficiency: number | null; tj_peak: number;
   tj_range: [number, number] | null; tj_max: number; t_case: number; t_sink?: number | null; validity: string;

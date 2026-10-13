@@ -69,28 +69,46 @@ def test_unreachable_points_are_refused() -> None:
     capped = SPM.model_copy(update={"i_max": 2.0})
     with pytest.raises(Unreachable, match="above the motor's"):
         operating_state(capped, rpm=1000, torque=5.0, v_max=150.0)
+    # A hair over the limit is not written as the limit itself. This motor takes 1.17851 A rms
+    # for each N·m, so 0.9966 N·m needs 1.1745 A: against a 1.174 A limit, three figures would
+    # read "needs 1.17 A rms, above the motor's 1.174 A limit".
+    close = SPM.model_copy(update={"i_max": 1.174})
+    with pytest.raises(Unreachable) as told:
+        operating_state(close, rpm=1000, torque=0.9966, v_max=150.0)
+    said = float(str(told.value).split("needs ")[1].split(" A rms")[0])
+    assert 1.174 < said == pytest.approx(1.1745, abs=6e-4)
 
 
 def igbt():
     return linear_device(
-        sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6,
+        sw_curves=[line(25.0, 0.9, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
     )
 
 
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
 
 
 def test_motor_point_equals_the_engine_at_the_same_electrical_point() -> None:
     # The fundamental alone: the ripple at the switching frequency is tested on its own.
     point = at_speed_and_torque(igbt(), SPM_MACHINE, 3000, 2.0, BASE, ripple=False)
     state = operating_state(SPM, 3000, 2.0, 150.0)
-    direct = solve(igbt(), OperatingPoint(
-        v_dc=V_REF, i_rms=state.i_rms, modulation_index=state.modulation_index(V_REF),
-        power_factor=state.power_factor, f_sw=8000.0, t_sink=60.0, f_out=state.f_out, n_steps=1440,
-    ))
+    direct = solve(
+        igbt(),
+        OperatingPoint(
+            v_dc=V_REF,
+            i_rms=state.i_rms,
+            modulation_index=state.modulation_index(V_REF),
+            power_factor=state.power_factor,
+            f_sw=8000.0,
+            t_sink=60.0,
+            f_out=state.f_out,
+            n_steps=1440,
+        ),
+    )
     assert point.result.p_inverter == pytest.approx(direct.p_inverter, rel=1e-9)
     assert point.result.tj_switch_peak == pytest.approx(direct.tj_switch_peak, rel=1e-9)
     assert point.stage.p_electrical == pytest.approx(state.p_shaft + state.p_copper, rel=1e-9)
@@ -98,9 +116,7 @@ def test_motor_point_equals_the_engine_at_the_same_electrical_point() -> None:
 
 
 def test_map_marks_what_the_motor_cannot_reach() -> None:
-    m = speed_torque_map(
-        igbt(), SPM_MACHINE, np.array([1000.0, 3000.0, 40000.0]), np.array([1.0, 3.0]), BASE
-    )
+    m = speed_torque_map(igbt(), SPM_MACHINE, np.array([1000.0, 3000.0, 40000.0]), np.array([1.0, 3.0]), BASE)
     assert m.p_inverter.shape == (2, 3)
     assert np.isnan(m.p_inverter[:, 2]).all() and m.reason[0][2] == "motor"
     assert m.p_inverter[1, 0] > m.p_inverter[0, 0]  # more torque, more loss
@@ -108,11 +124,13 @@ def test_map_marks_what_the_motor_cannot_reach() -> None:
 
 
 def test_double_pulse_data_replaces_the_charge_estimate() -> None:
-    data = DoublePulse.model_validate(json.loads(
-        '{"v_dc": 300, "energy_unit": "uJ", "rg_on": 2.0, "points": ['
-        '{"tj": 25, "current": 10, "e_on": 200, "e_off": 100},'
-        '{"tj": 25, "current": 30, "e_on": 600, "e_off": 300}]}'
-    ))
+    data = DoublePulse.model_validate(
+        json.loads(
+            '{"v_dc": 300, "energy_unit": "uJ", "rg_on": 2.0, "points": ['
+            '{"tj": 25, "current": 10, "e_on": 200, "e_off": 100},'
+            '{"tj": 25, "current": 30, "e_on": 600, "e_off": 300}]}'
+        )
+    )
     device = apply_double_pulse(fet(), data, "dpt.json")
     assert device.switch.e_on.source.kind.value == "measured"
     assert device.switch.e_on.curves[0].current == [0.0, 10.0, 30.0]
@@ -166,8 +184,8 @@ def test_a_trip_at_speed_is_checked_against_the_supply_and_the_rating() -> None:
     from motionsim import guard
 
     motor = SPM_MACHINE
-    w = lambda rpm: rpm * math.pi / 30  # noqa: E731
-    volts = lambda rpm: math.sqrt(3) * motor.pole_pairs * w(rpm) * motor.flux_linkage  # noqa: E731
+    w = lambda rpm: rpm * math.pi / 30
+    volts = lambda rpm: math.sqrt(3) * motor.pole_pairs * w(rpm) * motor.flux_linkage
     slow = guard.trip_check(motor, 100.0, 300.0, 600.0)
     assert slow.level is guard.Level.ok
     above_supply = next(r for r in range(100, 200000, 100) if volts(r) > 300.0)
@@ -176,4 +194,13 @@ def test_a_trip_at_speed_is_checked_against_the_supply_and_the_rating() -> None:
     found = guard.trip_check(motor, above_rating, 300.0, 600.0)
     assert found.level is guard.Level.fail and f"{volts(above_rating):.0f} V" in found.message
     from motionsim.motor import Induction
-    assert guard.trip_check(Induction(type="induction", pole_pairs=2, rs=1, rr=1, lm=0.1, lls=0.01, llr=0.01, i_magnetising=2), 3000, 300, 600) is None
+
+    assert (
+        guard.trip_check(
+            Induction(type="induction", pole_pairs=2, rs=1, rr=1, lm=0.1, lls=0.01, llr=0.01, i_magnetising=2),
+            3000,
+            300,
+            600,
+        )
+        is None
+    )

@@ -47,8 +47,12 @@ def path_for(t, z):
 def curve_object(t, z):
     xs, ys = x_pos(t), y_pos(z)
     return {
-        "linewidth": 0.96, "path": path_for(t, z),
-        "x0": xs.min(), "x1": xs.max(), "top": ys.min(), "bottom": ys.max(),
+        "linewidth": 0.96,
+        "path": path_for(t, z),
+        "x0": xs.min(),
+        "x1": xs.max(),
+        "top": ys.min(),
+        "bottom": ys.max(),
     }
 
 
@@ -76,16 +80,23 @@ def synthetic_page(duty_curve: bool = True):
 def table_rth(value: float) -> list[Observation]:
     return [
         Observation(
-            quantity=Quantity.rth_jc_switch, typ=value, max=None, printed_typ=str(value),
-            printed_max=None, unit="K/W", current_a=None, voltage_v=None, tj_c=None, page=1,
-            status=ReviewStatus.unverified, flags=[],
+            quantity=Quantity.rth_jc_switch,
+            typ=value,
+            max=None,
+            printed_typ=str(value),
+            printed_max=None,
+            unit="K/W",
+            current_a=None,
+            voltage_v=None,
+            tj_c=None,
+            page=1,
+            status=ReviewStatus.unverified,
+            flags=[],
         )
     ]
 
 
-FIGURE = ReadFigure(
-    page=1, label="Figure 1", shows="thermal impedance", kind=FigureKind.thermal_impedance_switch
-)
+FIGURE = ReadFigure(page=1, label="Figure 1", shows="thermal impedance", kind=FigureKind.thermal_impedance_switch)
 
 
 def axes(y_lo=0.01, y_hi=1.0, x_hi=10.0) -> ReadAxes:
@@ -181,10 +192,13 @@ def test_a_curve_drawn_as_a_staircase_of_tiny_steps_in_pieces_is_joined() -> Non
     page = synthetic_page(duty_curve=False)
     page.curves = [
         {
-            "linewidth": 0.96, "stroking_color": (0.0, 1.0, 0.0),
+            "linewidth": 0.96,
+            "stroking_color": (0.0, 1.0, 0.0),
             "path": [("m", piece[0])] + [("l", p) for p in piece[1:]],
-            "x0": min(p[0] for p in piece), "x1": max(p[0] for p in piece),
-            "top": min(p[1] for p in piece), "bottom": max(p[1] for p in piece),
+            "x0": min(p[0] for p in piece),
+            "x1": max(p[0] for p in piece),
+            "top": min(p[1] for p in piece),
+            "bottom": max(p[1] for p in piece),
         }
         for piece in pieces
     ]
@@ -199,8 +213,15 @@ def test_a_curve_drawn_as_a_staircase_of_tiny_steps_in_pieces_is_joined() -> Non
 def _curve(points, width=0.96, **extra):
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
-    return {"linewidth": width, "path": [("m", points[0])] + [("l", p) for p in points[1:]],
-            "x0": min(xs), "x1": max(xs), "top": min(ys), "bottom": max(ys), **extra}
+    return {
+        "linewidth": width,
+        "path": [("m", points[0])] + [("l", p) for p in points[1:]],
+        "x0": min(xs),
+        "x1": max(xs),
+        "top": min(ys),
+        "bottom": max(ys),
+        **extra,
+    }
 
 
 def _single_pulse_points(t_lo=2e-5, t_hi=5.0, n=200):
@@ -211,7 +232,7 @@ def _single_pulse_points(t_lo=2e-5, t_hi=5.0, n=200):
 def test_a_curve_drawn_past_the_plot_area_is_read_up_to_its_edge() -> None:
     """Some drawings run beyond the plot and leave the cutting to the PDF's clipping."""
     page = synthetic_page(duty_curve=False)
-    t, inside_points = _single_pulse_points()
+    _t, inside_points = _single_pulse_points()
     overrun = inside_points + [(X1 + 30.0, inside_points[-1][1]), (X1 + 60.0, inside_points[-1][1])]
     page.curves = [_curve(overrun)]
     (frame,) = figures.find_frames(page)
@@ -233,7 +254,7 @@ def test_a_white_stroke_under_a_curve_is_not_a_second_curve() -> None:
 
 def test_a_curve_drawn_as_the_filled_outline_of_its_own_stroke_is_read_down_its_middle() -> None:
     page = synthetic_page(duty_curve=False)
-    t, points = _single_pulse_points(n=120)
+    _t, points = _single_pulse_points(n=120)
     upper = [(x, y - 0.6) for x, y in points]
     lower = [(x, y + 0.6) for x, y in reversed(points)]
     page.curves = [_curve(upper + lower, width=0, fill=True, stroke=False, non_stroking_color=0.0)]
@@ -254,11 +275,28 @@ def test_heavy_black_straight_segments_are_data_and_full_length_ones_are_furnitu
     page.curves = []
     grid_width = max(ln["linewidth"] for ln in page.lines)
     for a, b in zip(points, points[1:]):
-        page.lines.append({"linewidth": 4 * grid_width, "pts": [a, b], "x0": min(a[0], b[0]),
-                           "x1": max(a[0], b[0]), "top": min(a[1], b[1]), "bottom": max(a[1], b[1]),
-                           "stroking_color": 0.0})
-    page.lines.append({"linewidth": 4 * grid_width, "pts": [(X0, BOTTOM), (X1, BOTTOM)], "x0": X0,
-                       "x1": X1, "top": BOTTOM, "bottom": BOTTOM, "stroking_color": 0.0})
+        page.lines.append(
+            {
+                "linewidth": 4 * grid_width,
+                "pts": [a, b],
+                "x0": min(a[0], b[0]),
+                "x1": max(a[0], b[0]),
+                "top": min(a[1], b[1]),
+                "bottom": max(a[1], b[1]),
+                "stroking_color": 0.0,
+            }
+        )
+    page.lines.append(
+        {
+            "linewidth": 4 * grid_width,
+            "pts": [(X0, BOTTOM), (X1, BOTTOM)],
+            "x0": X0,
+            "x1": X1,
+            "top": BOTTOM,
+            "bottom": BOTTOM,
+            "stroking_color": 0.0,
+        }
+    )
     (frame,) = figures.find_frames(page)
     found = figures.spanning(figures.curves_in(page, frame), frame)
     assert len(found) == 1 and np.ptp(found[0][:, 1]) > 20

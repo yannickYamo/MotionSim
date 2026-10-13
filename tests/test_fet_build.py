@@ -44,9 +44,13 @@ def points():
 
 def observations(pts=None):
     result = ReadResult(
-        vendor="Example", part_number="FET-1", technology="GaN HEMT",
-        topology=Topology.discrete, integrated_driver=False,
-        points=points() if pts is None else pts, figures=[],
+        vendor="Example",
+        part_number="FET-1",
+        technology="GaN HEMT",
+        topology=Topology.discrete,
+        integrated_driver=False,
+        points=points() if pts is None else pts,
+        figures=[],
     )
     return check(result, DOC, [PAGE], reader="test")
 
@@ -54,9 +58,16 @@ def observations(pts=None):
 def resistance_curve() -> CurveObservation:
     axis = AxisClaim(lo=-25, hi=175, log=False)
     return CurveObservation(
-        quantity=Quantity.rds_norm_curve, page=4, label="Figure 9",
-        x=[-25, 25, 75, 125, 150], y=[0.75, 1.0, 1.35, 1.8, 2.05],
-        x_axis=axis, y_axis=axis, method="vector", status=ReviewStatus.unverified, flags=[],
+        quantity=Quantity.rds_norm_curve,
+        page=4,
+        label="Figure 9",
+        x=[-25, 25, 75, 125, 150],
+        y=[0.75, 1.0, 1.35, 1.8, 2.05],
+        x_axis=axis,
+        y_axis=axis,
+        method="vector",
+        status=ReviewStatus.unverified,
+        flags=[],
     )
 
 
@@ -85,8 +96,15 @@ def test_resistance_follows_the_digitised_temperature_curve() -> None:
     assert max(by_temperature) == 150.0
 
     op = OperatingPoint(
-        v_dc=48, i_rms=30, modulation_index=0.9, power_factor=0.85, f_sw=40_000, t_sink=125,
-        v_drive=5, rg_on=2.5, rg_off=1.0,
+        v_dc=48,
+        i_rms=30,
+        modulation_index=0.9,
+        power_factor=0.85,
+        f_sw=40_000,
+        t_sink=125,
+        v_drive=5,
+        rg_on=2.5,
+        rg_off=1.0,
     )
     hot = solve(device, op)
     assert hot.switch.conduction == pytest.approx(1.4e-3 * 1.8 * 30**2 / 2, rel=0.02)
@@ -137,9 +155,13 @@ def sic_points(*, energy: bool = True, threshold_charge: bool = True, gain: str 
 
 def sic(**kwargs):
     result = ReadResult(
-        vendor="Example", part_number="SIC-1", technology="SiC MOSFET",
-        topology=Topology.h_bridge, integrated_driver=False,
-        points=sic_points(**kwargs), figures=[],
+        vendor="Example",
+        part_number="SIC-1",
+        technology="SiC MOSFET",
+        topology=Topology.h_bridge,
+        integrated_driver=False,
+        points=sic_points(**kwargs),
+        figures=[],
     )
     return check(result, DOC, [SIC_PAGE], reader="test")
 
@@ -152,9 +174,7 @@ def test_tabulated_switching_energy_is_used_for_a_fet() -> None:
     assert sw.e_rr.v_ref == 800  # tested in the same circuit as the switch
     assert [c.tj for c in sw.conduction.curves] == [25, 175]
     assert sw.conduction.curves[1].value[-1] / sw.conduction.curves[1].current[-1] == pytest.approx(0.15)
-    op = OperatingPoint(
-        v_dc=800, i_rms=8, modulation_index=0.9, power_factor=0.9, f_sw=20e3, t_sink=60, t_dead=3e-7
-    )
+    op = OperatingPoint(v_dc=800, i_rms=8, modulation_index=0.9, power_factor=0.9, f_sw=20e3, t_sink=60, t_dead=3e-7)
     r = solve(device, op)  # no gate drive needed: the energies are measured
     assert r.switch.turn_on > r.switch.turn_off > r.switch.recovery > 0
     # Switching: fsw * E * Ipk / pi at the test voltage, energy linear in current.
@@ -184,8 +204,13 @@ def test_a_minimum_only_transconductance_is_used_and_said() -> None:
     pts = sic_points(energy=False, threshold_charge=False, gain=None)
     pts.append(point(Quantity.g_fs, None, "S", i=20, v=20, tj=25).model_copy(update={"printed_min": "11"}))
     result = ReadResult(
-        vendor="Example", part_number="SIC-1", technology="SiC MOSFET",
-        topology=Topology.discrete, integrated_driver=False, points=pts, figures=[],
+        vendor="Example",
+        part_number="SIC-1",
+        technology="SiC MOSFET",
+        topology=Topology.discrete,
+        integrated_driver=False,
+        points=pts,
+        figures=[],
     )
     charge = build_device(check(result, DOC, [SIC_PAGE], reader="test")).switch.charge
     assert "only as a minimum" in charge.assumption

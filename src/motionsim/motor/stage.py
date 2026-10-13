@@ -24,6 +24,11 @@ class Stage:
     # sets the current ripple at the switching frequency.
     l_phase: float | None = None
     stalled: bool = False  # the rotor is not turning: the period spans rotor positions, not time
+    # Where the stage does not switch as legs with centred on-times do (two phases of a
+    # block-commutated motor, an H-bridge driven bipolar): what it does over one PWM period,
+    # as (share of the period, current drawn from the link in A, voltage across the winding
+    # as a share of the DC voltage). The winding here is the two phases in series, twice l_phase.
+    states: list[tuple[float, float, float]] | None = None
 
     @property
     def i_peak(self) -> float:

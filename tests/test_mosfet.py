@@ -31,23 +31,41 @@ def fet(*, measured: bool = False, reverse: bool = True) -> Device:
         reverse=ConductionModel(curves=[line(25.0, V_SD, 0.0)], source=SRC) if reverse else None,
         e_on=energy(20e-6) if measured else None,
         e_off=energy(10e-6) if measured else None,
-        charge=None if measured else ChargeModel(
-            q_gs=Q_GS, q_gd=Q_GD, q_g_th=Q_TH, v_plateau=V_PL, q_oss=Q_OSS, v_ref=V_REF,
-            q_rr=Q_RR, source=SRC,
+        charge=None
+        if measured
+        else ChargeModel(
+            q_gs=Q_GS,
+            q_gd=Q_GD,
+            q_g_th=Q_TH,
+            v_plateau=V_PL,
+            q_oss=Q_OSS,
+            v_ref=V_REF,
+            q_rr=Q_RR,
+            source=SRC,
         ),
         thermal=FosterNetwork(r=[0.5], tau=[0.01], source=SRC),
     )
     return Device(
-        vendor="synthetic", part_number="FET", technology="GaN HEMT",
+        vendor="synthetic",
+        part_number="FET",
+        technology="GaN HEMT",
         ratings=Ratings(v_max=650, i_nominal=30, tj_max=150),
-        package=Package(topology=Topology.discrete), switch=chip,
+        package=Package(topology=Topology.discrete),
+        switch=chip,
     )
 
 
 def op(**kw) -> OperatingPoint:
     base = dict(
-        v_dc=V_REF, i_rms=20.0, modulation_index=0.9, power_factor=0.8, f_sw=50_000.0,
-        t_sink=25.0, v_drive=5.0, rg_on=2.0, rg_off=1.0,
+        v_dc=V_REF,
+        i_rms=20.0,
+        modulation_index=0.9,
+        power_factor=0.8,
+        f_sw=50_000.0,
+        t_sink=25.0,
+        v_drive=5.0,
+        rg_on=2.0,
+        rg_off=1.0,
     )
     return OperatingPoint(**{**base, **kw})
 
@@ -80,9 +98,7 @@ def test_dead_time_loss_matches_closed_form() -> None:
     without = solve(fet(), op())
     with_dead = solve(fet(), op(t_dead=t_dead))
     assert without.switch.dead_time == 0.0
-    assert with_dead.switch.dead_time == pytest.approx(
-        2 * t_dead * f_sw * V_SD * i_pk / math.pi, rel=0.01
-    )
+    assert with_dead.switch.dead_time == pytest.approx(2 * t_dead * f_sw * V_SD * i_pk / math.pi, rel=0.01)
     # the channel conducts for that much less of the reverse half-cycle
     saved = 2 * t_dead * f_sw * R_ON * i_pk**2 / 4
     assert without.switch.conduction - with_dead.switch.conduction == pytest.approx(saved, rel=0.02)
@@ -144,16 +160,19 @@ def test_overshoot_check_and_avalanche_wording() -> None:
 def test_recovery_charge_is_nothing_at_no_current_and_follows_the_current_below_its_test_point() -> None:
     import numpy as np
 
-    from motionsim.engine.mosfet import _charge_energies
+    from motionsim.engine.mosfet import charge_energies
 
     device = fet()
     charge = device.switch.charge.model_copy(update={"q_rr": 1e-6, "q_rr_current": None})
     chip = device.switch.model_copy(update={"charge": charge})
     drive = op(i_rms=0.0)
-    e_on, _ = _charge_energies(chip, np.array([0.0, 5.0, 40.0]), drive)
-    without, _ = _charge_energies(device.switch.model_copy(update={"charge": charge.model_copy(update={"q_rr": 0.0})}),
-                                  np.array([0.0, 5.0, 40.0]), drive)
+    e_on, _ = charge_energies(chip, np.array([0.0, 5.0, 40.0]), drive)
+    without, _ = charge_energies(
+        device.switch.model_copy(update={"charge": charge.model_copy(update={"q_rr": 0.0})}),
+        np.array([0.0, 5.0, 40.0]),
+        drive,
+    )
     assert (e_on - without).tolist() == pytest.approx([0.0, 1e-6 * drive.v_dc, 1e-6 * drive.v_dc])
     scaled = chip.model_copy(update={"charge": charge.model_copy(update={"q_rr_current": 20.0})})
-    e_scaled, _ = _charge_energies(scaled, np.array([0.0, 5.0, 40.0]), drive)
+    e_scaled, _ = charge_energies(scaled, np.array([0.0, 5.0, 40.0]), drive)
     assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.25e-6 * drive.v_dc, 1e-6 * drive.v_dc])

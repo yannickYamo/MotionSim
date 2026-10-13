@@ -10,176 +10,29 @@ agree.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
-from enum import Enum
 
 import numpy as np
 
-from motionsim.device.schema import Basis, Chip, ChipKind, Device, FosterNetwork, SwitchingEnergy
-from motionsim.engine import assumed
-from motionsim.engine import lookup
-from motionsim.engine.modulation import Pwm, Role, phase_leg_roles, waveform
+from motionsim.device.schema import Basis, Chip, ChipKind, Device, FosterNetwork
+from motionsim.engine import assumed, lookup
+from motionsim.engine.losses import energy, voltage
+from motionsim.engine.modulation import Role, phase_leg_roles, waveform
+from motionsim.engine.mosfet import mosfet_losses
+from motionsim.engine.point import (
+    DiodeLoss,
+    OperatingPoint,
+    PeakBasis,
+    Result,
+    RoleResult,
+    SwitchLoss,
+    ThermalRunaway,
+    Validity,
+)
 from motionsim.engine.thermal import periodic_rise, steady_state_rise
+from motionsim.text import written
 
 INVERTER_POSITIONS = 6
 SLOWEST_OUTPUT = 0.1  # Hz; a stopped output is treated as turning this slowly
-
-
-class PeakBasis(str, Enum):
-    transient = "transient"  # from the device's own transient thermal data
-    assumed = "assumed"  # no transient data: the response computed for a generic package is used
-
-
-class Validity(str, Enum):
-    interpolated = "interpolated"  # inside measured or digitised curves
-    extrapolated = "extrapolated"  # a loss term that matters is beyond its data
-    assumed = "assumed"  # inside the data, part of it table points or an estimate from charge
-
-
-@dataclass(frozen=True)
-class OperatingPoint:
-    v_dc: float
-    i_rms: float
-    modulation_index: float
-    power_factor: float
-    f_sw: float
-    t_sink: float
-    f_out: float = 50.0
-    pwm: Pwm = Pwm.sine
-    t_dead: float = 0.0  # s, between one switch turning off and the other turning on
-    v_drive: float | None = None  # gate drive voltage, V
-    rg_on: float | None = None  # total turn-on gate resistance, ohm
-    rg_off: float | None = None  # total turn-off gate resistance, ohm
-    # Commutation-loop inductance, H: of one device's own loop. With devices in parallel
-    # each has its loop and switches its share of the current.
-    l_loop: float | None = None
-    t_min_pulse: float = 0.0  # s, the shortest pulse the gate drive passes
-    parallel: int = 1  # devices side by side at each switch position, sharing its current
-    # Cooling to air. With either of these, t_sink is the temperature of the air, and what
-    # the packages sit on is worked out from the loss. With neither, t_sink is a heatsink
-    # held at that temperature whatever the loss.
-    rth_sink: float | None = None  # K/W, heatsink to air, with every package on it
-    rth_free: float | None = None  # K/W, case to air of one package with no heatsink
-    # K/W, with rth_free: the packages share a board, and each watt lost anywhere on it
-    # warms every package by this much (see cooling.py)
-    rth_board: float | None = None
-    n_steps: int = 2048
-
-
-@dataclass(frozen=True)
-class SwitchLoss:
-    conduction: float
-    turn_on: float
-    turn_off: float
-    dead_time: float = 0.0  # mosfet: reverse conduction with both gates off
-    recovery: float = 0.0  # mosfet: recovery of its own body diode
-
-    @property
-    def total(self) -> float:
-        return self.conduction + self.turn_on + self.turn_off + self.dead_time + self.recovery
-
-
-@dataclass(frozen=True)
-class DiodeLoss:
-    conduction: float
-    recovery: float
-
-    @property
-    def total(self) -> float:
-        return self.conduction + self.recovery
-
-
-@dataclass(frozen=True)
-class RoleResult:
-    """One kind of switch position."""
-
-    name: str
-    count: int
-    switch: SwitchLoss
-    diode: DiodeLoss
-    tj_switch: float
-    tj_diode: float
-    tj_switch_peak: float
-    tj_diode_peak: float
-    t_case: float
-    # Loss of one switch and one diode against position in the period, W.
-    p_switch: np.ndarray | None = field(default=None, compare=False, repr=False)
-    p_diode: np.ndarray | None = field(default=None, compare=False, repr=False)
-
-    @property
-    def hottest(self) -> float:
-        return max(self.tj_switch_peak, self.tj_diode_peak)
-
-
-@dataclass(frozen=True)
-class Result:
-    """Outcome for the whole power stage. The loss and temperature fields
-    describe the hottest role; roles lists every one."""
-
-    switch: SwitchLoss
-    diode: DiodeLoss
-    tj_switch: float
-    tj_diode: float
-    tj_switch_peak: float
-    tj_diode_peak: float
-    peak_basis: PeakBasis
-    t_case: float
-    p_inverter: float
-    p_out: float
-    converged: bool
-    iterations: int
-    validity: Validity
-    notes: list[str] = field(default_factory=list)
-    outside: list[str] = field(default_factory=list)  # the notes that put the point outside the data
-    limits: list[str] = field(default_factory=list)
-    rating_warnings: list[str] = field(default_factory=list)
-    roles: list[RoleResult] = field(default_factory=list)
-    assumptions: list[str] = field(default_factory=list)  # thermal values assumed, not given
-    tj_peak_range: tuple[float, float] | None = None  # hottest junction across those assumptions
-    t_sink: float | None = None  # °C, what the packages sit on: the heatsink, or the air without one
-
-    @property
-    def efficiency(self) -> float | None:
-        if self.p_out <= 0:
-            return None
-        return self.p_out / (self.p_out + self.p_inverter)
-
-
-class ThermalRunaway(RuntimeError):
-    """Losses grow faster with temperature than the thermal path removes them."""
-
-
-def gate_factor(table: SwitchingEnergy, rg: float | None) -> float:
-    """Energy at a gate resistor as a multiple of the energy at the datasheet's own, from the
-    datasheet's figure of energy against gate resistance. 1 where there is no such figure or
-    no resistor is given. Outside the figure's range the nearest end is used: it is not
-    extended."""
-    if rg is None or not table.rg_values or not table.rg_factor:
-        return 1.0
-    return float(np.interp(rg, table.rg_values, table.rg_factor))
-
-
-def voltage_factor(table: SwitchingEnergy, v_dc: float) -> float:
-    """Energy at a supply voltage as a multiple of the energy at the datasheet's test voltage.
-
-    From the datasheet's figure of energy against voltage where it has one, inside that
-    figure's range. Otherwise in proportion to voltage, which is the least a real device
-    does: above the test voltage most rise faster.
-    """
-    if table.v_values and table.v_factor and table.v_values[0] <= v_dc <= table.v_values[-1]:
-        return float(np.interp(v_dc, table.v_values, table.v_factor))
-    return v_dc / table.v_ref
-
-
-def _energy(
-    table: SwitchingEnergy, current: np.ndarray, tj: float, v_dc: float, rg: float | None = None
-) -> np.ndarray:
-    e = lookup.evaluate(table.curves, current, tj) * voltage_factor(table, v_dc) * gate_factor(table, rg)
-    return np.maximum(e, 0.0)
-
-
-def _voltage(chip: Chip, current: np.ndarray, tj: float) -> np.ndarray:
-    return np.maximum(lookup.evaluate(chip.conduction.curves, current, tj), 0.0)
 
 
 def _position_losses(
@@ -190,23 +43,21 @@ def _position_losses(
     Returns the averages and the two loss waveforms over the period.
     """
     if device.switch.kind is ChipKind.mosfet:
-        from motionsim.engine.mosfet import mosfet_losses
-
         return mosfet_losses(device.switch, role, op, tj_switch)
     i = role.current
 
     sw = device.switch
-    p_cond_sw = role.d_switch * i * _voltage(sw, i, tj_switch)
+    p_cond_sw = role.d_switch * i * voltage(sw, i, tj_switch)
     i_on = i if role.current_on is None else role.current_on
     i_off = i if role.current_off is None else role.current_off
-    p_on = role.switch_events * _energy(sw.e_on, i_on, tj_switch, op.v_dc, op.rg_on) * op.f_sw
-    p_off = role.switch_events * _energy(sw.e_off, i_off, tj_switch, op.v_dc, op.rg_off) * op.f_sw
+    p_on = role.switch_events * energy(sw.e_on, i_on, tj_switch, op.v_dc, op.rg_on) * op.f_sw
+    p_off = role.switch_events * energy(sw.e_off, i_off, tj_switch, op.v_dc, op.rg_off) * op.f_sw
 
     d = device.diode
-    p_cond_d = role.d_reverse * i * _voltage(d, i, tj_diode)
+    p_cond_d = role.d_reverse * i * voltage(d, i, tj_diode)
     if d.e_rr is not None:
         # The diode recovers when the other switch of its leg turns on: at the bottom of the ripple.
-        p_rr = role.reverse_events * _energy(d.e_rr, i_on, tj_diode, op.v_dc) * op.f_sw
+        p_rr = role.reverse_events * energy(d.e_rr, i_on, tj_diode, op.v_dc) * op.f_sw
     else:
         p_rr = np.zeros_like(i)
 
@@ -234,8 +85,13 @@ def switching_period(
     one, none = np.ones(1), np.zeros(1)
     share = max(int(op.parallel), 1)  # one device of those in parallel
     sample = replace(
-        role, count=1, current=role.current[k : k + 1] / share, d_switch=one, d_reverse=none,
-        switch_events=one, reverse_events=none,
+        role,
+        count=1,
+        current=role.current[k : k + 1] / share,
+        d_switch=one,
+        d_reverse=none,
+        switch_events=one,
+        reverse_events=none,
     )
     sw, _, _, _ = _position_losses(device, sample, op, tj_switch, tj_diode)
     switches = bool(role.switch_events[k] > 0)
@@ -256,30 +112,24 @@ def _mutual(device: Device, variant: str) -> float:
         return package.rth_mutual
     if package.topology.positions == 1:
         return 0.0
-    coupling = assumed.module_coupling(
-        package.construction, device.ratings.i_nominal, variant, package.interface
-    )
+    coupling = assumed.module_coupling(package.construction, device.ratings.i_nominal, variant, package.interface)
     # The computed coupling is measured from the heatsink, so it holds the interface layer
     # that every chip's heat crosses. That shared part is carried by the case-to-sink
     # resistance, given or computed, which applies to the whole package's loss.
-    return max(coupling - _case_sink(device, variant), 0.0)
+    return max(coupling - case_sink(device, variant), 0.0)
 
 
-def _case_sink(device: Device, variant: str) -> float:
+def case_sink(device: Device, variant: str) -> float:
     """Case-to-heatsink resistance: the user's, or computed for a discrete package's outline."""
     package = device.package
     if package.rth_case_sink is not None:
         return package.rth_case_sink
     if package.outline is not None:
-        return assumed.interface_resistance(
-            package.outline, device.ratings.i_nominal, variant, package.interface
-        )
+        return assumed.interface_resistance(package.outline, device.ratings.i_nominal, variant, package.interface)
     if package.topology.positions > 1:
         # A module's datasheet gives junction to case. The layer between case and heatsink
         # is still there, and a chip's own heat crosses it like its neighbours' does.
-        return assumed.module_interface(
-            package.construction, device.ratings.i_nominal, variant, package.interface
-        )
+        return assumed.module_interface(package.construction, device.ratings.i_nominal, variant, package.interface)
     return 0.0
 
 
@@ -288,21 +138,15 @@ def _neighbour_rise(device: Device, own: float, package: float, variant: str) ->
     return _mutual(device, variant) * max(package - own, 0.0)
 
 
-def thermal_network(
-    device: Device, chip: Chip, variant: str = "typical"
-) -> tuple[FosterNetwork, PeakBasis]:
+def thermal_network(device: Device, chip: Chip, variant: str = "typical") -> tuple[FosterNetwork, PeakBasis]:
     """A chip's junction-to-case network with time constants: the device's own, or its
     resistance spread over the response computed for a generic package."""
     network, basis = chip.thermal, PeakBasis.transient
     if network.tau is None:
         package = device.package
-        template, _ = assumed.template_for(
-            package.construction, package.outline, package.topology.positions
-        )
+        template, _ = assumed.template_for(package.construction, package.outline, package.topology.positions)
         kind = "diode" if chip.kind is ChipKind.diode else "switch"
-        stages = assumed.response(
-            template, device.ratings.i_nominal, variant, package.interface, kind
-        )
+        stages = assumed.response(template, device.ratings.i_nominal, variant, package.interface, kind)
         network = FosterNetwork(
             r=[share * chip.thermal.rth for share, _ in stages],
             tau=[tau for _, tau in stages],
@@ -337,25 +181,22 @@ def _assumptions(device: Device, peak_basis: PeakBasis, in_air: bool = False) ->
             f"({low:.2f} to {high:.2f}) per watt in each other chip"
         )
     if not in_air and package.rth_case_sink is None and package.outline is None and package.topology.positions > 1:
-        low, typical, high = (_case_sink(device, v) for v in assumed.VARIANTS)
+        low, typical, high = (case_sink(device, v) for v in assumed.VARIANTS)
         out.append(
             f"case-to-heatsink resistance computed for the interface layer under a generic module on "
             f"{package.interface}: {typical:.3f} K/W ({low:.3f} to {high:.3f})"
         )
     if not in_air and package.rth_case_sink is None and package.outline is not None:
-        low, typical, high = (_case_sink(device, v) for v in assumed.VARIANTS)
+        low, typical, high = (case_sink(device, v) for v in assumed.VARIANTS)
         out.append(
             f"case-to-heatsink resistance computed for a {package.outline} on {package.interface}: "
             f"{typical:.2f} K/W ({low:.2f} to {high:.2f})"
         )
     if peak_basis is PeakBasis.assumed:
-        template, guessed = assumed.template_for(
-            package.construction, package.outline, package.topology.positions
-        )
+        template, guessed = assumed.template_for(package.construction, package.outline, package.topology.positions)
         out.append(
             "no transient thermal data: the temperature swing within the period uses the "
-            f"response computed for a generic {template}"
-            + (" (package kind not given)" if guessed else "")
+            f"response computed for a generic {template}" + (" (package kind not given)" if guessed else "")
         )
     return out
 
@@ -378,9 +219,7 @@ class _Notes(list):
         self.outside.append((term, text, min(doubt, 1.0)))
 
 
-def _envelope_notes(
-    device: Device, op: OperatingPoint, i_pk: float, tj_switch: float, tj_diode: float
-) -> _Notes:
+def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: float, tj_diode: float) -> _Notes:
     """What the result rests on, and where the operating point leaves the characterised data."""
     notes = _Notes()
     sw, d = device.switch, device.diode
@@ -404,9 +243,7 @@ def _envelope_notes(
                     )
             else:
                 rule = "as the square root of voltage" if scaling == "sqrt" else "linearly"
-                notes.append(
-                    f"output charge: scaled {rule} from {sw.charge.v_ref:.0f} V to {op.v_dc:.0f} V"
-                )
+                notes.append(f"output charge: scaled {rule} from {sw.charge.v_ref:.0f} V to {op.v_dc:.0f} V")
     if sw.reverse is not None and op.t_dead > 0:
         tables.append(("reverse conduction", sw.reverse, tj_switch, None))
     if d is None and sw.e_rr is not None:
@@ -420,29 +257,27 @@ def _envelope_notes(
         i_min, i_max = lookup.current_range(curves)
         if table.basis is Basis.curve and i_pk < i_min:
             notes.leaves(
-                name, f"{name}: peak current {i_pk:.3g} A is below the lowest data point ({i_min:.3g} A)"
+                name,
+                f"{name}: peak current {written(i_pk, 3)} A is below the lowest data point ({written(i_min, 3)} A)",
             )
         if table.basis is Basis.point:
-            notes.append(f"{name}: built from table points up to {i_max:.3g} A; {table.assumption}")
+            notes.append(f"{name}: built from table points up to {written(i_max, 3)} A; {table.assumption}")
             if i_pk > i_max:
-                notes.leaves(name, f"{name}: peak current {i_pk:.3g} A is above the last table point")
+                notes.leaves(name, f"{name}: peak current {written(i_pk, 3)} A is above the last table point")
         elif i_pk > i_max:
-            notes.leaves(name, f"{name}: peak current {i_pk:.3g} A is above the data ({i_max:.3g} A)")
+            notes.leaves(name, f"{name}: peak current {written(i_pk, 3)} A is above the data ({written(i_max, 3)} A)")
         t_min, t_max = lookup.temperature_range(curves)
         if len(curves) == 1:
             if abs(tj - t_min) > 1.0:
                 notes.leaves(
-                    name, f"{name}: only characterised at {t_min:.0f} °C, used at {tj:.0f} °C",
+                    name,
+                    f"{name}: only characterised at {t_min:.0f} °C, used at {tj:.0f} °C",
                     DRIFT * abs(tj - t_min),
                 )
         elif not t_min <= tj <= t_max:
-            notes.leaves(
-                name, f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)"
-            )
+            notes.leaves(name, f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)")
         if v_ref is not None and abs(op.v_dc - v_ref) > 0.01 * v_ref:
-            followed = (
-                table is not None and table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]
-            )
+            followed = table is not None and table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]
             if followed:
                 notes.append(
                     f"{name}: taken from {v_ref:.0f} V to {op.v_dc:.0f} V along the datasheet's own "
@@ -458,9 +293,7 @@ def _envelope_notes(
                     f"the test voltage real devices rise faster, by up to {more:.0%} more here",
                 )
             else:
-                notes.append(
-                    f"{name}: scaled linearly from {v_ref:.0f} V test voltage to {op.v_dc:.0f} V"
-                )
+                notes.append(f"{name}: scaled linearly from {v_ref:.0f} V test voltage to {op.v_dc:.0f} V")
     return notes
 
 
@@ -687,7 +520,8 @@ def solve_roles(
         def carrying(part: float) -> list[Role]:
             return [
                 _replace(
-                    r, current=r.current * part,
+                    r,
+                    current=r.current * part,
                     current_on=None if r.current_on is None else r.current_on * part,
                     current_off=None if r.current_off is None else r.current_off * part,
                 )
@@ -719,7 +553,7 @@ def solve_roles(
 
     # Under the case: the user's own figure to the air where there is no heatsink, else the
     # layer between the case and the heatsink.
-    under = op.rth_free if op.rth_free is not None else _case_sink(device, variant)
+    under = op.rth_free if op.rth_free is not None else case_sink(device, variant)
 
     def sink_at(total: float) -> float:
         # A heatsink in air warms with all the stage loses. The devices in parallel are
@@ -734,7 +568,7 @@ def solve_roles(
         everything = total * n
         return sink + max(under * package + op.rth_board * max(everything - package, 0.0), op.rth_board * everything)
 
-    for iterations in range(1, max_iterations + 1):
+    for iterations in range(1, max_iterations + 1):  # noqa: B007  how many it took is part of the answer
         losses, total, packages = evaluate(tj)
         sink = sink_at(total)
         new = []
@@ -749,9 +583,7 @@ def solve_roles(
                 t_d += _neighbour_rise(device, d.total, package, variant)
             new.append((t_sw, t_d))
         if max(max(t) for t in new) > runaway_limit:
-            raise ThermalRunaway(
-                f"junction temperature passed {runaway_limit:.0f} °C without settling"
-            )
+            raise ThermalRunaway(f"junction temperature passed {runaway_limit:.0f} °C without settling")
         step = max(abs(a - b) for n, o in zip(new, tj) for a, b in zip(n, o))
         tj = new
         if step < tolerance:
@@ -775,9 +607,17 @@ def solve_roles(
             bases.append(basis_d)
         role_results.append(
             RoleResult(
-                name=role.name, count=role.count, switch=sw, diode=d, tj_switch=t_sw,
-                tj_diode=t_d, tj_switch_peak=peak_sw, tj_diode_peak=peak_d, t_case=t_case,
-                p_switch=p_sw, p_diode=p_d,
+                name=role.name,
+                count=role.count,
+                switch=sw,
+                diode=d,
+                tj_switch=t_sw,
+                tj_diode=t_d,
+                tj_switch_peak=peak_sw,
+                tj_diode_peak=peak_d,
+                t_case=t_case,
+                p_switch=p_sw,
+                p_diode=p_d,
             )
         )
     peak_basis = PeakBasis.assumed if PeakBasis.assumed in bases else PeakBasis.transient
@@ -798,8 +638,15 @@ def solve_roles(
         for other in ("low", "high"):
             try:
                 alt = solve_roles(  # the roles here already carry one device's share
-                    device, roles, _one(op, held), period=period, p_out=p_out, tolerance=tolerance,
-                    max_iterations=max_iterations, variant=other, stalled=stalled,
+                    device,
+                    roles,
+                    _one(op, held),
+                    period=period,
+                    p_out=p_out,
+                    tolerance=tolerance,
+                    max_iterations=max_iterations,
+                    variant=other,
+                    stalled=stalled,
                 )
                 ends.append(max(alt.tj_switch_peak, alt.tj_diode_peak))
             except ThermalRunaway:
@@ -816,8 +663,16 @@ def solve_roles(
         # The temperatures above are the hardest-worked device's. The others carry what is
         # left between them, and the stage loses the sum.
         rest = solve_roles(
-            device, carrying((1 - share) / (n - 1)), _one(op, held), period=period, p_out=p_out,
-            tolerance=tolerance, max_iterations=max_iterations, variant=variant, stalled=stalled, spread=False,
+            device,
+            carrying((1 - share) / (n - 1)),
+            _one(op, held),
+            period=period,
+            p_out=p_out,
+            tolerance=tolerance,
+            max_iterations=max_iterations,
+            variant=variant,
+            stalled=stalled,
+            spread=False,
         )
         stage_loss = total + (n - 1) * rest.p_inverter
         notes.append(
@@ -862,7 +717,7 @@ def solve(device: Device, op: OperatingPoint, **kwargs) -> Result:
     if op.modulation_index > op.pwm.max_modulation_index + 1e-9:
         notes.append(
             f"modulation index {op.modulation_index:g} is beyond the linear range of "
-            f"{op.pwm.value} PWM ({op.pwm.max_modulation_index:.3g})"
+            f"{op.pwm.value} PWM ({written(op.pwm.max_modulation_index, 3)})"
         )
     # Beyond the linear range the stage cannot deliver more voltage, so the power stops there.
     reachable = min(op.modulation_index, op.pwm.max_modulation_index)

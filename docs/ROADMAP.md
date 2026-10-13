@@ -9,7 +9,7 @@
 - Cooling as a heatsink at a known temperature, a heatsink in air, or no heatsink: parts standing free, or soldered to one board and warming each other.
 - Losses, junction temperatures, plain-language checks, a speed-torque map, a life estimate under thermal cycling, and starting values for gate resistors, dead time, modulation and heatsink.
 - What to build around the device: heatsink, link capacitor and its ripple current, gate drive, protection. And the question turned round: what a device can drive, and how much heavier the load could be.
-- Up to five devices, loads or motors side by side, or one setting at up to five values, with each part's margin and the test conditions its switching loss rests on; a setup saved to a file; a report.
+- Up to five devices, loads or motors side by side, or one setting at two to five values, with each one's margin, every loss and temperature of its hottest switch position, and the test conditions its switching loss rests on; a setup saved to a file; a report.
 - All of it from a local page and from the command line, where one file runs every step and a guide tells a coding agent how to drive it. The result as a report in Markdown or as a PDF.
 
 ## Next, in order
@@ -18,9 +18,8 @@
 2. **Export of device models** to the formats circuit simulators read, so a model built from a datasheet can be used elsewhere.
 3. **Typing in, further.** An IGBT with its diode from typed figures, and switching energy typed in where the datasheet tabulates it.
 4. **The reader, further.** Quantities spread over several figures, curves drawn against gate voltage, and the figures of scanned datasheets.
-5. **The page, further.** The datasheet's own page shown beside what was read from it; the printed report laid out by the tool.
+5. **The page, further.** The datasheet's own page shown beside what was read from it; the printed report laid out by the tool; the Markdown report carrying what is compared on screen; a setting drawn as a curve against its values.
 6. **The model, further.** Copper layers and spacing on a board. A braking resistor, iron loss that follows the flux, saturation curves instead of one figure, thermal rebalancing between devices in parallel.
-7. **The command line, further.** A comparison written to a table file, motors compared on one device, and devices compared over a whole motion, as the page does.
 
 ## Not planned
 

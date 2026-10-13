@@ -22,7 +22,9 @@ def test_capacitor_ripple_matches_the_closed_form(pwm: Pwm, m: float, pf: float)
     found, mean = capacitor_ripple(roles)
     closed = i_rms * math.sqrt(2 * m * (math.sqrt(3) / (4 * math.pi) + pf**2 * (math.sqrt(3) / math.pi - 9 * m / 16)))
     assert found == pytest.approx(closed, rel=0.02)
-    assert mean == pytest.approx(3 / 2 * m / 2 * math.sqrt(2) * i_rms * pf, rel=0.01)  # power balance: V_dc * I_dc = 3 V I cos(phi)
+    assert mean == pytest.approx(
+        3 / 2 * m / 2 * math.sqrt(2) * i_rms * pf, rel=0.01
+    )  # power balance: V_dc * I_dc = 3 V I cos(phi)
 
 
 def _h_bridge(duty: float, current: float) -> list[Role]:
@@ -56,7 +58,9 @@ def test_three_phase_ripple_stays_under_one_legs_bound_and_grows_as_inductance_f
             pp = phase_ripple(phase_leg_roles(waveform(10.0, m, 0.9, 1440, pwm), 6, pwm), v_dc, f_sw, l_phase)
             assert 0 <= float(pp.max()) <= v_dc / (4 * l_phase * f_sw) * 1.001
     roles = phase_leg_roles(waveform(10.0, 0.6, 0.9, 1440, Pwm.space_vector), 6, Pwm.space_vector)
-    assert phase_ripple(roles, v_dc, f_sw, 20e-6).max() == pytest.approx(6 * phase_ripple(roles, v_dc, f_sw, 120e-6).max())
+    assert phase_ripple(roles, v_dc, f_sw, 20e-6).max() == pytest.approx(
+        6 * phase_ripple(roles, v_dc, f_sw, 120e-6).max()
+    )
 
 
 def test_a_stage_whose_legs_cannot_be_told_apart_is_left_alone() -> None:

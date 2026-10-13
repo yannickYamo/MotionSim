@@ -26,9 +26,7 @@ K_ON, K_OFF, K_RR = 20e-6, 15e-6, 5e-6
 
 
 def conduction(v0: float, r: float, i_pk: float, m: float, pf: float, sign: float) -> float:
-    return v0 * i_pk * (1 / (2 * math.pi) + sign * m * pf / 8) + r * i_pk**2 * (
-        1 / 8 + sign * m * pf / (3 * math.pi)
-    )
+    return v0 * i_pk * (1 / (2 * math.pi) + sign * m * pf / 8) + r * i_pk**2 * (1 / 8 + sign * m * pf / (3 * math.pi))
 
 
 def temperature_independent_device(**kwargs):
@@ -47,14 +45,10 @@ def temperature_independent_device(**kwargs):
 def test_losses_match_closed_form(m: float, pf: float) -> None:
     i_rms, f_sw = 20.0, 8000.0
     i_pk = math.sqrt(2) * i_rms
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=f_sw, t_sink=25.0
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=f_sw, t_sink=25.0)
     r = solve(temperature_independent_device(), op)
 
-    assert r.switch.conduction == pytest.approx(
-        conduction(V0_SW, R_SW, i_pk, m, pf, +1), rel=0.01
-    )
+    assert r.switch.conduction == pytest.approx(conduction(V0_SW, R_SW, i_pk, m, pf, +1), rel=0.01)
     assert r.diode.conduction == pytest.approx(conduction(V0_D, R_D, i_pk, m, pf, -1), rel=0.01)
     assert r.switch.turn_on == pytest.approx(f_sw * K_ON * i_pk / math.pi, rel=0.01)
     assert r.switch.turn_off == pytest.approx(f_sw * K_OFF * i_pk / math.pi, rel=0.01)
@@ -62,9 +56,7 @@ def test_losses_match_closed_form(m: float, pf: float) -> None:
 
 
 def test_switching_energy_scales_with_dc_voltage_and_is_labelled() -> None:
-    base = OperatingPoint(
-        v_dc=V_REF, i_rms=20.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=25.0
-    )
+    base = OperatingPoint(v_dc=V_REF, i_rms=20.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=25.0)
     scaled = OperatingPoint(**{**base.__dict__, "v_dc": 1.2 * V_REF})
     device = temperature_independent_device()
     r0, r1 = solve(device, base), solve(device, scaled)
@@ -77,18 +69,14 @@ def test_switching_energy_scales_with_dc_voltage_and_is_labelled() -> None:
 
 
 def test_single_temperature_data_used_hot_is_labelled() -> None:
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=20.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=80.0
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=20.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=80.0)
     r = solve(temperature_independent_device(), op)
     assert r.validity is Validity.extrapolated
     assert any("only characterised at 25 °C" in n for n in r.notes)
 
 
 def test_current_above_data_is_labelled() -> None:
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=180.0, modulation_index=0.8, power_factor=0.9, f_sw=100.0, t_sink=25.0
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=180.0, modulation_index=0.8, power_factor=0.9, f_sw=100.0, t_sink=25.0)
     r = solve(temperature_independent_device(rth_sw=0.01, rth_d=0.01), op)
     assert r.validity is Validity.extrapolated
     assert any("above the data" in n for n in r.notes)
@@ -96,11 +84,13 @@ def test_current_above_data_is_labelled() -> None:
 
 def test_steady_state_temperatures() -> None:
     rth_sw, rth_d, rth_cs, t_sink = 0.8, 1.5, 0.05, 60.0
-    device = temperature_independent_device(
-        rth_sw=rth_sw, rth_d=rth_d, rth_cs=rth_cs, topology=Topology.six_pack
-    )
+    device = temperature_independent_device(rth_sw=rth_sw, rth_d=rth_d, rth_cs=rth_cs, topology=Topology.six_pack)
     op = OperatingPoint(
-        v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.85, f_sw=10000.0,
+        v_dc=V_REF,
+        i_rms=15.0,
+        modulation_index=0.9,
+        power_factor=0.85,
+        f_sw=10000.0,
         t_sink=t_sink,
     )
     r = solve(device, op)
@@ -121,9 +111,7 @@ def test_self_consistent_temperature_matches_closed_form() -> None:
         d_curves=[line(25.0, 0.0, 0.0)],
         rth_sw=rth,
     )
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=0.0, t_sink=t_sink
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=0.0, t_sink=t_sink)
     r = solve(device, op)
 
     expected = (t_sink + rth * c * a) / (1 - rth * c * b)
@@ -139,9 +127,7 @@ def test_thermal_runaway_is_reported() -> None:
         d_curves=[line(25.0, 0.0, 0.0)],
         rth_sw=rth,
     )
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=20.0, modulation_index=0.9, power_factor=0.8, f_sw=0.0, t_sink=40.0
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=20.0, modulation_index=0.9, power_factor=0.8, f_sw=0.0, t_sink=40.0)
     with pytest.raises(ThermalRunaway):
         solve(device, op)
 
@@ -160,26 +146,27 @@ def test_operating_entirely_below_the_data_is_labelled() -> None:
 
     device = temperature_independent_device(rth_sw=0.01, rth_d=0.01)
     device.switch.e_on.curves = [Curve(tj=25.0, current=[0.0, 20.0, 100.0], value=[0.0, 4e-4, 2e-3])]
-    low = OperatingPoint(
-        v_dc=V_REF, i_rms=5.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=25.0
-    )
+    low = OperatingPoint(v_dc=V_REF, i_rms=5.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=25.0)
     assert any("below the lowest data point (20 A)" in n for n in solve(device, low).notes)
     high = OperatingPoint(**{**low.__dict__, "i_rms": 30.0})
     assert not any("below the lowest data point" in n for n in solve(device, high).notes)
 
 
-@pytest.mark.parametrize(("topology", "share"), [
-    (Topology.half_bridge, 1 / 3), (Topology.h_bridge, 2 / 3), (Topology.six_pack, 1.0),
-])
+@pytest.mark.parametrize(
+    ("topology", "share"),
+    [
+        (Topology.half_bridge, 1 / 3),
+        (Topology.h_bridge, 2 / 3),
+        (Topology.six_pack, 1.0),
+    ],
+)
 def test_the_busiest_package_carries_its_share_of_the_whole_loss(topology: Topology, share: float) -> None:
     """Three legs on two-leg modules: a module cannot hold a leg and a half, so one holds
     two legs and two thirds of the loss."""
     rth_cs = 0.2
     device = temperature_independent_device(rth_cs=rth_cs, topology=topology)
     device.package.rth_mutual = 0.0
-    op = OperatingPoint(
-        v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.85, f_sw=10000.0, t_sink=60.0
-    )
+    op = OperatingPoint(v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.85, f_sw=10000.0, t_sink=60.0)
     r = solve(device, op)
     assert r.t_case == pytest.approx(60.0 + rth_cs * r.p_inverter * share)
 
@@ -201,14 +188,24 @@ def test_clamping_to_one_rail_loads_the_two_sides_differently_but_not_the_total(
     from motionsim.engine import Pwm
 
     device = temperature_independent_device()
+
     def run(pwm):
-        return solve(device, OperatingPoint(
-            v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=pf, f_sw=16000.0,
-            t_sink=25.0, pwm=pwm,
-        ))
+        return solve(
+            device,
+            OperatingPoint(
+                v_dc=V_REF,
+                i_rms=15.0,
+                modulation_index=0.9,
+                power_factor=pf,
+                f_sw=16000.0,
+                t_sink=25.0,
+                pwm=pwm,
+            ),
+        )
+
     high, low = run(Pwm.discontinuous_high), run(Pwm.discontinuous_low)
     assert high.p_inverter == pytest.approx(low.p_inverter, rel=1e-3)
-    by = lambda r: {x.name: x.switch.total + x.diode.total for x in r.roles}  # noqa: E731
+    by = lambda r: {x.name: x.switch.total + x.diode.total for x in r.roles}
     assert by(high)["high-side position"] == pytest.approx(by(low)["low-side position"], rel=1e-3)
     assert by(high)["high-side position"] != pytest.approx(by(high)["low-side position"], rel=0.02)
     # Each switch still rests for a third of the period, so the total sits below
@@ -220,16 +217,24 @@ def test_output_power_stops_at_what_the_stage_can_deliver() -> None:
     device = temperature_independent_device()
     base = dict(v_dc=V_REF, i_rms=10.0, f_sw=8000.0, t_sink=25.0)
     at_limit = solve(device, OperatingPoint(modulation_index=1.0, power_factor=1.0, **base))
-    beyond = solve(device, OperatingPoint(modulation_index=1.5, power_factor=1.2, **base))
+    beyond = solve(device, OperatingPoint(modulation_index=1.5, power_factor=1.0, **base))
     assert beyond.p_out == pytest.approx(at_limit.p_out)
 
 
 def test_a_stopped_output_is_solved_not_divided_by() -> None:
     device = temperature_independent_device()
-    r = solve(device, OperatingPoint(
-        v_dc=V_REF, i_rms=10.0, modulation_index=0.1, power_factor=1.0, f_sw=8000.0, t_sink=25.0,
-        f_out=0.0,
-    ))
+    r = solve(
+        device,
+        OperatingPoint(
+            v_dc=V_REF,
+            i_rms=10.0,
+            modulation_index=0.1,
+            power_factor=1.0,
+            f_sw=8000.0,
+            t_sink=25.0,
+            f_out=0.0,
+        ),
+    )
     assert math.isfinite(r.tj_switch_peak)
 
 
@@ -242,8 +247,14 @@ def test_a_package_holds_its_own_leg_and_the_hottest_of_the_others() -> None:
     from motionsim.engine.solver import _package_losses
 
     one = np.ones(4)
-    chop = [Role("leg A high", 1, one, one, one, one, one, leg="A"), Role("leg A low", 1, one, one, one, one, one, leg="A")]
-    hold = [Role("leg B high", 1, one, one, one, one, one, leg="B"), Role("leg B low", 1, one, one, one, one, one, leg="B")]
+    chop = [
+        Role("leg A high", 1, one, one, one, one, one, leg="A"),
+        Role("leg A low", 1, one, one, one, one, one, leg="A"),
+    ]
+    hold = [
+        Role("leg B high", 1, one, one, one, one, one, leg="B"),
+        Role("leg B low", 1, one, one, one, one, one, leg="B"),
+    ]
     each = [10.0, 4.0, 3.0, 1.0]
     # A leg a package: each package carries its own leg.
     assert _package_losses(chop + hold, each, 1) == [14.0, 14.0, 4.0, 4.0]
@@ -262,8 +273,13 @@ def test_a_stalled_discrete_switch_heats_its_case_with_its_worst_position() -> N
     rth_cs = 0.5
     device = temperature_independent_device(rth_cs=rth_cs, topology=Topology.discrete)
     turning = OperatingPoint(
-        v_dc=V_REF, i_rms=15.0, modulation_index=0.05, power_factor=1.0, f_sw=10000.0,
-        t_sink=60.0, f_out=50.0,
+        v_dc=V_REF,
+        i_rms=15.0,
+        modulation_index=0.05,
+        power_factor=1.0,
+        f_sw=10000.0,
+        t_sink=60.0,
+        f_out=50.0,
     )
     stalled = OperatingPoint(**{**turning.__dict__, "f_out": 0.0})
     moving, held = solve(device, turning), solve(device, stalled)
@@ -319,12 +335,14 @@ def test_thermal_cycling_life_counts_swings_and_adds_their_damage() -> None:
 def test_switching_energy_follows_the_gate_resistor_along_the_datasheets_figure() -> None:
     from dataclasses import replace
 
-    from motionsim.engine.solver import gate_factor
+    from motionsim.engine.losses import gate_factor
 
     device = temperature_independent_device()
     op = OperatingPoint(v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.85, f_sw=10000.0, t_sink=60.0)
     base = solve(device, op)
-    device.switch.e_on = device.switch.e_on.model_copy(update={"rg": 10.0, "rg_values": [5.0, 10.0, 40.0], "rg_factor": [0.8, 1.0, 2.2]})
+    device.switch.e_on = device.switch.e_on.model_copy(
+        update={"rg": 10.0, "rg_values": [5.0, 10.0, 40.0], "rg_factor": [0.8, 1.0, 2.2]}
+    )
     assert gate_factor(device.switch.e_on, None) == 1.0 and gate_factor(device.switch.e_on, 10.0) == 1.0
     assert gate_factor(device.switch.e_on, 25.0) == pytest.approx(1.6)
     assert gate_factor(device.switch.e_on, 100.0) == 2.2  # the end of the figure, not beyond it

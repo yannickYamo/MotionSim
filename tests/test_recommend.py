@@ -17,8 +17,11 @@ from motionsim.engine import OperatingPoint, solve
 
 def igbt():
     return linear_device(
-        sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6,
+        sw_curves=[line(25.0, 0.9, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
     )
 
 
@@ -49,7 +52,9 @@ def test_dead_time_from_gate_charge_is_the_three_intervals_of_turn_off() -> None
 def test_dead_time_for_an_igbt_uses_tabulated_times_with_a_larger_margin() -> None:
     device = igbt()
     op = OperatingPoint(v_dc=300, i_rms=0, modulation_index=0, power_factor=1, f_sw=8000, t_sink=60)
-    assert recommend.dead_time(device, op).value == {}  # nothing to work from
+    # Nothing on the datasheet to work one out from: the usual figure, said to be one.
+    usual = recommend.dead_time(device, op)
+    assert usual.value["t_dead"] == 1e-6 and "usual for an IGBT" in usual.lines[0]
     device.timing = SwitchingTimes(t_d_off=150e-9, t_f=50e-9, source=Source(kind="synthetic"))
     r = recommend.dead_time(device, op)
     assert r.value["t_dead"] == pytest.approx(2.0 * (1.1 * 200e-9 + 50e-9))
@@ -105,10 +110,28 @@ def test_heatsink_is_the_temperature_room_over_the_loss() -> None:
         return max(r.tj_switch_peak, r.tj_diode_peak), r.p_inverter
 
     rise, loss = evaluate(0.0)
-    r = recommend.heatsink(device, 40.0, evaluate, margin=25.0)
+    # With no limit on the heatsink itself, the junction decides.
+    r = recommend.heatsink(device, 40.0, evaluate, margin=25.0, sink_limit=1000.0)
     limit = device.ratings.tj_max - 25.0
     assert r.value["t_sink"] == pytest.approx(limit - rise, abs=0.2)
     assert r.value["rth_sink"] == pytest.approx((limit - rise - 40.0) / loss, rel=0.01)
+    # A junction that binds below 100 °C of heatsink is what decides, as before.
+    hot = recommend.heatsink(device, 40.0, lambda t: (t + 80.0, loss), margin=25.0)
+    assert hot.value["t_sink"] == pytest.approx(limit - 80.0, abs=0.2) and "sink_limit" not in hot.value
+
+
+def test_a_heatsink_is_kept_to_100_degrees_whatever_the_junction_would_stand() -> None:
+    device = igbt()
+    cool = lambda t: (t + 5.0, 10.0)
+    r = recommend.heatsink(device, 40.0, cool)
+    # 100 °C of heatsink in 40 °C air carrying 10 W: 6 K/W. The junction alone would have allowed 120 °C.
+    assert r.value["t_sink"] == 100.0 and r.value["rth_sink"] == pytest.approx(6.0) and r.value["sink_limit"] == 100.0
+    assert "kept at or below 100 °C" in r.lines[0] and "105 °C" in r.lines[0]
+    # The limit is the user's to set, and in air hotter than it the junction decides.
+    assert recommend.heatsink(device, 40.0, cool, sink_limit=80.0).value["rth_sink"] == pytest.approx(4.0)
+    assert recommend.heatsink(device, 110.0, cool).value["t_sink"] == pytest.approx(
+        device.ratings.tj_max - 25.0 - 5.0, abs=0.2
+    )
 
 
 def test_no_heatsink_is_enough_when_the_junction_is_too_hot_at_ambient() -> None:
@@ -140,10 +163,15 @@ def test_an_open_gate_drive_is_filled_with_the_smallest_resistors_the_limits_all
 def test_a_device_with_measured_energy_points_to_the_datasheets_resistor() -> None:
     from motionsim.recommend import choose_gate_drive
 
-    device = linear_device(sw_curves=[line(25.0, 1.0, 0.02)], d_curves=[line(25.0, 1.0, 0.02)], k_on=1e-5, k_off=1e-5, k_rr=1e-6)
+    device = linear_device(
+        sw_curves=[line(25.0, 1.0, 0.02)], d_curves=[line(25.0, 1.0, 0.02)], k_on=1e-5, k_off=1e-5, k_rr=1e-6
+    )
     op = OperatingPoint(v_dc=300.0, i_rms=10.0, modulation_index=0.8, power_factor=0.9, f_sw=8000.0, t_sink=60.0)
     kept = choose_gate_drive(device, op, 15.0)
-    assert kept.kind == "datasheet" and kept.op is op and "measured switching energy" in kept.lines[0]
+    assert kept.kind == "datasheet" and "measured switching energy" in kept.lines[0]
+    # Nothing of the gate drive is changed; an IGBT with no turn-off times is given the usual dead time, and told so.
+    assert (kept.op.rg_on, kept.op.rg_off, kept.op.v_drive) == (op.rg_on, op.rg_off, op.v_drive)
+    assert kept.op.t_dead == 1e-6 and any("usual for an IGBT" in text for text in kept.lines)
 
 
 def test_a_chosen_gate_resistor_is_never_below_the_transistors_own() -> None:

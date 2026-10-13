@@ -29,10 +29,16 @@ K_SLOW, K_FAST = 70e-6, 18e-6  # J/A, turn-on and turn-off together
 
 def pair():
     """Two devices alike but for this: one drops less and switches slower."""
+
     def build(name, v0, k):
         d = linear_device(
-            sw_curves=[line(25.0, v0, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-            k_on=0.6 * k, k_off=0.4 * k, k_rr=5e-6, rth_sw=0.2, rth_d=0.2,
+            sw_curves=[line(25.0, v0, 0.03)],
+            d_curves=[line(25.0, 1.0, 0.025)],
+            k_on=0.6 * k,
+            k_off=0.4 * k,
+            k_rr=5e-6,
+            rth_sw=0.2,
+            rth_d=0.2,
         )
         d.part_number = name
         return d
@@ -48,9 +54,7 @@ def test_two_devices_cross_where_the_closed_forms_say() -> None:
     slow, fast = pair()
 
     def at(f_sw):
-        return OperatingPoint(
-            v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=f_sw, t_sink=25.0
-        )
+        return OperatingPoint(v_dc=V_REF, i_rms=i_rms, modulation_index=m, power_factor=pf, f_sw=f_sw, t_sink=25.0)
 
     assert [r.device.part_number for r in compare([fast, slow], at(0.8 * f_cross))] == ["SLOW", "FAST"]
     assert [r.device.part_number for r in compare([slow, fast], at(1.2 * f_cross))] == ["FAST", "SLOW"]
@@ -85,7 +89,9 @@ def test_the_margin_is_counted_from_the_top_of_the_range_and_said_when_it_differ
     by = {c.device.part_number: c for c in ranked}
     more = by["COOL"].margin - by["HOT"].margin
     assert more > 5
-    assert f"synthetic COOL has {more:.0f} °C more margin to its junction limit at the design point" in " ".join(explain(ranked))
+    assert f"synthetic COOL has {more:.0f} °C more margin to its junction limit at the design point" in " ".join(
+        explain(ranked)
+    )
 
     alike = propose([igbt("A", 0.90), igbt("B", 0.92)], MOTOR, 3000, 2.0, BASE)
     assert "more margin" not in " ".join(explain(alike))
@@ -112,14 +118,19 @@ def test_the_switching_footing_says_what_each_figure_rests_on() -> None:
 
     charge = switching_footing(fet(), fet_op())
     assert (charge.kind, charge.text) == (
-        "from charge", "estimated from gate and output charge, with 2 Ω on, 1 Ω off at 5 V drive"
+        "from charge",
+        "estimated from gate and output charge, with 2 Ω on, 1 Ω off at 5 V drive",
     )
 
 
 def test_devices_on_unlike_data_are_said_to_be() -> None:
     gate = fet_op(i_rms=0.0, t_dead=2e-7)
     mixed = propose(
-        [igbt("MEASURED", 0.9), fet()], MOTOR, 3000, 2.0, BASE,
+        [igbt("MEASURED", 0.9), fet()],
+        MOTOR,
+        3000,
+        2.0,
+        BASE,
         tune=lambda d: gate if d.switch.kind == "mosfet" else BASE,
     )
     assert all(c.design is not None for c in mixed)
@@ -140,10 +151,26 @@ def test_the_command_line_ranks_a_part_that_has_charge_data_only(tmp_path, capsy
     part.part_number = "CHARGE-ONLY"
     path = tmp_path / "fet.yaml"
     save_device(part, path)
-    code = cli.main([
-        "propose", str(path), "--vdc", "48", "--motor", str(EXAMPLES / "motor_robot_joint_pmsm.yaml"),
-        "--fsw", "20000", "--tsink", "40", "--tdead", "2e-7", "--rpm", "1000", "--torque", "1",
-    ])
+    code = cli.main(
+        [
+            "propose",
+            str(path),
+            "--vdc",
+            "48",
+            "--motor",
+            str(EXAMPLES / "motor_robot_joint_pmsm.yaml"),
+            "--fsw",
+            "20000",
+            "--tsink",
+            "40",
+            "--tdead",
+            "2e-7",
+            "--rpm",
+            "1000",
+            "--torque",
+            "1",
+        ]
+    )
     out = capsys.readouterr().out
     assert code == 0
     assert "gate drive chosen for the lowest loss within the limits" in out
@@ -153,9 +180,19 @@ def test_the_command_line_ranks_a_part_that_has_charge_data_only(tmp_path, capsy
 
 def test_the_command_line_takes_parallel_devices_and_a_motor_temperature(capsys) -> None:
     point = [
-        str(EXAMPLES / "synthetic_igbt_600v_30a.yaml"), "--vdc", "300", "--motor",
-        str(EXAMPLES / "motor_appliance_pmsm.yaml"), "--fsw", "16000", "--tsink", "70",
-        "--rpm", "3000", "--torque", "6",
+        str(EXAMPLES / "synthetic_igbt_600v_30a.yaml"),
+        "--vdc",
+        "300",
+        "--motor",
+        str(EXAMPLES / "motor_appliance_pmsm.yaml"),
+        "--fsw",
+        "16000",
+        "--tsink",
+        "70",
+        "--rpm",
+        "3000",
+        "--torque",
+        "6",
     ]
     assert cli.main(["motor", *point]) == 0
     plain = capsys.readouterr().out

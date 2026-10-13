@@ -32,7 +32,8 @@ import numpy as np
 from motionsim.device.schema import Device
 from motionsim.engine.modulation import Role
 from motionsim.engine.solver import OperatingPoint, Result, solve_roles, thermal_network
-from motionsim.transient import _Chip
+from motionsim.text import written
+from motionsim.transient import ChipState
 
 LEGS = "abcd"
 MAX_SAMPLES = 8192
@@ -103,18 +104,30 @@ def roles(trajectory: Trajectory) -> list[Role]:
         outward, inward = i > 0, i < 0
         switching = (d > 0) & (d < 1)
         zero = np.zeros_like(i)
-        out.append(Role(
-            f"leg {leg.upper()} high side", 1, np.abs(i),
-            np.where(outward, d, zero), np.where(inward, d, zero),
-            (outward & switching).astype(float), (inward & switching).astype(float),
-            leg=leg,
-        ))
-        out.append(Role(
-            f"leg {leg.upper()} low side", 1, np.abs(i),
-            np.where(inward, 1 - d, zero), np.where(outward, 1 - d, zero),
-            (inward & switching).astype(float), (outward & switching).astype(float),
-            leg=leg,
-        ))
+        out.append(
+            Role(
+                f"leg {leg.upper()} high side",
+                1,
+                np.abs(i),
+                np.where(outward, d, zero),
+                np.where(inward, d, zero),
+                (outward & switching).astype(float),
+                (inward & switching).astype(float),
+                leg=leg,
+            )
+        )
+        out.append(
+            Role(
+                f"leg {leg.upper()} low side",
+                1,
+                np.abs(i),
+                np.where(inward, 1 - d, zero),
+                np.where(outward, 1 - d, zero),
+                (inward & switching).astype(float),
+                (outward & switching).astype(float),
+                leg=leg,
+            )
+        )
     return out
 
 
@@ -138,11 +151,13 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
     starting at the heatsink temperature, using the same losses.
     """
     stage = roles(trajectory)
-    power = sum(
-        float(np.mean(trajectory.duty[leg] * trajectory.current[leg])) for leg in trajectory.legs
-    ) * op.v_dc
+    power = sum(float(np.mean(trajectory.duty[leg] * trajectory.current[leg])) for leg in trajectory.legs) * op.v_dc
     result = solve_roles(
-        device, stage, op, period=trajectory.duration, p_out=power,
+        device,
+        stage,
+        op,
+        period=trajectory.duration,
+        p_out=power,
         extra_notes=["trajectory: taken to repeat without end for the losses and settled temperatures"],
     )
     chips = {"switch": device.switch}
@@ -157,7 +172,7 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
             mean = role.switch.total if name == "switch" else role.diode.total
             settled = role.tj_switch if name == "switch" else role.tj_diode
             static = settled - network.rth * mean - op.t_sink
-            chip = _Chip(network)
+            chip = ChipState(network)
             for k, p in enumerate(wave):
                 chip.advance(float(p), dt)
                 hottest[k] = max(hottest[k], op.t_sink + static + chip.rise)
@@ -174,9 +189,9 @@ def example(f_out: float = 50.0, i_rms: float = 10.0, m: float = 0.8, pf: float 
     ]
     lag = np.arccos(pf)
     for k in range(n):
-        row = [f"{(k + 0.5) / (n * f_out):.6g}"]
+        row = [f"{written((k + 0.5) / (n * f_out), 6)}"]
         for shift in (0.0, -2 * np.pi / 3, 2 * np.pi / 3):
-            row.append(f"{np.sqrt(2) * i_rms * np.sin(theta[k] + shift - lag):.5g}")
-            row.append(f"{0.5 * (1 + m * np.sin(theta[k] + shift)):.5g}")
+            row.append(f"{written(np.sqrt(2) * i_rms * np.sin(theta[k] + shift - lag), 5)}")
+            row.append(f"{written(0.5 * (1 + m * np.sin(theta[k] + shift)), 5)}")
         lines.append(",".join(row))
     return "\n".join(lines) + "\n"

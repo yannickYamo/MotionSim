@@ -35,9 +35,7 @@ class Cycle:
 
     def _mean(self, value) -> float:
         solved = self.solved
-        return sum(value(s) * s.sample.duration for s in solved) / sum(
-            s.sample.duration for s in solved
-        )
+        return sum(value(s) * s.sample.duration for s in solved) / sum(s.sample.duration for s in solved)
 
     @property
     def mean_loss(self) -> float:
@@ -56,10 +54,7 @@ class Cycle:
     @property
     def loss_energy(self) -> float:
         """Energy lost in the power stage and the motor windings, J."""
-        return sum(
-            (s.point.result.p_inverter + s.point.stage.p_motor_loss) * s.sample.duration
-            for s in self.solved
-        )
+        return sum((s.point.result.p_inverter + s.point.stage.p_motor_loss) * s.sample.duration for s in self.solved)
 
     @property
     def dc_power(self) -> list[float]:
@@ -72,7 +67,11 @@ class Cycle:
 
 
 def run_cycle(
-    device: Device, motor, load: Load, profile: Profile, base: OperatingPoint,
+    device: Device,
+    motor,
+    load: Load,
+    profile: Profile,
+    base: OperatingPoint,
     per_segment: int = 12,
 ) -> Cycle:
     """Solve the power stage at each instant of a motion.

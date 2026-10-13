@@ -36,9 +36,7 @@ def compare(devices: list[Device], op: OperatingPoint) -> list[Row]:
     return sorted(rows, key=lambda r: (r.result is None, r.result.p_inverter if r.result else 0))
 
 
-def sweep_switching_frequency(
-    devices: list[Device], op: OperatingPoint, frequencies: np.ndarray
-) -> np.ndarray:
+def sweep_switching_frequency(devices: list[Device], op: OperatingPoint, frequencies: np.ndarray) -> np.ndarray:
     """Inverter loss per device (rows) and switching frequency (columns); nan where unstable."""
     table = np.full((len(devices), len(frequencies)), np.nan)
     for i, device in enumerate(devices):

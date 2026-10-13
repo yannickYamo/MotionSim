@@ -17,6 +17,7 @@ from motionsim.observe.schema import (
     ReadPoint,
     ReadResult,
 )
+from motionsim.text import written
 
 _UNITS: dict[str, tuple[str, float]] = {
     "v": ("V", 1.0),
@@ -116,8 +117,13 @@ _RANGE = {
 }
 
 _NEEDS_CURRENT = {
-    Quantity.vce_sat, Quantity.vf, Quantity.e_on, Quantity.e_off, Quantity.e_rr,
-    Quantity.rds_on, Quantity.v_sd,
+    Quantity.vce_sat,
+    Quantity.vf,
+    Quantity.e_on,
+    Quantity.e_off,
+    Quantity.e_rr,
+    Quantity.rds_on,
+    Quantity.v_sd,
 }
 _NEEDS_TEMPERATURE = _NEEDS_CURRENT - {Quantity.rds_on, Quantity.v_sd}
 _NEEDS_VOLTAGE = {Quantity.e_on, Quantity.e_off, Quantity.e_rr}
@@ -187,7 +193,7 @@ def check_point(point: ReadPoint, pages: list[str]) -> Observation:
 
     def printed(value: float) -> bool:
         """A condition may be printed in milli or micro units (14 mA for 0.014 A)."""
-        return any(float(f"{value * k:.9g}") in on_page for k in (1, 1e3, 1e6))
+        return any(float(f"{written(value * k, 9)}") in on_page for k in (1, 1e3, 1e6))
 
     for label, condition in (("current", point.current_a), ("voltage", point.voltage_v)):
         if condition is not None and not printed(condition):
@@ -248,9 +254,7 @@ def _check_temperature_order(observations: list[Observation]) -> None:
         rows.sort(key=lambda o: o.tj_c)
         for cold, hot in zip(rows, rows[1:]):
             if hot.typ < cold.typ:
-                hot.flags.append(
-                    f"lower at {hot.tj_c:g} °C than at {cold.tj_c:g} °C; check the two are not swapped"
-                )
+                hot.flags.append(f"lower at {hot.tj_c:g} °C than at {cold.tj_c:g} °C; check the two are not swapped")
                 hot.status = ReviewStatus.flagged
 
 

@@ -12,6 +12,7 @@ from motionsim.cooling import BOARD_LIMIT
 from motionsim.device.schema import ChipKind, Device
 from motionsim.engine.limits import hottest
 from motionsim.engine.solver import OperatingPoint, Result, Validity
+from motionsim.text import written
 
 
 class Level(IntEnum):
@@ -39,20 +40,29 @@ def ripple_checks(point, op: OperatingPoint) -> list[Check]:
     if point.ripple_pp is not None and peak > 0:
         share = point.ripple_pp / peak
         text = (
-            f"the motor current carries {point.ripple_pp:.3g} A of ripple, peak to peak, at the "
-            f"switching frequency: {share:.0%} of its {peak:.3g} A peak"
+            f"the motor current carries {written(point.ripple_pp, 3)} A of ripple, peak to peak, at the "
+            f"switching frequency: {share:.0%} of its {written(peak, 3)} A peak"
         )
         if share > 0.2:
-            out.append(Check(Level.caution, "ripple", text + ". A motor with so little inductance wants a higher "
-                             "switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple"))
+            out.append(
+                Check(
+                    Level.caution,
+                    "ripple",
+                    text + ". A motor with so little inductance wants a higher "
+                    "switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple",
+                )
+            )
         else:
             out.append(Check(Level.ok, "ripple", text))
     if point.capacitor_rms is not None:
-        out.append(Check(
-            Level.ok, "link capacitor",
-            f"the DC-link capacitor carries {point.capacitor_rms:.3g} A rms of ripple at the switching "
-            "frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top",
-        ))
+        out.append(
+            Check(
+                Level.ok,
+                "link capacitor",
+                f"the DC-link capacitor carries {written(point.capacitor_rms, 3)} A rms of ripple at the switching "
+                "frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top",
+            )
+        )
     return out
 
 
@@ -73,11 +83,19 @@ def trip_check(motor, rpm: float, v_dc: float, v_rated: float) -> Check | None:
         return None  # no magnets on the rotor, or a commutator in the way
     text = f"if the drive stops switching at {abs(rpm):.0f} rpm, the motor's back-EMF is {volts:.0f} V between lines"
     if volts > v_rated:
-        return Check(Level.fail, "trip", text + f", above the device's {v_rated:g} V rating: the diodes would charge "
-                     "the link past it. This needs protection that shorts the motor or burns the energy, or a lower top speed")
+        return Check(
+            Level.fail,
+            "trip",
+            text + f", above the device's {v_rated:g} V rating: the diodes would charge "
+            "the link past it. This needs protection that shorts the motor or burns the energy, or a lower top speed",
+        )
     if volts > v_dc:
-        return Check(Level.caution, "trip", text + f", above the {v_dc:g} V supply: the motor would charge the link "
-                     "through the diodes until it slows. The link capacitor and the supply have to stand that")
+        return Check(
+            Level.caution,
+            "trip",
+            text + f", above the {v_dc:g} V supply: the motor would charge the link "
+            "through the diodes until it slows. The link capacitor and the supply have to stand that",
+        )
     return Check(Level.ok, "trip", text + ", below the supply: a trip there does no harm to the link")
 
 
@@ -102,11 +120,14 @@ def check(
     if used > 1:
         out.append(Check(Level.fail, "voltage", f"supply {op.v_dc:g} V is above the {r.v_max:g} V rating"))
     elif used > voltage_share:
-        out.append(Check(
-            Level.caution, "voltage",
-            f"supply is {used:.0%} of the {r.v_max:g} V rating; {voltage_share:.0%} or less leaves "
-            "room for switching overshoot, and a battery or braking drive needs more room still",
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "voltage",
+                f"supply is {used:.0%} of the {r.v_max:g} V rating; {voltage_share:.0%} or less leaves "
+                "room for switching overshoot, and a battery or braking drive needs more room still",
+            )
+        )
     else:
         out.append(Check(Level.ok, "voltage", f"supply is {used:.0%} of the {r.v_max:g} V rating"))
     for warning in result.rating_warnings:
@@ -119,28 +140,39 @@ def check(
     # A range whose ends read the same says nothing, and is left out.
     wide = bool(result.tj_peak_range) and f"{low:.0f}" != f"{high:.0f}"
     spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions)" if wide else ""
-    if low > r.tj_max:
-        out.append(Check(
-            Level.fail, "temperature",
-            f"junction peaks at {peak:.0f} °C{spread}, above the {r.tj_max:g} °C rating",
-        ))
+    if peak > r.tj_max:
+        out.append(
+            Check(
+                Level.fail,
+                "temperature",
+                f"junction peaks at {peak:.0f} °C{spread}, above the {r.tj_max:g} °C rating",
+            )
+        )
     elif high > r.tj_max:
-        out.append(Check(
-            Level.caution, "temperature",
-            f"junction peaks at {peak:.0f} °C{spread}; the upper end is above the "
-            f"{r.tj_max:g} °C rating",
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "temperature",
+                f"junction peaks at {peak:.0f} °C{spread}; the upper end is above the {r.tj_max:g} °C rating",
+            )
+        )
     elif r.tj_max - high < junction_margin:
-        out.append(Check(
-            Level.caution, "temperature",
-            f"junction peaks at {peak:.0f} °C{spread}, only {r.tj_max - high:.0f} °C below the "
-            f"{r.tj_max:g} °C rating",
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "temperature",
+                f"junction peaks at {peak:.0f} °C{spread}, only {r.tj_max - high:.0f} °C below the "
+                f"{r.tj_max:g} °C rating",
+            )
+        )
     else:
-        out.append(Check(
-            Level.ok, "temperature",
-            f"junction peaks at {peak:.0f} °C{spread}, {r.tj_max - high:.0f} °C below its rating",
-        ))
+        out.append(
+            Check(
+                Level.ok,
+                "temperature",
+                f"junction peaks at {peak:.0f} °C{spread}, {r.tj_max - high:.0f} °C below its rating",
+            )
+        )
 
     # A rating is one device's. With several in parallel each carries its share of the
     # position's current, which is what the solver gives it too.
@@ -148,53 +180,81 @@ def check(
 
     shared = max(int(op.parallel), 1)
     each = i_peak * hot_share(device, shared)  # the one that carries most
-    said = f"{each:.3g} A" if shared == 1 else f"{each:.3g} A a device ({i_peak:.3g} A at the switch, shared by {shared})"
+    said = (
+        f"{written(each, 3)} A"
+        if shared == 1
+        else f"{written(each, 3)} A a device ({written(i_peak, 3)} A at the switch, shared by {shared})"
+    )
     if each > r.i_nominal:
-        out.append(Check(
-            Level.caution, "current",
-            f"peak current {said} is above the device's rated {r.i_nominal:g} A; check "
-            "what case temperature that rating assumes",
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "current",
+                f"peak current {said} is above the device's rated {r.i_nominal:g} A; check "
+                "what case temperature that rating assumes",
+            )
+        )
     else:
         out.append(Check(Level.ok, "current", f"peak current {said} against a {r.i_nominal:g} A rating"))
     # The continuous rating may be passed for a moment; the pulsed rating may not.
     if r.i_pulsed is not None and each > r.i_pulsed:
-        out.append(Check(
-            Level.fail, "current",
-            f"peak current {each:.3g} A a device is above its pulsed rating of {r.i_pulsed:g} A, "
-            "which nothing may exceed even briefly",
-        ))
+        out.append(
+            Check(
+                Level.fail,
+                "current",
+                f"peak current {written(each, 3)} A a device is above its pulsed rating of {r.i_pulsed:g} A, "
+                "which nothing may exceed even briefly",
+            )
+        )
     if r.t_sc is not None:
-        out.append(Check(
-            Level.ok, "protection",
-            f"the device stands a short circuit for {r.t_sc * 1e6:.3g} µs: its protection has to see "
-            "the fault and turn it off inside that",
-        ))
+        out.append(
+            Check(
+                Level.ok,
+                "protection",
+                f"the device stands a short circuit for {written(r.t_sc * 1e6, 3)} µs: its protection has to see "
+                "the fault and turn it off inside that",
+            )
+        )
 
     if result.validity is Validity.extrapolated:
         first, more = result.outside[0], len(result.outside) - 1
-        out.append(Check(
-            Level.caution, "data",
-            f"the operating point is outside the datasheet's data: {first}"
-            + (f" (and {more} more, under data support)" if more else ""),
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "data",
+                f"the operating point is outside the datasheet's data: {first}"
+                + (f" (and {more} more, under data support)" if more else ""),
+            )
+        )
     elif result.validity is Validity.assumed:
-        out.append(Check(
-            Level.ok, "data",
-            "inside the data given; part of it is table points or an estimate from charge, with the "
-            "shape between them assumed: listed under data support",
-        ))
+        out.append(
+            Check(
+                Level.ok,
+                "data",
+                "inside the data given; part of it is table points or an estimate from charge, with the "
+                "shape between them assumed: listed under data support",
+            )
+        )
     else:
         out.append(Check(Level.ok, "data", "inside the datasheet's own curves"))
 
     if op.rth_board is not None and result.t_case > BOARD_LIMIT:
-        out.append(Check(
-            Level.caution, "board",
-            f"the board under the hottest package reaches {result.t_case:.0f} °C: ordinary board material "
-            f"is rated to about {BOARD_LIMIT:.0f} °C. Give each package more copper, or a heatsink",
-        ))
+        out.append(
+            Check(
+                Level.caution,
+                "board",
+                f"the board under the hottest package reaches {result.t_case:.0f} °C: ordinary board material "
+                f"is rated to about {BOARD_LIMIT:.0f} °C. Give each package more copper, or a heatsink",
+            )
+        )
     if device.switch.kind is ChipKind.mosfet and op.t_dead == 0:
-        out.append(Check(Level.caution, "dead time", "no dead time given, so its loss is not counted; every half-bridge needs one"))
+        out.append(
+            Check(
+                Level.caution,
+                "dead time",
+                "no dead time given, so its loss is not counted; every half-bridge needs one",
+            )
+        )
     if not result.converged:
         out.append(Check(Level.caution, "solver", "temperatures did not settle"))
     return out

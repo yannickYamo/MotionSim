@@ -38,8 +38,12 @@ def curve_object(voltage_of_current):
     ys = BOTTOM + i / I_MAX * (TOP - BOTTOM)
     pts = list(zip(xs, ys))
     return {
-        "linewidth": 0.96, "path": [("m", pts[0])] + [("l", p) for p in pts[1:]],
-        "x0": xs.min(), "x1": xs.max(), "top": ys.min(), "bottom": ys.max(),
+        "linewidth": 0.96,
+        "path": [("m", pts[0])] + [("l", p) for p in pts[1:]],
+        "x0": xs.min(),
+        "x1": xs.max(),
+        "top": ys.min(),
+        "bottom": ys.max(),
     }
 
 
@@ -55,19 +59,28 @@ def page(*functions):
 
 def table(tj, value, current=40.0, quantity=Quantity.vce_sat) -> Observation:
     return Observation(
-        quantity=quantity, typ=value, max=None, printed_typ=str(value), printed_max=None,
-        unit="V", current_a=current, voltage_v=None, tj_c=tj, page=2,
-        status=ReviewStatus.unverified, flags=[],
+        quantity=quantity,
+        typ=value,
+        max=None,
+        printed_typ=str(value),
+        printed_max=None,
+        unit="V",
+        current_a=current,
+        voltage_v=None,
+        tj_c=tj,
+        page=2,
+        status=ReviewStatus.unverified,
+        flags=[],
     )
 
 
-FIGURE = ReadFigure(
-    page=4, label="Figure 3", shows="saturation voltage", kind=FigureKind.output_characteristic
-)
+FIGURE = ReadFigure(page=4, label="Figure 3", shows="saturation voltage", kind=FigureKind.output_characteristic)
 AXES = ReadAxes(
     label="Figure 3",
-    x=AxisClaim(lo=0, hi=V_MAX, log=False), y=AxisClaim(lo=0, hi=I_MAX, log=False),
-    x_unit="V", y_unit="A",
+    x=AxisClaim(lo=0, hi=V_MAX, log=False),
+    y=AxisClaim(lo=0, hi=I_MAX, log=False),
+    x_unit="V",
+    y_unit="A",
     series=[ReadSeries(name="switch_voltage", tj_c=25), ReadSeries(name="switch_voltage", tj_c=175)],
 )
 
@@ -138,10 +151,16 @@ def test_curves_sharing_a_label_are_read_as_their_upper_envelope() -> None:
     def hot_low_side(i):
         return 0.95 * hot(i)
 
-    axes = AXES.model_copy(update={"series": [
-        ReadSeries(name="switch_voltage", tj_c=25), ReadSeries(name="switch_voltage", tj_c=25),
-        ReadSeries(name="switch_voltage", tj_c=175), ReadSeries(name="switch_voltage", tj_c=175),
-    ]})
+    axes = AXES.model_copy(
+        update={
+            "series": [
+                ReadSeries(name="switch_voltage", tj_c=25),
+                ReadSeries(name="switch_voltage", tj_c=25),
+                ReadSeries(name="switch_voltage", tj_c=175),
+                ReadSeries(name="switch_voltage", tj_c=175),
+            ]
+        }
+    )
     pg = page(hot_low_side, cold, low_side, hot)
     (frame,) = figures.find_frames(pg)
     tables = [table(25, float(cold(40))), table(175, float(hot(40)))]
@@ -155,8 +174,14 @@ def test_curves_sharing_a_label_are_read_as_their_upper_envelope() -> None:
 
 def test_legend_strokes_inside_the_plot_are_not_counted_as_curves() -> None:
     pg = page(cold, hot)
-    legend = {"linewidth": 0.96, "path": [("m", (150.0, 80.0)), ("l", (162.0, 80.0))],
-              "x0": 150.0, "x1": 162.0, "top": 80.0, "bottom": 80.0}
+    legend = {
+        "linewidth": 0.96,
+        "path": [("m", (150.0, 80.0)), ("l", (162.0, 80.0))],
+        "x0": 150.0,
+        "x1": 162.0,
+        "top": 80.0,
+        "bottom": 80.0,
+    }
     pg.curves.append(legend)
     tables = [table(25, float(cold(40))), table(175, float(hot(40)))]
     first, second = run(pg, tables)
@@ -171,14 +196,16 @@ def test_builder_falls_back_to_the_table_when_a_curve_was_set_aside() -> None:
     from motionsim.observe.verify import check
 
     obs = check(read_result(full_points()), DOC, [PAGE], reader="test")
-    hot_table = next(
-        o for o in obs.observations if o.quantity is Quantity.vce_sat and o.tj_c != 25
-    )
+    hot_table = next(o for o in obs.observations if o.quantity is Quantity.vce_sat and o.tj_c != 25)
     tables = [table(25, float(cold(40))), table(hot_table.tj_c, 1.25 * float(hot(40)))]
-    axes = AXES.model_copy(update={"series": [
-        ReadSeries(name="switch_voltage", tj_c=25),
-        ReadSeries(name="switch_voltage", tj_c=hot_table.tj_c),
-    ]})
+    axes = AXES.model_copy(
+        update={
+            "series": [
+                ReadSeries(name="switch_voltage", tj_c=25),
+                ReadSeries(name="switch_voltage", tj_c=hot_table.tj_c),
+            ]
+        }
+    )
     pg = page(cold, hot)
     (frame,) = figures.find_frames(pg)
     obs.curves = digitise_family(pg, frame, FIGURE, axes, tables)

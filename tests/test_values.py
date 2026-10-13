@@ -40,6 +40,7 @@ def typed(**changes):
 
 # ---------- no heatsink: the figures used ----------
 
+
 def test_the_usual_junction_to_air_figures_are_the_published_ones() -> None:
     for outline, figure in (("TO-220", 62.0), ("TO-247", 40.0), ("TO-263", 43.0)):
         got = no_heatsink(typed(outline=outline))
@@ -56,6 +57,7 @@ def test_copper_is_counted_against_the_area_the_datasheet_used() -> None:
 
 # ---------- the solver: parallel devices, ranges, uneven sharing ----------
 
+
 def test_two_in_parallel_on_a_board_are_warmed_by_all_the_stage_loses() -> None:
     op = replace(fet_op(), t_sink=40.0, rth_free=30.0, rth_board=4.0, parallel=2)
     r = solve(fet(), op)
@@ -70,8 +72,16 @@ def test_the_range_across_assumptions_sits_on_the_settled_heatsink(parallel) -> 
     through a heatsink in air, both ends of the range are on the heatsink where all the
     stage's loss puts it: the same as a heatsink held there."""
     module = load_device(MODULE)
-    air = OperatingPoint(v_dc=300, i_rms=8, modulation_index=0.9, power_factor=0.85, f_sw=8000, t_sink=40,
-                         rth_sink=1.5, parallel=parallel)
+    air = OperatingPoint(
+        v_dc=300,
+        i_rms=8,
+        modulation_index=0.9,
+        power_factor=0.85,
+        f_sw=8000,
+        t_sink=40,
+        rth_sink=1.5,
+        parallel=parallel,
+    )
     r = solve(module, air)
     assert r.tj_peak_range is not None and r.tj_peak_range[1] - r.tj_peak_range[0] > 1.0
     assert r.t_sink == pytest.approx(40.0 + 1.5 * r.p_inverter, abs=0.1)
@@ -82,8 +92,17 @@ def test_the_range_across_assumptions_sits_on_the_settled_heatsink(parallel) -> 
 
 def test_the_range_on_a_shared_board_carries_the_neighbours_share() -> None:
     module = load_device(MODULE)
-    op = OperatingPoint(v_dc=300, i_rms=4, modulation_index=0.9, power_factor=0.85, f_sw=8000, t_sink=30,
-                        rth_free=2.0, rth_board=0.6, parallel=2)
+    op = OperatingPoint(
+        v_dc=300,
+        i_rms=4,
+        modulation_index=0.9,
+        power_factor=0.85,
+        f_sw=8000,
+        t_sink=30,
+        rth_free=2.0,
+        rth_board=0.6,
+        parallel=2,
+    )
     r = solve(module, op)
     assert r.tj_peak_range is not None
     one = r.p_inverter / 2  # each module holds half the stage's loss
@@ -96,8 +115,17 @@ def test_no_end_of_the_range_is_cooler_than_the_board() -> None:
     """Two modules with a short path of their own on a board with a long one: the board,
     warmed by all the stage loses, sets the temperature, at both ends of the range."""
     module = load_device(MODULE)
-    op = OperatingPoint(v_dc=300, i_rms=4, modulation_index=0.9, power_factor=0.85, f_sw=8000, t_sink=30,
-                        rth_free=0.05, rth_board=1.5, parallel=2)
+    op = OperatingPoint(
+        v_dc=300,
+        i_rms=4,
+        modulation_index=0.9,
+        power_factor=0.85,
+        f_sw=8000,
+        t_sink=30,
+        rth_free=0.05,
+        rth_board=1.5,
+        parallel=2,
+    )
     r = solve(module, op)
     assert r.tj_peak_range is not None
     assert r.t_case == pytest.approx(30.0 + 1.5 * r.p_inverter, abs=0.2)
@@ -117,16 +145,36 @@ def test_devices_that_share_unevenly_still_load_one_heatsink_with_all_they_lose(
 
 # ---------- a heatsink followed as it warms ----------
 
+
 def test_a_heatsink_with_heat_capacity_warms_from_the_air_as_one_time_constant() -> None:
-    from motionsim.motor.machines import _ADAPTER
+    from motionsim.motor.machines import ADAPTER
 
     values = page.setup(page.Workspace(Path("/tmp") / "motionsim-values"))["motors"]["pmsm"]["values"]
-    motor = _ADAPTER.validate_python({"type": "pmsm", **values})
-    op = OperatingPoint(v_dc=48, i_rms=0, modulation_index=0, power_factor=1, f_sw=20e3, t_sink=30, v_drive=10,
-                        rg_on=5, rg_off=5, t_dead=1.5e-7, pwm=motor.default_pwm, rth_sink=4.0)
+    motor = ADAPTER.validate_python({"type": "pmsm", **values})
+    op = OperatingPoint(
+        v_dc=48,
+        i_rms=0,
+        modulation_index=0,
+        power_factor=1,
+        f_sw=20e3,
+        t_sink=30,
+        v_drive=10,
+        rg_on=5,
+        rg_off=5,
+        t_dead=1.5e-7,
+        pwm=motor.default_pwm,
+        rth_sink=4.0,
+    )
     samples = page._mission({"time": [0, 100, 200], "rpm": [1500.0] * 3, "torque": [2.0] * 3})
-    cycle, trace = follow(load_device(MOSFET), motor, None, None, op, samples=samples,
-                          heatsink=Heatsink(rth=4.0, capacity=50.0, t_ambient=30.0))
+    cycle, trace = follow(
+        load_device(MOSFET),
+        motor,
+        None,
+        None,
+        op,
+        samples=samples,
+        heatsink=Heatsink(rth=4.0, capacity=50.0, t_ambient=30.0),
+    )
     loss = cycle.mean_loss
     # One thermal mass, from the air: T = air + P R (1 - exp(-t / RC)), RC = 200 s. The
     # motion is three instants of 100 s.
@@ -135,6 +183,7 @@ def test_a_heatsink_with_heat_capacity_warms_from_the_air_as_one_time_constant()
 
 
 # ---------- dead time ----------
+
 
 def test_the_dead_time_figures_as_literals() -> None:
     # The made-up GaN part: its delays add to 4.95 ns; 1.2 × (1.1 × 4.95 + 10) = 18.5 ns,
@@ -160,21 +209,41 @@ def test_dead_time_loss_is_the_body_diode_carrying_the_current_for_both_edges() 
     assert r.switch.dead_time == pytest.approx(expected, rel=0.01)
 
 
-def test_an_igbt_is_given_no_dead_time_and_no_caution_for_it() -> None:
+def test_an_igbt_is_given_a_dead_time_too_so_that_neither_kind_is_favoured() -> None:
+    from motionsim.drivers import _usable
+
     device = igbt("made-up", 1.0)
-    device.timing = SwitchingTimes(t_d_off=150e-9, t_f=50e-9, source=Source(kind="synthetic"))
     op = OperatingPoint(v_dc=300, i_rms=10, modulation_index=0.8, power_factor=0.9, f_sw=8000, t_sink=60)
-    gate = choose_gate_drive(device, op, 14.0)
-    assert gate.t_dead is None and gate.op.t_dead == 0.0
-    assert "dead time" not in [c.topic for c in guard.check(device, gate.op, solve(device, gate.op), 14.0)]
+    # No turn-off times on its datasheet: the usual 1 µs, and said.
+    plain = choose_gate_drive(device, op, 14.0)
+    assert plain.t_dead == 1e-6 and any("usual for an IGBT" in text for text in plain.lines)
+    # With them: twice (a tenth longer, plus 50 ns between the driver's channels): 2 × (1.1 × 200 + 50) = 540 ns.
+    device.timing = SwitchingTimes(t_d_off=150e-9, t_f=50e-9, source=Source(kind="synthetic"))
+    timed = choose_gate_drive(device, op, 14.0)
+    assert timed.t_dead == pytest.approx(540e-9) and any("turn-off times" in text for text in timed.lines)
+    # What it costs an IGBT is voltage, not loss: 2 × 540 ns × 8 kHz is 0.86% of the pulse.
+    assert _usable(device, timed.op, 0.0) == pytest.approx(1 - 2 * 540e-9 * 8000)
+    assert solve(device, timed.op).p_inverter == pytest.approx(solve(device, op).p_inverter)
+    assert "dead time" not in [c.topic for c in guard.check(device, timed.op, solve(device, timed.op), 14.0)]
+    # A transistor in the same comparison has one as well.
+    fet_gate = choose_gate_drive(typed(), replace(fet_op(), t_dead=0.0, v_drive=10.0, rg_on=5.0, rg_off=5.0), 20.0)
+    assert fet_gate.t_dead and _usable(typed(), fet_gate.op, 0.0) < 1.0
+    # A dead time the user gave is left alone, and a module with its own drivers sets its own.
+    assert choose_gate_drive(device, replace(op, t_dead=2e-6), 14.0).op.t_dead == 2e-6
+    device.package.integrated_driver = True
+    assert choose_gate_drive(device, op, 14.0).op.t_dead == 0.0
 
 
 def test_the_cost_of_a_firmware_default_is_the_extra_diode_time(tmp_path) -> None:
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     motors = page.setup(ws)["motors"]
-    request = {"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "device": key, "devices": [key],
-               "conditions": {**motors["pmsm"]["start"], "t_sink": 60}}
+    request = {
+        "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+        "device": key,
+        "devices": [key],
+        "conditions": {**motors["pmsm"]["start"], "t_sink": 60},
+    }
     dead = next(x for x in page.recommendations(request, ws)["items"] if x["topic"] == "dead time")
     assert any("at 500 ns" in line for line in dead["lines"])
     now = page.proposal(request, ws)["candidates"][0]
@@ -185,6 +254,7 @@ def test_the_cost_of_a_firmware_default_is_the_extra_diode_time(tmp_path) -> Non
 
 
 # ---------- a typed part ----------
+
 
 def test_output_capacitance_stands_in_for_a_missing_output_charge() -> None:
     figures = {k: v for k, v in FIGURES.items() if k != "q_oss"}
@@ -202,14 +272,20 @@ def test_what_is_optional_and_what_is_not() -> None:
         assert caught.value.field == missing
 
 
-@pytest.mark.parametrize("change, field", [
-    ({"rds_hot_tj": 20}, "rds_hot_tj"), ({"rds_hot_tj": 200}, "rds_hot_tj"),
-    ({"tj_max": 90}, "tj_max"), ({"oss_v": 150}, "oss_v"),
-    ({"rds_on": 0.004}, "rds_on"),  # ohm typed where milliohm is asked: 4 µΩ
-    ({"q_gs": 0.02}, "q_gs"),  # microcoulomb typed where nanocoulomb is asked
-    ({"v_plateau": 46}, "v_plateau"), ({"v_th": True}, "v_th"),  # "yes" is not 1 V
-    ({"rds_on_hot": None}, "rds_on_hot"),  # a hot temperature with no hot figure
-])
+@pytest.mark.parametrize(
+    "change, field",
+    [
+        ({"rds_hot_tj": 20}, "rds_hot_tj"),
+        ({"rds_hot_tj": 200}, "rds_hot_tj"),
+        ({"tj_max": 90}, "tj_max"),
+        ({"oss_v": 150}, "oss_v"),
+        ({"rds_on": 0.004}, "rds_on"),  # ohm typed where milliohm is asked: 4 µΩ
+        ({"q_gs": 0.02}, "q_gs"),  # microcoulomb typed where nanocoulomb is asked
+        ({"v_plateau": 46}, "v_plateau"),
+        ({"v_th": True}, "v_th"),  # "yes" is not 1 V
+        ({"rds_on_hot": None}, "rds_on_hot"),  # a hot temperature with no hot figure
+    ],
+)
 def test_more_slips_are_refused_where_they_sit(change, field) -> None:
     with pytest.raises(Mistyped) as caught:
         from_figures({**FIGURES, **change})
@@ -235,8 +311,10 @@ def test_figures_that_are_not_figures_are_refused_not_a_fault(tmp_path, figures)
 
 def test_typed_parts_are_never_written_over_each_other_or_over_the_made_up_ones(tmp_path) -> None:
     ws = page.Workspace(tmp_path)
-    names = {page.add_typed({**FIGURES, "vendor": v, "part_number": p}, ws)["name"]
-             for v, p in (("example", "mosfet"), ("Maker", "Ω"), ("Maker", ".."), ("", "device"))}
+    names = {
+        page.add_typed({**FIGURES, "vendor": v, "part_number": p}, ws)["name"]
+        for v, p in (("example", "mosfet"), ("Maker", "Ω"), ("Maker", ".."), ("", "device"))
+    }
     assert len(names) == 4 and all(n.startswith("typed-") for n in names)
     assert {"example", "example-mosfet"} <= {d["id"] for d in ws.listing() if d["example"]}
     with pytest.raises(page.Refused):
@@ -245,11 +323,12 @@ def test_typed_parts_are_never_written_over_each_other_or_over_the_made_up_ones(
 
 # ---------- the checks ----------
 
+
 def test_the_board_caution_starts_at_120_degrees_and_only_on_a_board() -> None:
     d = fet()
     op = replace(fet_op(), t_sink=40.0, rth_free=30.0, rth_board=4.0)
     r = solve(d, op)
-    said = lambda t, o: "board" in [c.topic for c in guard.check(d, o, replace(r, t_case=t), 28.0)]  # noqa: E731
+    said = lambda t, o: "board" in [c.topic for c in guard.check(d, o, replace(r, t_case=t), 28.0)]
     assert not said(115.0, op) and said(125.0, op)
     assert not said(130.0, replace(op, rth_free=None, rth_board=None))  # a heatsink is not a board
 
@@ -258,12 +337,15 @@ def test_a_temperature_range_is_said_only_when_it_is_one() -> None:
     d = fet()
     op = fet_op()
     r = solve(d, op)
-    text = lambda rng: next(c.message for c in guard.check(d, op, replace(r, tj_peak_range=rng), 28.0) if c.topic == "temperature")  # noqa: E731
+    text = lambda rng: next(
+        c.message for c in guard.check(d, op, replace(r, tj_peak_range=rng), 28.0) if c.topic == "temperature"
+    )
     assert "(100 to 140 °C across the thermal assumptions)" in text((100.0, 140.0))
     assert "across the thermal assumptions" not in text((100.2, 100.4))
 
 
 # ---------- the heatsink advice ----------
+
 
 @pytest.mark.parametrize("kind, rth_jc", [("pmsm", 0.6), ("bldc", 0.6), ("dc", 0.6), ("pmsm", 15.0)])
 def test_the_no_heatsink_figure_holds_when_it_is_fed_back(tmp_path, kind, rth_jc) -> None:
@@ -293,8 +375,11 @@ def test_zero_degrees_is_a_temperature(tmp_path) -> None:
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     motors = page.setup(ws)["motors"]
-    request = {"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "device": key,
-               "conditions": {**motors["pmsm"]["start"], "cooling": "none", "t_ambient": 0}}
+    request = {
+        "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+        "device": key,
+        "conditions": {**motors["pmsm"]["start"], "cooling": "none", "t_ambient": 0},
+    }
     sink = next(x for x in page.recommendations(request, ws)["items"] if x["topic"] == "heatsink")
     assert any("into 0 °C air" in line for line in sink["lines"])
     held = {**request, "conditions": {**motors["pmsm"]["start"], "t_sink": 60}, "t_ambient": 25}
@@ -304,10 +389,38 @@ def test_zero_degrees_is_a_temperature(tmp_path) -> None:
 
 # ---------- the command line, by value ----------
 
-COMMON = ["--vdc", "48", "--irms", "10", "--m", "0.8", "--pf", "0.9", "--fsw", "20000",
-          "--vdrive", "10", "--rgon", "5", "--rgoff", "5", "--tdead", "1.5e-7"]
-BASE = OperatingPoint(v_dc=48, i_rms=10, modulation_index=0.8, power_factor=0.9, f_sw=20000, t_sink=30,
-                      v_drive=10, rg_on=5, rg_off=5, t_dead=1.5e-7)
+COMMON = [
+    "--vdc",
+    "48",
+    "--irms",
+    "10",
+    "--m",
+    "0.8",
+    "--pf",
+    "0.9",
+    "--fsw",
+    "20000",
+    "--vdrive",
+    "10",
+    "--rgon",
+    "5",
+    "--rgoff",
+    "5",
+    "--tdead",
+    "1.5e-7",
+]
+BASE = OperatingPoint(
+    v_dc=48,
+    i_rms=10,
+    modulation_index=0.8,
+    power_factor=0.9,
+    f_sw=20000,
+    t_sink=30,
+    v_drive=10,
+    rg_on=5,
+    rg_off=5,
+    t_dead=1.5e-7,
+)
 
 
 def junction(capsys, *flags) -> float:
@@ -318,7 +431,8 @@ def junction(capsys, *flags) -> float:
 def test_the_command_line_cools_as_it_is_told(capsys) -> None:
     device = load_device(MOSFET)
     assert junction(capsys, "--tair", "30", "--rth-heatsink", "4") == pytest.approx(
-        solve(device, replace(BASE, rth_sink=4.0)).tj_switch, abs=0.06)
+        solve(device, replace(BASE, rth_sink=4.0)).tj_switch, abs=0.06
+    )
     alone = junction(capsys, "--tair", "30", "--rth-ja", "45")
     assert alone == pytest.approx(solve(device, replace(BASE, rth_free=45.0 - 0.6)).tj_switch, abs=0.06)
     usual = junction(capsys, "--tair", "30", "--no-heatsink")  # a TO-220: 62 K/W
@@ -328,12 +442,20 @@ def test_the_command_line_cools_as_it_is_told(capsys) -> None:
     assert junction(capsys, "--tsink", "30") < alone < board < small < 175
 
 
-@pytest.mark.parametrize("flags", [
-    [], ["--tair", "30"], ["--rth-ja", "45"], ["--tsink", "60", "--tair", "30", "--rth-heatsink", "2"],
-    ["--tair", "30", "--rth-heatsink", "-5"], ["--tair", "30", "--rth-heatsink", "0"],
-    ["--tair", "30", "--rth-ja", "45", "--rth-heatsink", "4"], ["--tsink", "60", "--board-area", "80"],
-    ["--tair", "30", "--rth-ja", "45", "--copper", "2"],
-])
+@pytest.mark.parametrize(
+    "flags",
+    [
+        [],
+        ["--tair", "30"],
+        ["--rth-ja", "45"],
+        ["--tsink", "60", "--tair", "30", "--rth-heatsink", "2"],
+        ["--tair", "30", "--rth-heatsink", "-5"],
+        ["--tair", "30", "--rth-heatsink", "0"],
+        ["--tair", "30", "--rth-ja", "45", "--rth-heatsink", "4"],
+        ["--tsink", "60", "--board-area", "80"],
+        ["--tair", "30", "--rth-ja", "45", "--copper", "2"],
+    ],
+)
 def test_cooling_flags_that_do_not_add_up_are_refused(flags) -> None:
     with pytest.raises(SystemExit) as caught:
         cli.main(["simulate", str(MOSFET), *COMMON, *flags])
@@ -343,8 +465,12 @@ def test_cooling_flags_that_do_not_add_up_are_refused(flags) -> None:
 def test_a_figures_file_is_built_or_refused_in_words(tmp_path, capsys) -> None:
     good = tmp_path / "part.yaml"
     good.write_text(TEMPLATE)
-    for name, text in (("no-rds.yaml", TEMPLATE.replace("rds_on: 4.0", "# rds_on")), ("list.yaml", "- 1\n- 2\n"),
-                       ("empty.yaml", ""), ("broken.yaml", "a: [1, 2\n")):
+    for name, text in (
+        ("no-rds.yaml", TEMPLATE.replace("rds_on: 4.0", "# rds_on")),
+        ("list.yaml", "- 1\n- 2\n"),
+        ("empty.yaml", ""),
+        ("broken.yaml", "a: [1, 2\n"),
+    ):
         (tmp_path / name).write_text(text)
         assert cli.main(["build", str(tmp_path / name), "-o", str(tmp_path / "out.device.yaml")]) == 1
     assert cli.main(["build", str(tmp_path / "missing.yaml"), "-o", str(tmp_path / "out.device.yaml")]) == 1
@@ -355,13 +481,48 @@ def test_the_page_and_the_command_line_agree_with_a_dead_time_left_open(tmp_path
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     values = yaml.safe_load((ROOT / "examples/motor_robot_joint_pmsm.yaml").read_text())
-    request = {"motor": {**values}, "devices": [key],
-               "conditions": {"v_dc": 48, "rpm": 1000, "torque": 1, "f_sw": 20000, "t_sink": 50,
-                              "v_drive": 10, "rg_on": 5, "rg_off": 5}}
+    request = {
+        "motor": {**values},
+        "devices": [key],
+        "conditions": {
+            "v_dc": 48,
+            "rpm": 1000,
+            "torque": 1,
+            "f_sw": 20000,
+            "t_sink": 50,
+            "v_drive": 10,
+            "rg_on": 5,
+            "rg_off": 5,
+        },
+    }
     on_page = page.proposal(request, ws)["candidates"][0]["result"]["loss"]
-    assert cli.main(["motor", str(tmp_path / f"{key}.device.yaml"), "--motor", str(ROOT / "examples/motor_robot_joint_pmsm.yaml"),
-                     "--vdc", "48", "--rpm", "1000", "--torque", "1", "--fsw", "20000", "--tsink", "50",
-                     "--vdrive", "10", "--rgon", "5", "--rgoff", "5"]) == 0
+    assert (
+        cli.main(
+            [
+                "motor",
+                str(tmp_path / f"{key}.device.yaml"),
+                "--motor",
+                str(ROOT / "examples/motor_robot_joint_pmsm.yaml"),
+                "--vdc",
+                "48",
+                "--rpm",
+                "1000",
+                "--torque",
+                "1",
+                "--fsw",
+                "20000",
+                "--tsink",
+                "50",
+                "--vdrive",
+                "10",
+                "--rgon",
+                "5",
+                "--rgoff",
+                "5",
+            ]
+        )
+        == 0
+    )
     out = capsys.readouterr().out
     assert "dead time taken as 120 ns" in out
     assert float(re.search(r"power-stage loss\s+([\d.]+)", out).group(1)) == pytest.approx(on_page, abs=0.006)
@@ -375,20 +536,29 @@ def test_no_heatsink_means_no_assumed_layer_under_the_case() -> None:
     assert not any("case-to-heatsink" in a for a in in_air.assumptions)
 
 
-@pytest.mark.parametrize("cooling, field", [
-    ({"cooling": "heatsink", "rth_sink": 0, "t_ambient": 30}, "rth_sink"),
-    ({"cooling": "heatsink", "rth_sink": 2, "t_ambient": 500}, "t_ambient"),
-    ({"cooling": "none", "rth_ja": "abc", "t_ambient": 30}, "rth_ja"),
-    ({"cooling": "board", "rth_ja": 45, "board_area": -1, "t_ambient": 30}, "board_area"),
-    ({"t_sink": 900}, "t_sink"),
-])
+@pytest.mark.parametrize(
+    "cooling, field",
+    [
+        ({"cooling": "heatsink", "rth_sink": 0, "t_ambient": 30}, "rth_sink"),
+        ({"cooling": "heatsink", "rth_sink": 2, "t_ambient": 500}, "t_ambient"),
+        ({"cooling": "none", "rth_ja": "abc", "t_ambient": 30}, "rth_ja"),
+        ({"cooling": "board", "rth_ja": 45, "board_area": -1, "t_ambient": 30}, "board_area"),
+        ({"t_sink": 900}, "t_sink"),
+    ],
+)
 def test_a_cooling_figure_that_cannot_be_is_refused_at_its_own_field(tmp_path, cooling, field) -> None:
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     motors = page.setup(ws)["motors"]
     with pytest.raises(page.Refused) as caught:
-        page.proposal({"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "devices": [key],
-                       "conditions": {**motors["pmsm"]["start"], **cooling}}, ws)
+        page.proposal(
+            {
+                "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+                "devices": [key],
+                "conditions": {**motors["pmsm"]["start"], **cooling},
+            },
+            ws,
+        )
     assert caught.value.field == field
 
 
@@ -396,19 +566,34 @@ def test_an_air_temperature_left_empty_is_40_degrees(tmp_path) -> None:
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     motors = page.setup(ws)["motors"]
-    run = lambda **c: page.proposal({"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "devices": [key],  # noqa: E731
-                                     "conditions": {**motors["pmsm"]["start"], "cooling": "heatsink", "rth_sink": 2, **c}}, ws)
+    run = lambda **c: page.proposal(
+        {
+            "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+            "devices": [key],
+            "conditions": {**motors["pmsm"]["start"], "cooling": "heatsink", "rth_sink": 2, **c},
+        },
+        ws,
+    )
     empty, given = run(t_ambient="")["candidates"][0]["result"], run(t_ambient=40)["candidates"][0]["result"]
-    assert empty["t_sink"] == pytest.approx(given["t_sink"]) and empty["t_sink"] == pytest.approx(40 + 2 * given["loss"], abs=0.1)
+    assert empty["t_sink"] == pytest.approx(given["t_sink"]) and empty["t_sink"] == pytest.approx(
+        40 + 2 * given["loss"], abs=0.1
+    )
 
 
 # ---------- does the motor fit the part, before any design point ----------
 
+
 def _fit(tmp_path, kind="pmsm", **changes):
     ws = page.Workspace(tmp_path)
     wound = page.suggest({"device": "example-mosfet"}, ws)["motors"][kind]  # the example, wound for this 100 V part
-    return page.motor_fit({"motor": {"type": kind, **wound["values"], **changes}, "device": "example-mosfet",
-                           "rpm": wound["start"]["rpm"]}, ws)
+    return page.motor_fit(
+        {
+            "motor": {"type": kind, **wound["values"], **changes},
+            "device": "example-mosfet",
+            "rpm": wound["start"]["rpm"],
+        },
+        ws,
+    )
 
 
 def test_a_motor_that_suits_the_part_raises_nothing(tmp_path) -> None:
@@ -423,11 +608,15 @@ def test_a_motor_too_large_for_the_part_is_said_with_how_far_the_part_takes_it(t
     assert out["level"] == "caution" and out["i_peak"] == pytest.approx(400 * math.sqrt(2), rel=0.01)
     said = next(x["text"] for x in out["lines"] if x["level"] == "caution")
     # 100 A of 566 A is 18% of what the motor can give; six of the part would carry it.
-    assert "566 A peak" in said and "rated 100 A" in said and "about 18%" in said and "6 of this part in parallel" in said
+    assert (
+        "566 A peak" in said and "rated 100 A" in said and "about 18%" in said and "6 of this part in parallel" in said
+    )
     # Two in parallel carry 200 A: said, and the share doubles.
     ws = page.Workspace(tmp_path)
     wound = page.suggest({"device": "example-mosfet"}, ws)["motors"]["pmsm"]
-    two = page.motor_fit({"motor": {"type": "pmsm", **wound["values"], "i_max": 400}, "device": "example-mosfet", "parallel": 2}, ws)
+    two = page.motor_fit(
+        {"motor": {"type": "pmsm", **wound["values"], "i_max": 400}, "device": "example-mosfet", "parallel": 2}, ws
+    )
     assert two["i_rated"] == 200.0 and any("about 35%" in x["text"] for x in two["lines"])
 
 
@@ -457,5 +646,89 @@ def test_every_kind_of_motor_gets_an_answer_not_a_fault(tmp_path) -> None:
     for device in ("example", "example-mosfet"):
         wound = page.suggest({"device": device}, ws)["motors"]
         for kind, m in wound.items():
-            answer = json.loads(page.call("/api/fit", json.dumps({"motor": {"type": kind, **m["values"]}, "device": device, "rpm": m["start"]["rpm"]}), ws))
+            answer = json.loads(
+                page.call(
+                    "/api/fit",
+                    json.dumps({"motor": {"type": kind, **m["values"]}, "device": device, "rpm": m["start"]["rpm"]}),
+                    ws,
+                )
+            )
             assert answer["status"] == 200 and answer["body"]["lines"], (device, kind, answer)
+
+
+def test_a_number_in_a_sentence_is_written_out() -> None:
+    from motionsim.motor.machines import ADAPTER
+    from motionsim.motor.stage import Unreachable
+    from motionsim.text import written
+
+    assert [written(x, d) for x, d in ((20000, 4), (1234.5, 3), (0.00012, 3), (60.0, 3), (2.5e-7, 3), (3e7, 3))] == [
+        "20000",
+        "1230",
+        "0.00012",
+        "60",
+        "2.5e-07",
+        "3e+07",
+    ]
+    motor = ADAPTER.validate_python(
+        {"type": "pmsm", "pole_pairs": 7, "kv": 100, "l": 0.00012, "rs": 0.045, "i_max": 40}
+    )
+    with pytest.raises(Unreachable) as caught:
+        motor.stage(20000.0, 3.0, 12.0, motor.default_pwm)
+    assert "20000 rpm" in str(caught.value) and "e+" not in str(caught.value)
+
+
+# ---------- found by the second round of review ----------
+
+
+def test_a_heatsink_limit_the_user_gave_is_held_to_or_said_to_be_out_of_reach() -> None:
+    from motionsim import recommend
+
+    device = igbt("made-up", 1.0)
+    cool = lambda t: (t + 5.0, 10.0)  # runs 5 K over its heatsink, losing 10 W
+    # 42 °C in 40 °C air carrying 10 W: 0.2 K/W. It used to be dropped, and 8 K/W given.
+    close = recommend.heatsink(device, 40.0, cool, sink_limit=42.0)
+    assert close.value["t_sink"] == 42.0 and close.value["rth_sink"] == pytest.approx(0.2)
+    # A limit at or under the air's temperature cannot be held by any heatsink, and is not passed over.
+    for limit in (40.0, 30.0):
+        none = recommend.heatsink(device, 40.0, cool, sink_limit=limit)
+        assert none.value == {} and "no heatsink stays at" in none.lines[0]
+    # The usual limit holds right up to the air's temperature, and when the air is past it, that is said.
+    assert recommend.heatsink(device, 96.0, cool).value["t_sink"] == 100.0
+    past = recommend.heatsink(device, 105.0, cool)
+    assert (
+        past.value["t_sink"] == pytest.approx(device.ratings.tj_max - 25.0 - 5.0, abs=0.2)
+        and "set aside" in past.lines[0]
+    )
+
+
+def test_a_number_keeps_the_figures_it_was_asked_for_at_any_size() -> None:
+    from motionsim.text import written
+
+    assert float(written(1234567, 9)) == 1234567 and float(written(0.000123456789, 9)) == 0.000123456789
+    assert float(written(2.0000001e-8, 9)) == 2.0000001e-8
+    assert written(1234567, 3) == "1.23e+06" and written(0.00012345, 3) == "0.000123"
+
+
+def test_the_dead_time_advice_and_the_dead_time_used_say_the_same_for_an_igbt() -> None:
+    device = igbt("made-up", 1.0)
+    op = OperatingPoint(v_dc=300, i_rms=10, modulation_index=0.8, power_factor=0.9, f_sw=8000, t_sink=60)
+    advice = dead_time(device, op)
+    used = choose_gate_drive(device, op, 14.0)
+    assert advice.value["t_dead"] == used.t_dead == 1e-6
+    assert "usual for an IGBT" in advice.lines[0] and not any("cannot be worked out" in line for line in advice.lines)
+
+
+def test_a_dead_time_that_takes_half_the_period_is_refused_not_hidden() -> None:
+    from motionsim.drivers import at_speed_and_torque
+    from motionsim.motor.machines import ADAPTER
+    from motionsim.motor.stage import Unreachable
+
+    appliance = yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text())
+    motor = ADAPTER.validate_python({"type": "pmsm", **appliance})
+    device = load_device(MODULE)
+    slow = OperatingPoint(
+        v_dc=300, i_rms=0, modulation_index=0, power_factor=1, f_sw=16000, t_sink=60, t_dead=1e-6, pwm=motor.default_pwm
+    )
+    assert at_speed_and_torque(device, motor, 1500, 2, slow).result.p_inverter > 0  # 3% of the period: fine
+    with pytest.raises(Unreachable, match="of each switching period at 300 kHz"):
+        at_speed_and_torque(device, motor, 1500, 2, replace(slow, f_sw=300e3))  # 60% of it

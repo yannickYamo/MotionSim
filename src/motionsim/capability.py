@@ -80,10 +80,20 @@ def envelope(device, motor, speeds: list[float], op: OperatingPoint, start: floa
     return out
 
 
-def against(device, motor, rpm: float, op: OperatingPoint, what: str, values: list[float], start: float = 1.0) -> list[Limit]:
+def against(
+    device, motor, rpm: float, op: OperatingPoint, what: str, values: list[float], start: float = 1.0
+) -> list[Limit]:
     """The torque limit at one speed as one condition is varied: `what` is a field of the
     operating point, such as f_sw or t_sink."""
     out = []
     for v in values:
-        out.append(torque_limit(device, motor, rpm, replace(op, **{what: v}), 0.7 * out[-1].torque if out and out[-1].torque > 0 else start))
+        out.append(
+            torque_limit(
+                device,
+                motor,
+                rpm,
+                replace(op, **{what: v}),
+                0.7 * out[-1].torque if out and out[-1].torque > 0 else start,
+            )
+        )
     return out

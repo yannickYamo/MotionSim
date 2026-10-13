@@ -74,8 +74,8 @@ class Plate:
 
 def _assemble(plate: Plate, stack: Stack, cell: float):
     """Conductance matrix of the plate on a grid, with its cell counts and sizes."""
-    nx = max(4, int(round(plate.width / cell)))
-    ny = max(4, int(round(plate.height / cell)))
+    nx = max(4, round(plate.width / cell))
+    ny = max(4, round(plate.height / cell))
     dx, dy = plate.width / nx, plate.height / ny
     sideways = stack.k_plate * stack.t_plate
     down = stack.k_insulation / stack.t_insulation * dx * dy
@@ -105,11 +105,13 @@ def _footprint(chip: ChipSite, nx: int, ny: int, dx: float, dy: float) -> np.nda
     y = (np.arange(ny) + 0.5) * dy
     cover_x = np.clip(
         (np.minimum(x + dx / 2, chip.x + chip.width / 2) - np.maximum(x - dx / 2, chip.x - chip.width / 2)) / dx,
-        0, 1,
+        0,
+        1,
     )
     cover_y = np.clip(
         (np.minimum(y + dy / 2, chip.y + chip.height / 2) - np.maximum(y - dy / 2, chip.y - chip.height / 2)) / dy,
-        0, 1,
+        0,
+        1,
     )
     return np.outer(cover_y, cover_x).ravel()
 
@@ -134,9 +136,7 @@ def thermal_matrix(plate: Plate, stack: Stack, cell: float = 0.25e-3) -> np.ndar
     return out
 
 
-def step_response(
-    plate: Plate, stack: Stack, chip: int, times: np.ndarray, cell: float = 0.5e-3
-) -> np.ndarray:
+def step_response(plate: Plate, stack: Stack, chip: int, times: np.ndarray, cell: float = 0.5e-3) -> np.ndarray:
     """Rise under one chip at the given times after it starts dissipating one watt, K/W.
 
     The copper's heat capacity is added to the plate equation and the result

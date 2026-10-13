@@ -63,7 +63,7 @@ def test_a_picture_without_a_plot_is_left_alone() -> None:
 
 def test_one_curve_is_followed_through_the_grid() -> None:
     image, draw = canvas()
-    curve = lambda f: BOTTOM - 40 - 400 * f**2  # noqa: E731
+    curve = lambda f: BOTTOM - 40 - 400 * f**2
     stroke(draw, curve)
     _, (found,) = read(image)
     x, y = in_pixels(found)
@@ -74,8 +74,8 @@ def test_one_curve_is_followed_through_the_grid() -> None:
 
 def test_curves_that_cross_keep_their_own_direction() -> None:
     image, draw = canvas()
-    rising = lambda f: BOTTOM - 60 - 380 * f  # noqa: E731
-    falling = lambda f: TOP + 80 + 300 * f  # noqa: E731
+    rising = lambda f: BOTTOM - 60 - 380 * f
+    falling = lambda f: TOP + 80 + 300 * f
     stroke(draw, rising)
     stroke(draw, falling)
     _, found = read(image)
@@ -89,7 +89,7 @@ def test_curves_that_cross_keep_their_own_direction() -> None:
 def test_a_branch_takes_the_shared_part_as_its_beginning() -> None:
     """Gate-charge curves for several supply voltages share the rise and the plateau."""
     image, draw = canvas()
-    shared = lambda f: BOTTOM - 50 - np.minimum(f, 0.3) * 800  # noqa: E731
+    shared = lambda f: BOTTOM - 50 - np.minimum(f, 0.3) * 800
     stroke(draw, lambda f: shared(f) - np.clip(f - 0.5, 0, 1) * 500)
     stroke(draw, lambda f: shared(f) - np.clip(f - 0.6, 0, 1) * 500)
     _, found = read(image)
@@ -140,8 +140,11 @@ def test_a_sloped_plateau_is_found_and_the_slower_rise_after_it_is_not_taken_for
     """Real gate-charge curves: the plateau rises a little, and the gate charges more
     slowly after it than before it."""
     q = np.linspace(0, 120e-9, 241)
-    v = np.where(q < 37e-9, q / 37e-9 * 4.0,
-                 np.where(q < 54e-9, 4.0 + (q - 37e-9) / 17e-9 * 0.5, 4.5 + (q - 54e-9) / 66e-9 * 5.5))
+    v = np.where(
+        q < 37e-9,
+        q / 37e-9 * 4.0,
+        np.where(q < 54e-9, 4.0 + (q - 37e-9) / 17e-9 * 0.5, 4.5 + (q - 54e-9) / 66e-9 * 5.5),
+    )
     level, start, end = plateau(q, v)
     assert level == pytest.approx(4.25, abs=0.15)
     assert start == pytest.approx(37e-9, abs=3e-9) and end == pytest.approx(54e-9, abs=3e-9)

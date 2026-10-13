@@ -28,7 +28,13 @@ writeFileSync(second, made.replace(/^vendor:.*$/m, "vendor: Second Maker").repla
 const unfold = (page) => page.evaluate(() => document.querySelectorAll("#panel details[data-fold]").forEach((d) => { d.open = true; }));
 const browser = await chromium.launch();
 const errors = [];
-for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 760], ["mobile", 390, 844]]) {
+// A step opens at its heading, however far down the last one was left.
+const opensAtHeading = async (page, label) => {
+  await page.waitForTimeout(150);
+  const top = await page.evaluate(() => document.querySelector("#panel h2")?.getBoundingClientRect().top ?? -1);
+  if (top < 0 || top > 400) failures.push(`${label}: a step opened with its heading out of sight (at ${Math.round(top)} px)`);
+};
+for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 760], ["mobile", 390, 844], ["narrow", 320, 640]]) {
   const page = await browser.newPage({ viewport: { width, height }, reducedMotion: "reduce" });
   page.on("pageerror", (e) => errors.push(`${label}: ${e.message}`));
   // Nothing on the page may be pushed about while it loads, and no request may fail.
@@ -45,6 +51,10 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   if (shift > 0.02) failures.push(`${label}: the page shifts as it loads (cumulative layout shift ${shift.toFixed(3)})`);
   if (failed.length) failures.push(`${label}: a request failed while the page loaded: ${failed.join(", ")}`);
   const unnamed = await page.$$eval("button, a[href], summary", (els) => els.filter((e) => e.offsetParent !== null && !(e.getAttribute("aria-label") || e.textContent || e.getAttribute("title") || "").trim()).map((e) => e.outerHTML.slice(0, 80)));
+  // A control with words on it is called by those words: a spoken name that leaves them
+  // out cannot be asked for by voice.
+  const misnamed = await page.$$eval("button[aria-label], a[aria-label]", (els) => els.filter((e) => e.offsetParent !== null).map((e) => ({ seen: e.innerText.replace(/\s+/g, " ").trim().toLowerCase(), said: e.getAttribute("aria-label").replace(/\s+/g, " ").trim().toLowerCase() })).filter((x) => x.seen && !x.said.includes(x.seen)).map((x) => `"${x.seen}" is called "${x.said}"`));
+  if (misnamed.length) failures.push(`${label}: a control's spoken name leaves out the words on it: ${misnamed.slice(0, 3).join(" | ")}`);
   if (unnamed.length) failures.push(`${label}: a control has no name for a screen reader: ${unnamed.join(" | ")}`);
   await page.evaluate(() => localStorage.clear());
   await page.reload({ waitUntil: "networkidle" });
@@ -55,6 +65,9 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   // Without a server the engine loads into the page first, which takes a while.
   await page.waitForFunction(() => !document.querySelector("#readouts")?.textContent?.includes("Starting the engine"), null, { timeout: 240000 });
   await measure(page, `${label}-1-device-empty`);
+  // Reset is the last thing in the top bar, at its right-hand end, and can be pressed.
+  const reset = await page.evaluate(() => { const b = document.querySelector("header.top [data-start-over]"); if (!b) return null; const r = b.getBoundingClientRect(); return { right: innerWidth - r.right, last: b === b.parentElement.lastElementChild, w: r.width, h: r.height }; });
+  if (!reset || !reset.last || reset.right > 40 || reset.w < 24 || reset.h < 24) failures.push(`${label}: no Reset button at the top right (${JSON.stringify(reset)})`);
   // The equations, opened from the top of the page.
   await page.click("[data-equations]");
   await page.waitForSelector("#equations[open] .eq");
@@ -98,6 +111,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await measure(page, `${label}-1-review`);
   await page.click(".review-link[data-review]");
   await page.click('#panel .actions [data-step="1"]');
+  await opensAtHeading(page, `${label} step 1`);
   await page.waitForSelector(".kind.is-rec");
   await measure(page, `${label}-2-motor`);
   if ((await page.$$(".tag.recommended")).length !== 1) failures.push(`${label}: exactly one kind of motor should be recommended for the device`);
@@ -128,6 +142,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
     await page.fill(box, was);
   }
   await page.click('#panel .actions [data-step="2"]');
+  await opensAtHeading(page, `${label} step 2`);
   await page.waitForTimeout(800);
   await measure(page, `${label}-3-supply`);
   // The step asks for three figures and the cooling; the rest is assumed, said, and one press away.
@@ -168,6 +183,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.fill('[data-bind="conditions.rpm"]', "2000");
   await page.waitForSelector(".schematic.is-live");
   await page.click('#panel .actions [data-step="3"]');
+  await opensAtHeading(page, `${label} step 3`);
   await page.waitForTimeout(1500);
   await measure(page, `${label}-4-load`);
   // The load step is a choice and a picture; its figures and its motion are one press away.
@@ -210,6 +226,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
     await page.waitForFunction(() => !document.querySelector("#motion-preview .fact.warn"), null, { timeout: 30000 });
   }
   await page.click('#panel .actions [data-step="4"]');
+  await opensAtHeading(page, `${label} step 4`);
   await page.waitForSelector(".candidate", { timeout: 60000 });
   await measure(page, `${label}-5-verdict`);
   await page.evaluate(() => document.querySelectorAll("details.pwm-fold").forEach((d) => { d.open = true; }));
@@ -257,7 +274,9 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   // The motion is four drawings of one size, each with its axes named and its unit said.
   {
     await page.click('[data-tab="motion"]');
-    await page.waitForFunction(() => !document.querySelector(".waiting") && document.querySelectorAll("#tab-body svg.chart").length >= 4, null, { timeout: 120000 });
+    await page.waitForFunction(() => !document.body.dataset.busy && !document.querySelector(".waiting") && document.querySelectorAll("#tab-body svg.chart").length >= 4, null, { timeout: 120000 });
+    await page.waitForTimeout(200);
+    await page.waitForFunction(() => !document.body.dataset.busy && document.querySelectorAll("#tab-body svg.chart").length >= 4, null, { timeout: 120000 });
     const charts = await page.$$eval("#tab-body svg.chart", (els) => els.map((e) => { const b = e.getBoundingClientRect(); return { size: `${Math.round(b.width)}x${Math.round(b.height)}`, axes: [...e.querySelectorAll("text.axis")].map((t) => t.textContent), ticks: e.querySelectorAll("text.tick").length }; }));
     if (new Set(charts.map((c) => c.size)).size !== 1) failures.push(`${label}: the motion's charts are not one size: ${charts.map((c) => c.size).join(", ")}`);
     for (const c of charts) if (c.axes.length < 2 || !c.axes.includes("time, s") || !c.axes.some((a) => /, (°C|rpm|N·m|A peak)$/.test(a)) || c.ticks < 4) failures.push(`${label}: a motion chart has no named axes with units, or no scale: ${JSON.stringify(c)}`);
@@ -300,9 +319,15 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   if (!(await page.$$eval("#compare-table .room", (cells) => cells.length >= 4 && cells.every((c) => /°C to the limit/.test(c.textContent))))) failures.push(`${label}: the margins to the junction limit are not shown for both devices`);
   for (const tab of ["losses", "motion", "map"]) {
     await page.click(`[data-tab="${tab}"]`);
-    await page.waitForFunction(() => !document.querySelector(".waiting"), null, { timeout: 120000 });
+    await page.waitForFunction(() => !document.body.dataset.busy && !document.querySelector(".waiting"), null, { timeout: 120000 });
     await page.waitForTimeout(300);
     await measure(page, `${label}-6-devices-${tab}`);
+    // Maps set side by side share one scale and one key.
+    if (tab === "map") {
+      await page.waitForSelector(".shared-scale .scale", { timeout: 120000 }).catch(() => {});
+      const keys = await page.$$eval("#map-body .scale", (els) => els.length);
+      if (keys !== 1 || !(await page.$("#map-body .shared-scale"))) failures.push(`${label}: compared maps show ${keys} keys to their colours, not the one they share`);
+    }
     const seen = { losses: ".bar-row", motion: ".series.s1", map: ".map-one svg" }[tab];
     if ((await page.$$(seen)).length < (tab === "motion" ? 1 : 2)) failures.push(`${label}: the ${tab} tab does not show both devices`);
   }
@@ -313,7 +338,7 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   await page.selectOption("[data-add-load]", { index: 1 });
   await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr.loss td")]; return cells.length === 2 && cells.every((c) => /W/.test(c.textContent)); }, null, { timeout: 120000 });
   await page.click('[data-tab="motion"]');
-  await page.waitForFunction(() => !document.querySelector(".waiting"), null, { timeout: 120000 });
+  await page.waitForFunction(() => !document.body.dataset.busy && !document.querySelector(".waiting"), null, { timeout: 120000 });
   await measure(page, `${label}-7-loads`);
   if (!(await page.$(".series.s1"))) failures.push(`${label}: the two loads are not drawn on one chart`);
   await page.click("[data-drop-load]");
@@ -331,6 +356,20 @@ for (const [label, width, height] of [["desktop", 1440, 900], ["laptop", 1100, 7
   const swept = await page.$$eval("#compare-table tbody tr.loss td", (cells) => cells.map((c) => parseFloat(c.textContent)));
   if ((await page.$$("#compare-table td.best")).length !== 1) failures.push(`${label}: with losses well apart exactly one value should be marked lowest`);
   if (!(swept[0] < swept[1] && swept[1] < swept[2])) failures.push(`${label}: loss does not rise with switching frequency across the values tried (${swept.join(", ")})`);
+  // A value typed is one more column beside those there, and can be taken out again.
+  const columns = () => page.$$eval("#compare-table thead th", (h) => h.length - 1);
+  const fourth = String(Math.round(swept.length ? 1.5 * Number(await page.$eval("#compare-table thead th:nth-child(3)", (h) => parseFloat(h.textContent))) : 30));
+  await page.fill("[data-sweep-add]", fourth);
+  await page.keyboard.press("Enter");
+  await page.waitForFunction(() => { const cells = [...document.querySelectorAll("#compare-table tbody tr.loss td")]; return cells.length === 4 && cells.every((c) => /W|cannot/.test(c.textContent)); }, null, { timeout: 120000 }).catch(() => {});
+  if ((await columns()) !== 4) failures.push(`${label}: a value typed into Try a setting did not add a column (${await columns()} columns)`);
+  await measure(page, `${label}-9-sweep-added`);
+  // Each loss and each temperature of the hottest position is in the table.
+  const rowsShown = await page.$$eval("#compare-table tbody th[scope=row]", (r) => r.map((x) => x.textContent.trim()));
+  for (const wanted of ["Switch, conducting", "Switch, turning on", "Switch, turning off", "Switch junction, peak", "Case", "DC-link capacitor current"]) if (!rowsShown.includes(wanted)) failures.push(`${label}: the table of values tried has no row "${wanted}"`);
+  await page.click(`[data-drop-value="${fourth}"]`);
+  await page.waitForTimeout(300);
+  if ((await columns()) !== 3) failures.push(`${label}: taking a value out of Try a setting left ${await columns()} columns`);
   await page.click('[data-compare="devices"]');
   await page.click('[data-tab="proposal"]');
   await page.waitForSelector(".candidate", { timeout: 60000 });

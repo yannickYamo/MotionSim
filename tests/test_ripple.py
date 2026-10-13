@@ -58,17 +58,13 @@ def test_fast_and_slow_limits() -> None:
 
 
 def device(tau):
-    d = linear_device(
-        sw_curves=[line(25.0, 1.0, 0.02)], d_curves=[line(25.0, 1.0, 0.02)], k_on=20e-6, rth_sw=2.0
-    )
+    d = linear_device(sw_curves=[line(25.0, 1.0, 0.02)], d_curves=[line(25.0, 1.0, 0.02)], k_on=20e-6, rth_sw=2.0)
     d.switch.thermal.tau = tau
     d.diode.thermal.tau = tau
     return d
 
 
-OP = OperatingPoint(
-    v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.8, f_sw=8000.0, t_sink=60.0
-)
+OP = OperatingPoint(v_dc=V_REF, i_rms=15.0, modulation_index=0.9, power_factor=0.8, f_sw=8000.0, t_sink=60.0)
 
 
 def test_missing_transient_data_uses_an_assumed_response_and_reports_a_range() -> None:

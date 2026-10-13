@@ -25,13 +25,14 @@ from scipy.optimize import brentq
 from motionsim.engine.modulation import Pwm, Role, phase_leg_roles, waveform
 from motionsim.motor import pmsm
 from motionsim.motor.stage import Stage, Unreachable
+from motionsim.text import written
 
 N = 1440  # samples per period; a multiple of 360 so 120-degree windows fall on samples
 SLOW = 0.1  # Hz; a stopped or creeping motor is treated as turning this slowly
 
 
 class _Machine(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
     name: str = "motor"
     # Share of the ideal output voltage the stage can really give: dead time takes some.
     # Set by the solver from the conditions; a motor file does not carry it.
@@ -79,8 +80,11 @@ def at_temperature(machine, t_c: float):
             changed[key] = getattr(machine, key) * (1 + MAGNET * dt)
     changed["temperature_note"] = (
         f"motor taken at {t_c:g} °C: winding resistance {1 + COPPER * dt:.2f} times its {CATALOGUE:g} °C value"
-        + (f", magnet flux {1 + MAGNET * dt:.2f} times (neodymium; ferrite loses about twice as much)"
-           if machine.type in ("pmsm", "bldc", "dc") and magnets else "")
+        + (
+            f", magnet flux {1 + MAGNET * dt:.2f} times (neodymium; ferrite loses about twice as much)"
+            if machine.type in ("pmsm", "bldc", "dc") and magnets
+            else ""
+        )
     )
     return machine.model_copy(update=changed)
 
@@ -97,9 +101,20 @@ def _rad_s(rpm: float) -> float:
 
 
 def _sinusoidal_stage(
-    *, i_rms: float, v_peak: float, power_factor: float, f_out: float, v_dc: float, pwm: Pwm,
-    legs: int, p_shaft: float, p_loss: float, summary: list, notes: list[str],
-    leg_voltage: float, l_phase: float | None = None,
+    *,
+    i_rms: float,
+    v_peak: float,
+    power_factor: float,
+    f_out: float,
+    v_dc: float,
+    pwm: Pwm,
+    legs: int,
+    p_shaft: float,
+    p_loss: float,
+    summary: list,
+    notes: list[str],
+    leg_voltage: float,
+    l_phase: float | None = None,
 ) -> Stage:
     """Stage for sinusoidal currents. leg_voltage is the DC voltage one leg's swing spans:
     half the link for a three-phase inverter, the full link for an H-bridge."""
@@ -116,7 +131,8 @@ def _sinusoidal_stage(
     return Stage(
         roles=phase_leg_roles(wave, 2 * legs, pwm),
         period=1.0 / max(abs(f_out), SLOW),
-        stalled=abs(f_out) < SLOW, l_phase=l_phase,
+        stalled=abs(f_out) < SLOW,
+        l_phase=l_phase,
         p_electrical=phases * (v_peak / np.sqrt(2)) * i_rms * power_factor,
         p_shaft=p_shaft,
         p_motor_loss=p_loss,
@@ -139,7 +155,11 @@ class Pmsm(_Machine):
     lq: float = Field(gt=0, description="H")
     rs: float = Field(ge=0, description="ohm per phase")
     i_max: float | None = Field(default=None, gt=0, description="A rms")
-    i_sat: float | None = Field(default=None, gt=0, description="current at which an inductance has fallen to 71% of its value, A peak; optional")
+    i_sat: float | None = Field(
+        default=None,
+        gt=0,
+        description="current at which an inductance has fallen to 71% of its value, A peak; optional",
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -164,10 +184,7 @@ class Pmsm(_Machine):
         # Bad values are left for the field checks, which name the field; nothing is
         # computed from them here.
         key = given[0]
-        usable = all(
-            isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0
-            for v in (pairs, data[key])
-        )
+        usable = all(isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 for v in (pairs, data[key]))
         if key != "flux_linkage" and not usable:
             if not (isinstance(pairs, (int, float)) and not isinstance(pairs, bool) and pairs > 0):
                 raise ValueError("pole_pairs must be a whole number above zero")
@@ -187,13 +204,24 @@ class Pmsm(_Machine):
         return self
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
-        motor = pmsm.Motor(**self.model_dump(exclude={"type", "magnets", "usable_voltage", "p_iron", "n_iron", "temperature_note"}))
+        motor = pmsm.Motor(
+            **self.model_dump(exclude={"type", "magnets", "usable_voltage", "p_iron", "n_iron", "temperature_note"})
+        )
         s = pmsm.operating_state(motor, rpm, torque, self.usable_voltage * pwm.max_modulation_index * v_dc / 2)
         return _sinusoidal_stage(
-            i_rms=s.i_rms, v_peak=s.v_peak, power_factor=s.power_factor, f_out=s.f_out,
-            v_dc=v_dc, pwm=pwm, legs=3, p_shaft=s.p_shaft, p_loss=s.p_copper,
-            summary=[("field weakening", float(s.field_weakening), "yes/no")], notes=[],
-            leg_voltage=v_dc / 2, l_phase=(self.ld + self.lq) / 2,
+            i_rms=s.i_rms,
+            v_peak=s.v_peak,
+            power_factor=s.power_factor,
+            f_out=s.f_out,
+            v_dc=v_dc,
+            pwm=pwm,
+            legs=3,
+            p_shaft=s.p_shaft,
+            p_loss=s.p_copper,
+            summary=[("field weakening", float(s.field_weakening), "yes/no")],
+            notes=[],
+            leg_voltage=v_dc / 2,
+            l_phase=(self.ld + self.lq) / 2,
         )
 
 
@@ -220,7 +248,11 @@ class SynRm(_Machine):
     lq: float = Field(gt=0, description="q-axis inductance, H")
     rs: float = Field(ge=0, description="ohm per phase")
     i_max: float | None = Field(default=None, gt=0, description="A rms")
-    i_sat: float | None = Field(default=None, gt=0, description="current at which an inductance has fallen to 71% of its value, A peak; optional")
+    i_sat: float | None = Field(
+        default=None,
+        gt=0,
+        description="current at which an inductance has fallen to 71% of its value, A peak; optional",
+    )
 
     @model_validator(mode="after")
     def _check_saliency(self) -> SynRm:
@@ -241,7 +273,11 @@ class SynRm(_Machine):
             lq = self.lq / float(np.sqrt(1 + (i_q / self.i_sat) ** 2))
             motor = self.model_copy(update={"ld": max(ld, 1.02 * lq), "lq": lq})
         stage, _, _ = motor._solve(rpm, torque, v_dc, pwm)
-        return replace_notes(stage, "reluctance motor: inductances taken as constant", f"reluctance motor: inductances follow the current, saturating about {self.i_sat:g} A")
+        return replace_notes(
+            stage,
+            "reluctance motor: inductances taken as constant",
+            f"reluctance motor: inductances follow the current, saturating about {self.i_sat:g} A",
+        )
 
     def _solve(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> tuple[Stage, float, float]:
         v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
@@ -267,7 +303,7 @@ class SynRm(_Machine):
 
             if excess(least) > 0:
                 raise Unreachable(
-                    f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
+                    f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs more voltage than {written(v_max, 4)} V peak "
                     "at any current angle"
                 )
             i_d = float(brentq(excess, least, i_d))
@@ -275,20 +311,30 @@ class SynRm(_Machine):
         i_pk = float(np.hypot(i_d, i_q))
         if self.i_max is not None and i_pk / np.sqrt(2) > self.i_max:
             raise Unreachable(
-                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
+                f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {written(i_pk / np.sqrt(2), 3)} A rms, above the "
                 f"motor's {self.i_max:g} A limit"
             )
         v_pk = float(np.hypot(v_d, v_q))
         power = 1.5 * (v_d * i_d + v_q * i_q)
-        return _sinusoidal_stage(
-            i_rms=i_pk / np.sqrt(2), v_peak=v_pk,
-            power_factor=float(power / (1.5 * v_pk * i_pk)) if v_pk * i_pk > 0 else 1.0,
-            f_out=float(w / (2 * np.pi)), v_dc=v_dc, pwm=pwm, legs=3,
-            p_shaft=torque * _rad_s(rpm), p_loss=1.5 * self.rs * i_pk**2,
-            summary=[("field weakening", float(weakening), "yes/no")],
-            notes=["reluctance motor: inductances taken as constant, so saturation is not modelled"],
-            leg_voltage=v_dc / 2, l_phase=(self.ld + self.lq) / 2,
-        ), i_d, abs(i_q)
+        return (
+            _sinusoidal_stage(
+                i_rms=i_pk / np.sqrt(2),
+                v_peak=v_pk,
+                power_factor=float(power / (1.5 * v_pk * i_pk)) if v_pk * i_pk > 0 else 1.0,
+                f_out=float(w / (2 * np.pi)),
+                v_dc=v_dc,
+                pwm=pwm,
+                legs=3,
+                p_shaft=torque * _rad_s(rpm),
+                p_loss=1.5 * self.rs * i_pk**2,
+                summary=[("field weakening", float(weakening), "yes/no")],
+                notes=["reluctance motor: inductances taken as constant, so saturation is not modelled"],
+                leg_voltage=v_dc / 2,
+                l_phase=(self.ld + self.lq) / 2,
+            ),
+            i_d,
+            abs(i_q),
+        )
 
 
 class Induction(_Machine):
@@ -335,7 +381,7 @@ class Induction(_Machine):
             below = [x for x in grid if excess(x) <= 0]
             if not below:
                 raise Unreachable(
-                    f"{torque:.3g} N·m at {rpm:.4g} rpm needs more voltage than {v_max:.4g} V peak "
+                    f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs more voltage than {written(v_max, 4)} V peak "
                     "at any flux level"
                 )
             i_d = float(brentq(excess, below[0], grid[list(grid).index(below[0]) - 1]))
@@ -344,22 +390,28 @@ class Induction(_Machine):
         i_pk, v_pk = np.hypot(i_d, i_q), np.hypot(v_d, v_q)
         if self.i_max is not None and i_pk / np.sqrt(2) > self.i_max:
             raise Unreachable(
-                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {i_pk / np.sqrt(2):.3g} A rms, above the "
+                f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {written(i_pk / np.sqrt(2), 3)} A rms, above the "
                 f"{self.i_max:g} A limit"
             )
         power = 1.5 * (v_d * i_d + v_q * i_q)
         stator = 1.5 * self.rs * i_pk**2
         rotor = 1.5 * self.rr * (self.lm / lr * i_q) ** 2
         return _sinusoidal_stage(
-            i_rms=float(i_pk / np.sqrt(2)), v_peak=float(v_pk),
+            i_rms=float(i_pk / np.sqrt(2)),
+            v_peak=float(v_pk),
             power_factor=float(power / (1.5 * v_pk * i_pk)) if v_pk * i_pk > 0 else 1.0,
             f_out=float(w / (2 * np.pi)),
-            v_dc=v_dc, pwm=pwm, legs=3, p_shaft=torque * _rad_s(rpm), p_loss=stator + rotor,
+            v_dc=v_dc,
+            pwm=pwm,
+            legs=3,
+            p_shaft=torque * _rad_s(rpm),
+            p_loss=stator + rotor,
             summary=[
                 ("field weakening", float(weakening), "yes/no"),
                 ("slip frequency", float((w - self.pole_pairs * _rad_s(rpm)) / (2 * np.pi)), "Hz"),
             ],
-            notes=[], leg_voltage=v_dc / 2,
+            notes=[],
+            leg_voltage=v_dc / 2,
             # What the switching sees is the leakage: the magnetising branch is far slower.
             l_phase=self.lls + self.lm * self.llr / (self.lm + self.llr),
         )
@@ -372,9 +424,15 @@ def _window(start_deg: float, width_deg: float) -> np.ndarray:
 
 RETURNING = "braking: the motor returns energy to the DC link"
 PLUGGING = (
-    "braking at this speed takes power from the supply: the winding resistance uses more "
-    "than the motor generates"
+    "braking at this speed takes power from the supply: the winding resistance uses more than the motor generates"
 )
+
+
+def _stage_gives(usable: float, v_dc: float) -> str:
+    """What a voltage is said to be more than: the link, or what the stage makes of it."""
+    if usable >= 1:
+        return "the DC link"
+    return f"the DC link gives through this stage ({written(usable * v_dc, 4)} V of {v_dc:g} V)"
 
 
 def _braking_notes(motoring: bool, drive: float) -> list[str]:
@@ -405,15 +463,16 @@ class Bldc(_Machine):
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
         current = abs(torque) / self.kt
         if self.i_max is not None and current > self.i_max:
-            raise Unreachable(f"{torque:g} N·m needs {current:.3g} A, above the {self.i_max:g} A limit")
+            raise Unreachable(f"{torque:g} N·m needs {written(current, 3)} A, above the {self.i_max:g} A limit")
         motoring = torque * rpm >= 0
         back_emf = self.kt * _rad_s(abs(rpm))  # in SI units the torque and voltage constants are equal
         # Voltage the bridge applies along the current. Negative: the motor pushes current into the link.
         drive = back_emf + self.r * current if motoring else self.r * current - back_emf
         duty = abs(drive) / v_dc
-        if duty > 1:
+        if duty > self.usable_voltage:
             raise Unreachable(
-                f"{torque:.3g} N·m at {rpm:.4g} rpm needs {abs(drive):.4g} V, more than the DC link"
+                f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {written(abs(drive), 4)} V, more than "
+                + _stage_gives(self.usable_voltage, v_dc)
             )
         positive, negative = _window(30, 120), _window(210, 120)
         chopping = float(0 < duty < 1)
@@ -421,23 +480,26 @@ class Bldc(_Machine):
         amps = np.full(N, current)
         if drive >= 0:
             roles = [
-                Role("high-side position", 3, amps, duty * positive, zero,
-                     chopping * positive, zero),
-                Role("low-side position", 3, amps, negative,
-                     (1 - duty) * positive, zero, chopping * positive),
+                Role("high-side position", 3, amps, duty * positive, zero, chopping * positive, zero),
+                Role("low-side position", 3, amps, negative, (1 - duty) * positive, zero, chopping * positive),
             ]
         else:
             roles = [
-                Role("high-side position", 3, amps, zero, duty * negative,
-                     zero, chopping * negative),
-                Role("low-side position", 3, amps, (1 - duty) * negative, positive,
-                     chopping * negative, zero),
+                Role("high-side position", 3, amps, zero, duty * negative, zero, chopping * negative),
+                Role("low-side position", 3, amps, (1 - duty) * negative, positive, chopping * negative, zero),
             ]
         f_out = self.pole_pairs * abs(rpm) / 60
+        sign = 1.0 if drive >= 0 else -1.0
         return Stage(
-            roles=roles, period=1.0 / max(f_out, SLOW), stalled=f_out < SLOW,
+            roles=roles,
+            period=1.0 / max(f_out, SLOW),
+            stalled=f_out < SLOW,
             l_phase=None if self.l is None else self.l / 2,
-            p_electrical=drive * current, p_shaft=torque * _rad_s(rpm),
+            # Two phases in series across the link while the chopping switch is on, shorted
+            # through the other side of that leg while it is off; the third phase carries nothing.
+            states=[(duty, sign * current, sign), (1 - duty, 0.0, 0.0)],
+            p_electrical=drive * current,
+            p_shaft=torque * _rad_s(rpm),
             p_motor_loss=self.r * current**2,
             summary=[
                 ("winding current", current, "A"),
@@ -479,27 +541,42 @@ class BrushedDc(_Machine):
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
         current = torque / self.kt  # positive from leg A to leg B
         if self.i_max is not None and abs(current) > self.i_max:
-            raise Unreachable(
-                f"{torque:g} N·m needs {abs(current):.3g} A, above the {self.i_max:g} A limit"
-            )
+            raise Unreachable(f"{torque:g} N·m needs {written(abs(current), 3)} A, above the {self.i_max:g} A limit")
         voltage = self.kt * _rad_s(rpm) + self.r * current  # leg A minus leg B
         return _h_bridge_stage(
-            current, voltage, v_dc, self.drive, torque=torque, rpm=rpm, loss=self.r * current**2,
+            current,
+            voltage,
+            v_dc,
+            self.drive,
+            torque=torque,
+            rpm=rpm,
+            loss=self.r * current**2,
             inductance=self.l,
+            usable=self.usable_voltage,
         )
 
 
 def _h_bridge_stage(
-    current: float, voltage: float, v_dc: float, drive: str, *, torque: float, rpm: float,
-    loss: float, notes: list[str] | None = None, inductance: float | None = None,
+    current: float,
+    voltage: float,
+    v_dc: float,
+    drive: str,
+    *,
+    torque: float,
+    rpm: float,
+    loss: float,
+    notes: list[str] | None = None,
+    inductance: float | None = None,
+    usable: float = 1.0,
 ) -> Stage:
     """What each of an H-bridge's four positions does for a signed current and voltage.
 
     current is positive from leg A to leg B; voltage is leg A minus leg B.
     """
-    if abs(voltage) > v_dc:
+    if abs(voltage) > usable * v_dc:
         raise Unreachable(
-            f"{torque:.3g} N·m at {rpm:.4g} rpm needs {abs(voltage):.4g} V, more than the DC link"
+            f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {written(abs(voltage), 4)} V, more than "
+            + _stage_gives(usable, v_dc)
         )
     first, second = ("A", "B") if current >= 0 else ("B", "A")
     along = voltage if current >= 0 else -voltage  # along the current
@@ -508,11 +585,15 @@ def _h_bridge_stage(
     amps, one, zero = np.full(n, abs(current)), np.ones(n), np.zeros(n)
     chopping = float(0 < duty < 1) * one
     idle = (zero, zero, zero, zero, zero)
+    states = None
     if drive == "bipolar":
         # The diagonal pair that feeds the motor is on for part of each period; for the
         # rest the current runs back through the reverse paths of the other diagonal.
         share = (1 + along / v_dc) / 2
         every = float(0 < share < 1) * one
+        # One diagonal, then the other: the link gives the current, then takes it back, and
+        # the winding sees the whole DC voltage one way, then the other.
+        states = [(share, abs(current), 1.0), (1 - share, -abs(current), -1.0)]
         parts = {
             (first, "high"): (amps, share * one, zero, every, zero),
             (second, "low"): (amps, share * one, zero, every, zero),
@@ -535,11 +616,17 @@ def _h_bridge_stage(
         }
     roles = [
         Role(f"leg {leg} {side} side", 1, *parts[(leg, side)], leg=leg)
-        for leg in ("A", "B") for side in ("high", "low")
+        for leg in ("A", "B")
+        for side in ("high", "low")
     ]
     return Stage(
-        roles=roles, period=1.0, l_phase=None if inductance is None else inductance / 2,
-        p_electrical=voltage * current, p_shaft=torque * _rad_s(rpm), p_motor_loss=loss,
+        roles=roles,
+        period=1.0,
+        l_phase=None if inductance is None else inductance / 2,
+        states=states,
+        p_electrical=voltage * current,
+        p_shaft=torque * _rad_s(rpm),
+        p_motor_loss=loss,
         summary=[("armature current", current, "A"), ("duty cycle", duty, "")],
         notes=(notes or []) + _braking_notes(torque * rpm >= 0, along),
     )
@@ -577,15 +664,22 @@ class SeriesDc(_Machine):
             )
         current = float(np.sqrt(torque / self.k))
         if self.i_max is not None and current > self.i_max:
-            raise Unreachable(
-                f"{torque:g} N·m needs {current:.3g} A, above the {self.i_max:g} A limit"
-            )
+            raise Unreachable(f"{torque:g} N·m needs {written(current, 3)} A, above the {self.i_max:g} A limit")
         voltage = self.k * current * _rad_s(rpm) + self.r * current
         return _h_bridge_stage(
-            current, voltage, v_dc, self.drive, torque=torque, rpm=rpm, loss=self.r * current**2,
+            current,
+            voltage,
+            v_dc,
+            self.drive,
+            torque=torque,
+            rpm=rpm,
+            loss=self.r * current**2,
             inductance=self.l,
-            notes=["series-wound: torque taken as proportional to current squared, so "
-                   "saturation of the field is not modelled"],
+            usable=self.usable_voltage,
+            notes=[
+                "series-wound: torque taken as proportional to current squared, so "
+                "saturation of the field is not modelled"
+            ],
         )
 
 
@@ -607,9 +701,7 @@ class Stepper(_Machine):
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
         if abs(torque) > self.holding_torque:
-            raise Unreachable(
-                f"{torque:g} N·m is above the holding torque of {self.holding_torque:g} N·m"
-            )
+            raise Unreachable(f"{torque:g} N·m is above the holding torque of {self.holding_torque:g} N·m")
         pole_pairs = self.steps_per_rev / 4
         w = pole_pairs * abs(_rad_s(rpm))
         # Back-EMF amplitude per phase from the holding torque: T = 2 * (pole pairs) * psi * I / 2.
@@ -621,37 +713,39 @@ class Stepper(_Machine):
         resistive = self.r * self.i_phase + back_emf * working
         reactive = w * self.l * self.i_phase + back_emf * float(np.sqrt(max(1 - working**2, 0.0)))
         v_peak = float(np.hypot(resistive, reactive))
-        if v_peak > v_dc:
+        if v_peak > self.usable_voltage * v_dc:
             raise Unreachable(
-                f"holding {self.i_phase:g} A at {rpm:g} rpm needs {v_peak:.4g} V, more than the "
-                "DC link: at this speed the current, and the torque, fall"
+                f"holding {self.i_phase:g} A at {rpm:g} rpm needs {written(v_peak, 4)} V, more than "
+                f"{_stage_gives(self.usable_voltage, v_dc)}: at this speed the current, and the torque, fall"
             )
         return _sinusoidal_stage(
-            i_rms=self.i_phase / np.sqrt(2), v_peak=v_peak,
+            i_rms=self.i_phase / np.sqrt(2),
+            v_peak=v_peak,
             power_factor=float(resistive / v_peak) if v_peak else 1.0,
-            f_out=float(w / (2 * np.pi)), v_dc=v_dc, pwm=Pwm.sine, legs=4,
-            p_shaft=torque * _rad_s(rpm), p_loss=self.r * self.i_phase**2,
+            f_out=float(w / (2 * np.pi)),
+            v_dc=v_dc,
+            pwm=Pwm.sine,
+            legs=4,
+            p_shaft=torque * _rad_s(rpm),
+            p_loss=self.r * self.i_phase**2,
             summary=[("set phase current", self.i_phase, "A peak")],
             notes=[
                 "stepper: current is the driver's set value, not derived from the torque",
-                "stepper: the back-EMF that does no work is added to the inductive voltage, "
-                "the highest-voltage case",
+                "stepper: the back-EMF that does no work is added to the inductive voltage, the highest-voltage case",
             ],
             leg_voltage=v_dc,
         )
 
 
-Machine = Annotated[
-    Pmsm | SynRm | Induction | Bldc | BrushedDc | SeriesDc | Stepper, Field(discriminator="type")
-]
-_ADAPTER = TypeAdapter(Machine)
+Machine = Annotated[Pmsm | SynRm | Induction | Bldc | BrushedDc | SeriesDc | Stepper, Field(discriminator="type")]
+ADAPTER = TypeAdapter(Machine)
 
 
 def load_machine(path: str | Path):
     with open(path, encoding="utf-8") as f:
         data = yaml.safe_load(f)
     data.setdefault("type", "pmsm")
-    return _ADAPTER.validate_python(data)
+    return ADAPTER.validate_python(data)
 
 
 TEMPLATES = {

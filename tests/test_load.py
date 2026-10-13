@@ -10,9 +10,9 @@ from motionsim.cycle import run_cycle
 from motionsim.drivers import at_speed_and_torque
 from motionsim.engine import OperatingPoint
 from motionsim.load import (
-    G,
     LOAD_TEMPLATE,
     PROFILE_TEMPLATE,
+    G,
     Gravity,
     Load,
     Profile,
@@ -23,21 +23,21 @@ from motionsim.load import (
 from motionsim.motor import TEMPLATES, Pmsm, load_machine
 
 MOTOR = Pmsm(pole_pairs=4, flux_linkage=0.1, l=0.008, rs=1.0)
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
 
 
 def igbt():
     return linear_device(
-        sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6,
+        sw_curves=[line(25.0, 0.9, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
     )
 
 
 def test_load_torque_terms_add_up() -> None:
-    load = Load(inertia=0.2, friction_coulomb=0.5, friction_viscous=0.01, fan_coefficient=0.002,
-                constant_torque=1.0)
+    load = Load(inertia=0.2, friction_coulomb=0.5, friction_viscous=0.01, fan_coefficient=0.002, constant_torque=1.0)
     w, a = 10.0, 3.0
     assert load.load_torque(w, a) == pytest.approx(0.2 * 3 + 0.5 + 1.0 + 0.01 * 10 + 0.002 * 100)
     # friction and the steady torque oppose motion in either direction
@@ -72,10 +72,12 @@ def test_gearbox_trades_speed_for_torque_and_takes_its_loss_from_the_driver() ->
 
 
 def test_profile_sampling_tracks_time_speed_and_angle() -> None:
-    profile = Profile(segments=[
-        Segment(duration=1.0, speed_start=0, speed_end=60),
-        Segment(duration=2.0, speed_start=60, speed_end=60),
-    ])
+    profile = Profile(
+        segments=[
+            Segment(duration=1.0, speed_start=0, speed_end=60),
+            Segment(duration=2.0, speed_start=60, speed_end=60),
+        ]
+    )
     samples = sample(Load(inertia=0.1), profile, per_segment=4)
     assert sum(s.duration for s in samples) == pytest.approx(3.0)
     assert samples[0].load_acceleration == pytest.approx(2 * math.pi)
@@ -98,10 +100,12 @@ def test_steady_motion_equals_the_single_point() -> None:
 
 def test_braking_returns_energy_and_is_solved() -> None:
     load = Load(inertia=0.02)
-    profile = Profile(segments=[
-        Segment(duration=0.5, speed_start=0, speed_end=2000),
-        Segment(duration=0.5, speed_start=2000, speed_end=0),
-    ])
+    profile = Profile(
+        segments=[
+            Segment(duration=0.5, speed_start=0, speed_end=2000),
+            Segment(duration=0.5, speed_start=2000, speed_end=0),
+        ]
+    )
     cycle = run_cycle(igbt(), MOTOR, load, profile, BASE)
     assert len(cycle.solved) == len(cycle.steps)
     torques = [s.sample.motor_torque for s in cycle.steps]

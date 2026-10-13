@@ -75,7 +75,7 @@ A motion is not a steady state. `motionsim cycle` follows temperature through it
 
 - Each chip's junction-to-case network, the datasheet's or the computed one, is driven by the chip's loss at each instant, with the exact response to a constant power over each step.
 - When the motor turns fast, many output periods fit in one instant of the motion: the slow state follows the mean loss, and the swing within the period, found as before, is added on top.
-- When it turns slowly or stands still, the loss waveform is followed through the output period itself. Each time the motor slows to that point it is taken to arrive at the rotor position that loads the hottest chip most.
+- When it turns slowly or stands still, the loss waveform is followed through the output period itself. Each time the motor slows to that point it is taken to arrive at a rotor position that loads a chip most. The motion is followed from each such position, one per chip, and the one that leaves a junction hottest is kept.
 - Heating from neighbouring chips and the package-to-heatsink interface are taken to respond at once. That is the cautious side: in reality they lag.
 - A heatsink given as a resistance to ambient and a heat capacity warms up as one thermal mass fed by the whole power stage's loss.
 

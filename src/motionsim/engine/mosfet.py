@@ -12,8 +12,9 @@ import numpy as np
 
 from motionsim.device.schema import Chip
 from motionsim.engine import lookup
+from motionsim.engine.losses import energy, voltage
 from motionsim.engine.modulation import Role
-from motionsim.engine.solver import DiodeLoss, OperatingPoint, SwitchLoss, _energy, _voltage
+from motionsim.engine.point import DiodeLoss, OperatingPoint, SwitchLoss
 
 
 class MissingGateDrive(ValueError):
@@ -32,9 +33,7 @@ def output_charge(c, v_dc: float) -> float:
     return c.q_oss * (v_dc / c.v_ref) ** (0.5 if c.q_oss_scaling == "sqrt" else 1.0)
 
 
-def _charge_energies(
-    chip: Chip, current: np.ndarray, op: OperatingPoint
-) -> tuple[np.ndarray, np.ndarray]:
+def charge_energies(chip: Chip, current: np.ndarray, op: OperatingPoint) -> tuple[np.ndarray, np.ndarray]:
     """Hard-switching turn-on and turn-off energy from gate and output charge.
 
     Turn-on and turn-off each have a current-voltage overlap lasting as long as
@@ -49,9 +48,7 @@ def _charge_energies(
         )
     c = chip.charge
     if op.v_drive <= c.v_plateau:
-        raise MissingGateDrive(
-            f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)"
-        )
+        raise MissingGateDrive(f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)")
     moved = c.q_gs - c.q_g_th + c.q_gd
     t_on = moved * op.rg_on / (op.v_drive - c.v_plateau)
     t_off = moved * op.rg_off / c.v_plateau
@@ -73,7 +70,7 @@ def mosfet_losses(
 
     # Reverse current loses two dead times of channel conduction per switching period.
     dead = role.reverse_events * np.minimum(2 * op.t_dead * op.f_sw, role.d_reverse)
-    v_on = _voltage(chip, mag, tj)
+    v_on = voltage(chip, mag, tj)
     p_cond = (role.d_switch + role.d_reverse - dead) * mag * v_on
     if chip.reverse is not None:
         v_reverse = np.maximum(lookup.evaluate(chip.reverse.curves, mag, tj), 0.0)
@@ -84,17 +81,17 @@ def mosfet_losses(
     mag_on = mag if role.current_on is None else role.current_on
     mag_off = mag if role.current_off is None else role.current_off
     if chip.e_on is not None and chip.e_off is not None:
-        e_on = _energy(chip.e_on, mag_on, tj, op.v_dc, op.rg_on)
-        e_off = _energy(chip.e_off, mag_off, tj, op.v_dc, op.rg_off)
+        e_on = energy(chip.e_on, mag_on, tj, op.v_dc, op.rg_on)
+        e_off = energy(chip.e_off, mag_off, tj, op.v_dc, op.rg_off)
     else:
-        e_on = _charge_energies(chip, mag_on, op)[0]
-        e_off = _charge_energies(chip, mag_off, op)[1]
+        e_on = charge_energies(chip, mag_on, op)[0]
+        e_off = charge_energies(chip, mag_off, op)[1]
     p_on = role.switch_events * e_on * op.f_sw
     p_off = role.switch_events * e_off * op.f_sw
     # A tabulated recovery energy is lost in the body diode of the device that was conducting
     # in reverse. With charge-based switching the recovery charge is already in turn-on.
     if chip.e_rr is not None and chip.e_on is not None:
-        p_rr = role.reverse_events * _energy(chip.e_rr, mag, tj, op.v_dc) * op.f_sw
+        p_rr = role.reverse_events * energy(chip.e_rr, mag, tj, op.v_dc) * op.f_sw
     else:
         p_rr = np.zeros_like(mag)
 

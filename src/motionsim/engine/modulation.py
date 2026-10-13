@@ -72,7 +72,6 @@ def waveform(
     return PhaseWaveform(theta=theta, duty=duty, current=current)
 
 
-
 @dataclass(frozen=True)
 class Role:
     """What one kind of switch position does over a period.
@@ -112,6 +111,11 @@ def phase_leg_role(w: PhaseWaveform, count: int = 6, name: str = "phase leg") ->
     """
     forward = w.current > 0
     backward = w.current < 0
+    if not w.current.any():
+        # No current at all: the legs switch all the same, and what that costs with nothing
+        # flowing (charging the output capacitance) is what it costs as the current vanishes.
+        forward = np.arange(w.current.size) < w.current.size / 2
+        backward = ~forward
     switching = (w.duty > 0) & (w.duty < 1)
     return Role(
         name=name,

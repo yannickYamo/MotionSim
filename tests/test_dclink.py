@@ -13,14 +13,14 @@ from motionsim.engine import OperatingPoint
 from motionsim.load import Load, Profile, Segment
 from motionsim.motor import BrushedDc
 
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=40.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=40.0)
 MOTOR = BrushedDc(type="dc", kt=0.5, r=0.5)
-STOP = Profile(segments=[
-    Segment(duration=0.5, speed_start=2000, speed_end=2000),
-    Segment(duration=0.5, speed_start=2000, speed_end=0),
-])
+STOP = Profile(
+    segments=[
+        Segment(duration=0.5, speed_start=2000, speed_end=2000),
+        Segment(duration=0.5, speed_start=2000, speed_end=0),
+    ]
+)
 
 
 def lossless():

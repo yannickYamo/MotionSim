@@ -10,3 +10,9 @@ runs/
 private/
 .impeccable/
 measurements/
+
+.coverage
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+dist/

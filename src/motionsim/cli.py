@@ -9,6 +9,7 @@ from motionsim import __version__
 from motionsim.device import load_device, save_device
 from motionsim.engine import OperatingPoint, Pwm, ThermalRunaway, solve
 from motionsim.engine.limits import max_current
+from motionsim.text import written
 
 
 def _pwm(args: argparse.Namespace) -> Pwm:
@@ -30,8 +31,10 @@ def _cooling(args: argparse.Namespace) -> dict:
     free = _no_heatsink_asked(args)
     in_air = get("rth_heatsink") is not None or free
     if get("rth_heatsink") is not None and free:
-        raise SystemExit("give --rth-heatsink, or one of --rth-ja, --no-heatsink and --board-area, not both: "
-                         "the devices sit on a heatsink or they do not")
+        raise SystemExit(
+            "give --rth-heatsink, or one of --rth-ja, --no-heatsink and --board-area, not both: "
+            "the devices sit on a heatsink or they do not"
+        )
     if get("copper") is not None and get("board_area") is None:
         raise SystemExit("--copper needs --board-area: the packages then share a board")
     for name in ("rth_heatsink", "rth_ja", "board_area", "copper", "copper_ref"):
@@ -44,11 +47,15 @@ def _cooling(args: argparse.Namespace) -> dict:
             raise SystemExit("cooling to air needs the air's temperature: --tair")
         return {"t_sink": args.tair, "rth_sink": args.rth_heatsink}
     if get("tair") is not None:
-        raise SystemExit("--tair needs the way to the air: --rth-heatsink (a heatsink's K/W), --rth-ja or "
-                         "--no-heatsink (no heatsink), --board-area (parts soldered to one board)")
+        raise SystemExit(
+            "--tair needs the way to the air: --rth-heatsink (a heatsink's K/W), --rth-ja or "
+            "--no-heatsink (no heatsink), --board-area (parts soldered to one board)"
+        )
     if args.tsink is None:
-        raise SystemExit("give the cooling: --tsink for a heatsink at a known temperature, or --tair with "
-                         "--rth-heatsink (a heatsink in air) or --rth-ja (no heatsink)")
+        raise SystemExit(
+            "give the cooling: --tsink for a heatsink at a known temperature, or --tair with "
+            "--rth-heatsink (a heatsink in air) or --rth-ja (no heatsink)"
+        )
     return {"t_sink": args.tsink}
 
 
@@ -65,7 +72,9 @@ def _in_free_air(args: argparse.Namespace, device, op: OperatingPoint) -> Operat
     from motionsim.cooling import no_heatsink
 
     try:
-        free = no_heatsink(device, args.rth_ja, board_area=args.board_area, copper=args.copper, copper_ref=args.copper_ref)
+        free = no_heatsink(
+            device, args.rth_ja, board_area=args.board_area, copper=args.copper, copper_ref=args.copper_ref
+        )
         for line in free.lines:
             if line.startswith("junction to air taken") and not getattr(args, "_air_said", False):
                 print(line)
@@ -80,7 +89,9 @@ def _operating_point(args: argparse.Namespace, i_rms: float, device=None) -> Ope
     which is then needed."""
     op = _conditions(args, i_rms)
     if _no_heatsink_asked(args) and device is None:
-        raise SystemExit("cooling with no heatsink is not taken by this command: it compares devices under one set of conditions")
+        raise SystemExit(
+            "cooling with no heatsink is not taken by this command: it compares devices under one set of conditions"
+        )
     return op if device is None else _dead_time_filled(args, device, _in_free_air(args, device, op))
 
 
@@ -92,19 +103,22 @@ def _dead_time_filled(args: argparse.Namespace, device, op: OperatingPoint) -> O
     from motionsim import recommend
     from motionsim.device.schema import ChipKind
 
-    if device.switch.kind is not ChipKind.mosfet or op.t_dead > 0:
+    # For an IGBT the dead time changes only the voltage a motor can be given: a command
+    # that is told the modulation outright (simulate, compare) has no use for one.
+    if device.switch.kind is not ChipKind.mosfet and getattr(args, "motor", None) is None:
         return op
-    found = recommend.dead_time(device, op).value.get("t_dead")
-    if not found:
+    found, line = recommend.open_dead_time(device, op)
+    if found is None:
         return op
-    found = recommend._round_up(found)
     if not getattr(args, "_dead_said", False):
-        print(f"dead time taken as {found * 1e9:.0f} ns, none being given (--tdead): its loss is counted")
+        print(f"{line} (--tdead)")
         args._dead_said = True
     return replace(op, t_dead=found)
 
 
 def _conditions(args: argparse.Namespace, i_rms: float) -> OperatingPoint:
+    if getattr(args, "m", 0.0) > 2 / 3**0.5 + 1e-9:
+        raise SystemExit(f"--m is the modulation index, at most 1.155 with any scheme, and {args.m:g} was given")
     return OperatingPoint(
         **_cooling(args),
         v_dc=args.vdc,
@@ -151,9 +165,7 @@ def _simulate(args: argparse.Namespace) -> int:
 
 def _max_current(args: argparse.Namespace) -> int:
     device = load_device(args.device)
-    i_max, r = max_current(
-        device, _operating_point(args, 0.0, device), tj_limit=args.tj, peak=not args.average
-    )
+    i_max, r = max_current(device, _operating_point(args, 0.0, device), tj_limit=args.tj, peak=not args.average)
     print(f"{device.vendor} {device.part_number} ({device.technology})")
     print(f"  maximum current     {i_max:8.2f} A rms")
     if r is not None:
@@ -163,13 +175,11 @@ def _max_current(args: argparse.Namespace) -> int:
 
 def _motor(args: argparse.Namespace) -> int:
     from motionsim.drivers import at_speed_and_torque
-    from motionsim.motor import Unreachable, load_machine
+    from motionsim.motor import Unreachable
 
     device, motor = load_device(args.device), _machine(args)
     try:
-        point = at_speed_and_torque(
-            device, motor, args.rpm, args.torque, _operating_point(args, 0.0, device)
-        )
+        point = at_speed_and_torque(device, motor, args.rpm, args.torque, _operating_point(args, 0.0, device))
     except (Unreachable, ThermalRunaway, ValueError) as exc:
         print(f"cannot simulate: {exc}", file=sys.stderr)
         return 1
@@ -205,10 +215,9 @@ def _print_checks(checks, indent: str = "  ") -> None:
 
 def _propose(args: argparse.Namespace) -> int:
     from motionsim import guard
-    from motionsim.motor import Unreachable, load_machine
-    from motionsim.propose import explain, level_with_best, propose
-
     from motionsim.engine.solver import hot_share
+    from motionsim.motor import Unreachable
+    from motionsim.propose import explain, level_with_best, propose
     from motionsim.recommend import choose_gate_drive
 
     devices = [load_device(path) for path in args.devices]
@@ -279,9 +288,17 @@ def _trajectory(args: argparse.Namespace) -> int:
         print(f"cannot read the trajectory: {exc}", file=sys.stderr)
         return 1
     op = OperatingPoint(
-        v_dc=args.vdc, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=args.fsw,
-        t_sink=args.tsink, t_dead=args.tdead, v_drive=args.vdrive, rg_on=args.rgon,
-        rg_off=args.rgoff, l_loop=args.lloop,
+        v_dc=args.vdc,
+        i_rms=0.0,
+        modulation_index=0.0,
+        power_factor=1.0,
+        f_sw=args.fsw,
+        t_sink=args.tsink,
+        t_dead=args.tdead,
+        v_drive=args.vdrive,
+        rg_on=args.rgon,
+        rg_off=args.rgoff,
+        l_loop=args.lloop,
     )
     try:
         outcome = run(device, trajectory, op)
@@ -291,12 +308,15 @@ def _trajectory(args: argparse.Namespace) -> int:
     r = outcome.result
     i_peak = max(float(np.abs(i).max()) for i in trajectory.current.values())
     print(f"{device.vendor} {device.part_number} ({device.technology}) along {args.trajectory}")
-    print(f"  duration            {trajectory.duration:8.4g} s, {len(trajectory.legs)} legs, "
-          f"peak current {i_peak:.3g} A")
+    print(
+        f"  duration            {trajectory.duration:8.4g} s, {len(trajectory.legs)} legs, "
+        f"peak current {written(i_peak, 3)} A"
+    )
     print("  taking the trajectory to repeat without end")
     _print_result(device, r)
-    print(f"  run once from a heatsink-temperature start, the hottest junction reaches "
-          f"{outcome.peak_from_start:.1f} °C")
+    print(
+        f"  run once from a heatsink-temperature start, the hottest junction reaches {outcome.peak_from_start:.1f} °C"
+    )
     _print_checks(guard.check(device, op, r, i_peak))
     if args.output:
         import csv
@@ -310,8 +330,11 @@ def _trajectory(args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
+    import logging
+
     from motionsim.server import serve
 
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()), format="%(asctime)s %(levelname)s %(message)s")
     serve(port=args.port, folder=args.devices, open_browser=not args.no_browser)
     return 0
 
@@ -328,7 +351,7 @@ def _recommend(args: argparse.Namespace) -> int:
     from motionsim import recommend
     from motionsim.drivers import at_speed_and_torque
     from motionsim.engine.limits import hottest
-    from motionsim.motor import Unreachable, load_machine
+    from motionsim.motor import Unreachable
 
     device, motor = load_device(args.device), _machine(args)
     base = _operating_point(args, 0.0, device)
@@ -339,20 +362,35 @@ def _recommend(args: argparse.Namespace) -> int:
     except Unreachable as exc:
         print(f"the motor cannot run at this point: {exc}", file=sys.stderr)
         return 1
-    print(f"{device.vendor} {device.part_number} driving {motor.name}: "
-          f"{args.torque:g} N·m at {args.rpm:g} rpm from {args.vdc:g} V")
+    print(
+        f"{device.vendor} {device.part_number} driving {motor.name}: "
+        f"{args.torque:g} N·m at {args.rpm:g} rpm from {args.vdc:g} V"
+    )
     print("Starting values for a first prototype. Settle them on the bench.")
     print()
-    _print_recommendation(recommend.gate_resistors(
-        device, base, stage.i_peak, dvdt_max=args.dvdt * 1e9, driver_peak=args.driver_peak,
-    ))
+    _print_recommendation(
+        recommend.gate_resistors(
+            device,
+            # As the page does: with no loop inductance given, the usual one is taken for the overshoot limit.
+            base if base.l_loop is not None else replace(base, l_loop=recommend.USUAL_LOOP),
+            stage.i_peak,
+            dvdt_max=args.dvdt * 1e9,
+            driver_peak=args.driver_peak,
+        )
+    )
     _print_recommendation(recommend.dead_time(device, base, driver_mismatch=args.driver_mismatch))
 
     def evaluate(t_sink: float) -> tuple[float, float]:
         worst, loss = float("-inf"), 0.0
         for rpm in (args.rpm, 0.0):  # the design point, and holding the same torque at standstill
             try:
-                point = at_speed_and_torque(device, motor, rpm, args.torque, replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None))
+                point = at_speed_and_torque(
+                    device,
+                    motor,
+                    rpm,
+                    args.torque,
+                    replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None),
+                )
             except Unreachable:
                 continue
             except ValueError as exc:
@@ -365,9 +403,7 @@ def _recommend(args: argparse.Namespace) -> int:
     if motor.fixed_scheme is None:
         for scheme in Pwm:
             try:
-                point = at_speed_and_torque(
-                    device, motor, args.rpm, args.torque, replace(base, pwm=scheme)
-                )
+                point = at_speed_and_torque(device, motor, args.rpm, args.torque, replace(base, pwm=scheme))
                 losses[scheme.value] = point.result.p_inverter
             except (Unreachable, ThermalRunaway, ValueError):
                 continue
@@ -377,7 +413,9 @@ def _recommend(args: argparse.Namespace) -> int:
         print("heatsink")
         print("  - give the ambient temperature (--tambient) to size a heatsink")
     else:
-        _print_recommendation(recommend.heatsink(device, args.tambient, evaluate))
+        _print_recommendation(
+            recommend.heatsink(device, args.tambient, evaluate, sink_limit=getattr(args, "tsink_max", None))
+        )
     return 0
 
 
@@ -413,7 +451,7 @@ def _validate(args: argparse.Namespace) -> int:
 
 def _advise(args: argparse.Namespace) -> int:
     from motionsim.advise import advise
-    from motionsim.motor import Unreachable, load_machine
+    from motionsim.motor import Unreachable
 
     motor = _machine(args)
     try:
@@ -433,21 +471,24 @@ def _advise(args: argparse.Namespace) -> int:
 def _grid(text: str):
     import numpy as np
 
-    low, high, count = text.split(":")
-    return np.linspace(float(low), float(high), int(count))
+    try:
+        low, high, count = text.split(":")
+        low, high, count = _figure(low), _figure(high), int(count)
+    except (ValueError, argparse.ArgumentTypeError):
+        raise SystemExit(f"a range is written low:high:count, and {text} was given") from None
+    if not 1 <= count <= 200:
+        raise SystemExit(f"a range takes 1 to 200 points, and {count} were asked for")
+    return np.linspace(low, high, count)
 
 
 def _map(args: argparse.Namespace) -> int:
     import numpy as np
 
     from motionsim.drivers import speed_torque_map
-    from motionsim.motor import load_machine
 
     device, motor = load_device(args.device), _machine(args)
     try:
-        m = speed_torque_map(
-            device, motor, _grid(args.rpm), _grid(args.torque), _operating_point(args, 0.0, device)
-        )
+        m = speed_torque_map(device, motor, _grid(args.rpm), _grid(args.torque), _operating_point(args, 0.0, device))
     except ValueError as exc:
         print(f"cannot simulate: {exc}", file=sys.stderr)
         return 1
@@ -482,8 +523,9 @@ def _map(args: argparse.Namespace) -> int:
             w.writerow(["rpm", "torque_nm", "i_peak_a", "p_inverter_w", "tj_peak_c", "efficiency", "note"])
             for a, t in enumerate(m.torque):
                 for b, n in enumerate(m.rpm):
-                    w.writerow([n, t, m.i_peak[a, b], m.p_inverter[a, b], m.tj_peak[a, b],
-                                m.efficiency[a, b], m.reason[a][b]])
+                    w.writerow(
+                        [n, t, m.i_peak[a, b], m.p_inverter[a, b], m.tj_peak[a, b], m.efficiency[a, b], m.reason[a][b]]
+                    )
         print(f"full map written to {args.output}")
     return 0
 
@@ -512,15 +554,19 @@ def _package(args: argparse.Namespace) -> int:
 
 
 def _template(args: argparse.Namespace) -> int:
+    from motionsim.fit.typed import TEMPLATE as DEVICE_TEMPLATE
     from motionsim.load import LOAD_TEMPLATE, PROFILE_TEMPLATE
     from motionsim.motor import TEMPLATES
     from motionsim.reference import TEMPLATE as REFERENCE_TEMPLATE
-    from motionsim.fit.typed import TEMPLATE as DEVICE_TEMPLATE
     from motionsim.trajectory import example
 
     text = {
-        **TEMPLATES, "device": DEVICE_TEMPLATE, "load": LOAD_TEMPLATE, "profile": PROFILE_TEMPLATE,
-        "reference": REFERENCE_TEMPLATE, "trajectory": example(),
+        **TEMPLATES,
+        "device": DEVICE_TEMPLATE,
+        "load": LOAD_TEMPLATE,
+        "profile": PROFILE_TEMPLATE,
+        "reference": REFERENCE_TEMPLATE,
+        "trajectory": example(),
     }[args.kind]
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:
@@ -537,9 +583,10 @@ def _cycle(args: argparse.Namespace) -> int:
     from motionsim import dclink, guard
     from motionsim.engine.limits import hottest
     from motionsim.load import load_load, load_profile
-    from motionsim.motor import load_machine
     from motionsim.transient import Heatsink, follow
 
+    if getattr(args, "tsink_max", None) is not None and args.tambient is None:
+        raise SystemExit("--tsink-max limits the heatsink that is sized, and one is sized only with --tambient")
     device, motor = load_device(args.device), _machine(args)
     load, profile = load_load(args.load), load_profile(args.profile)
     base = _operating_point(args, 0.0, device)
@@ -551,17 +598,18 @@ def _cycle(args: argparse.Namespace) -> int:
             print("a heatsink needs both --rth-sink and --c-sink", file=sys.stderr)
             return 1
         if _no_heatsink_asked(args) or getattr(args, "rth_heatsink", None) is not None:
-            print("to follow a heatsink as it warms, give --tsink (where it starts), --rth-sink, --c-sink and "
-                  "--tambient. --tair with --rth-heatsink takes the heatsink as already warm; with no heatsink "
-                  "there is none to follow", file=sys.stderr)
+            print(
+                "to follow a heatsink as it warms, give --tsink (where it starts), --rth-sink, --c-sink and "
+                "--tambient. --tair with --rth-heatsink takes the heatsink as already warm; with no heatsink "
+                "there is none to follow",
+                file=sys.stderr,
+            )
             return 1
         # The air is where the heatsink starts from: --tambient, or the temperature given for the cooling.
         ambient = base.t_sink if args.tambient is None else args.tambient
         heatsink = Heatsink(rth=args.rth_sink, capacity=args.c_sink, t_ambient=ambient)
     try:
-        cycle, trace = follow(
-            device, motor, load, profile, base, heatsink=heatsink, repeats=args.repeat
-        )
+        cycle, trace = follow(device, motor, load, profile, base, heatsink=heatsink, repeats=args.repeat)
     except ValueError as exc:
         print(f"cannot simulate: {exc}", file=sys.stderr)
         return 1
@@ -629,11 +677,16 @@ def _cycle(args: argparse.Namespace) -> int:
 
         def evaluate(t_sink: float) -> tuple[float, float]:
             moved, temperatures = follow(
-                device, motor, load, profile, replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None), repeats=args.repeat
+                device,
+                motor,
+                load,
+                profile,
+                replace(base, t_sink=t_sink, rth_sink=None, rth_free=None, rth_board=None),
+                repeats=args.repeat,
             )
             return temperatures.peak + spread, moved.mean_loss
 
-        needed = recommend.heatsink(device, args.tambient, evaluate)
+        needed = recommend.heatsink(device, args.tambient, evaluate, sink_limit=getattr(args, "tsink_max", None))
         print("  heatsink for this motion repeated without pause")
         for line in needed.lines:
             print(f"    - {line}")
@@ -642,18 +695,27 @@ def _cycle(args: argparse.Namespace) -> int:
 
         with open(args.output, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
-            w.writerow(["time_s", "motor_rpm", "motor_torque_nm", "p_stage_w", "p_dc_w",
-                        "tj_c", "tj_if_held_forever_c", "t_sink_c", "problem"])
+            w.writerow(
+                [
+                    "time_s",
+                    "motor_rpm",
+                    "motor_torque_nm",
+                    "p_stage_w",
+                    "p_dc_w",
+                    "tj_c",
+                    "tj_if_held_forever_c",
+                    "t_sink_c",
+                    "problem",
+                ]
+            )
             start = len(trace.time) - count
             for k, s in enumerate(cycle.steps):
-                row = [f"{trace.time[start + k]:.6g}", s.sample.motor_rpm, s.sample.motor_torque]
+                row = [f"{written(trace.time[start + k], 6)}", s.sample.motor_rpm, s.sample.motor_torque]
                 if s.point is None:
                     row += ["", ""]
                 else:
-                    row += [s.point.result.p_inverter,
-                            s.point.stage.p_electrical + s.point.result.p_inverter]
-                row += [trace.tj[start + k], trace.steady[start + k], trace.t_sink[start + k],
-                        s.problem or ""]
+                    row += [s.point.result.p_inverter, s.point.stage.p_electrical + s.point.result.p_inverter]
+                row += [trace.tj[start + k], trace.steady[start + k], trace.t_sink[start + k], s.problem or ""]
                 w.writerow(row)
         print(f"  every instant written to {args.output}")
     return 0
@@ -666,7 +728,8 @@ def _measure(args: argparse.Namespace) -> int:
 
     try:
         device = apply_double_pulse(
-            load_device(args.device), load_double_pulse(args.measurement),
+            load_device(args.device),
+            load_double_pulse(args.measurement),
             Path(args.measurement).name,
         )
     except ValueError as exc:
@@ -695,10 +758,7 @@ def _compare(args: argparse.Namespace) -> int:
         peak = max(r.tj_switch_peak, r.tj_diode_peak)
         bound = "~" if r.tj_peak_range is not None else " "
         eff = f"{100 * r.efficiency:8.2f}" if r.efficiency is not None else f"{'-':>8}"
-        print(
-            f"{name:<28}{r.p_inverter:9.1f}{eff}{bound:>3}{peak:6.1f}{row.margin:8.1f}  "
-            f"{r.validity.value}"
-        )
+        print(f"{name:<28}{r.p_inverter:9.1f}{eff}{bound:>3}{peak:6.1f}{row.margin:8.1f}  {r.validity.value}")
     for row in rows:
         if row.result is not None and row.margin < 0:
             print(f"  {row.device.part_number}: over its junction temperature rating")
@@ -706,7 +766,9 @@ def _compare(args: argparse.Namespace) -> int:
 
     print()
     for row in rows:
-        print(f"  {row.device.vendor} {row.device.part_number}: switching loss {switching_footing(row.device, op).text}")
+        print(
+            f"  {row.device.vendor} {row.device.part_number}: switching loss {switching_footing(row.device, op).text}"
+        )
 
     if args.sweep_fsw:
         low, high = (float(v) for v in args.sweep_fsw.split(":"))
@@ -715,9 +777,7 @@ def _compare(args: argparse.Namespace) -> int:
         print()
         print(f"{'fsw kHz':<10}" + "".join(f"{d.part_number[:14]:>16}" for d in devices))
         for j, f in enumerate(frequencies):
-            cells = "".join(
-                f"{'-':>16}" if np.isnan(v) else f"{v:16.1f}" for v in table[:, j]
-            )
+            cells = "".join(f"{'-':>16}" if np.isnan(v) else f"{v:16.1f}" for v in table[:, j])
             print(f"{f / 1000:<10.1f}{cells}")
         for a in range(len(devices)):
             for b in range(a + 1, len(devices)):
@@ -737,12 +797,16 @@ def _extract(args: argparse.Namespace) -> int:
 
     document, pages = read_document(args.pdf)
     obs = check(read_tables(pages), document, pages, reader=MODEL)
-    obs.curves = _digitise_curves(args.pdf, obs)
+    from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
+
+    obs.curves = digitise_curves(args.pdf, obs)
     save_observations(obs, args.output)
     flagged = [o for o in obs.observations if o.flags]
     print(f"{obs.vendor} {obs.part_number} ({obs.technology}, {obs.topology.value})")
     if document.transcribed:
-        print(f"  {len(document.transcribed)} of {document.pages} pages had no usable text and were read from their image")
+        print(
+            f"  {len(document.transcribed)} of {document.pages} pages had no usable text and were read from their image"
+        )
     print(f"  {len(obs.observations)} table values read, {len(flagged)} flagged")
     for o in flagged:
         for flag in o.flags:
@@ -777,111 +841,12 @@ def _curves(args: argparse.Namespace) -> int:
     if document.sha256 != obs.document.sha256:
         print("this PDF is not the file the observations were read from", file=sys.stderr)
         return 1
-    obs.curves = _digitise_curves(args.pdf, obs)
+    from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
+
+    obs.curves = digitise_curves(args.pdf, obs)
     save_observations(obs, args.observations)
     _print_curves(obs)
     return 0
-
-
-def _digitise_curves(pdf_path: str, obs) -> list:
-    """Curves from every page the reader said has usable figures."""
-    import pdfplumber
-
-    from motionsim.observe import figures
-    from motionsim.observe.charge import (
-        digitise_capacitance,
-        digitise_gate_charge,
-        is_capacitance,
-        is_gate_charge,
-    )
-    from motionsim.observe.family import (
-        digitise_family,
-        digitise_normalised_resistance,
-        digitise_gate_resistance,
-        digitise_voltage,
-        is_family,
-        is_gate_resistance,
-        is_voltage,
-        is_normalised_resistance,
-    )
-    from motionsim.observe.ingest import render_page
-    from motionsim.observe.reader import read_axes
-    from motionsim.observe.thermal import digitise_thermal, is_thermal
-
-    curves = []
-    fet = obs.technology != "Si IGBT"  # gate-charge and capacitance figures feed only the FET model
-    by_page: dict[int, list] = {}
-    for fig in obs.figures:
-        by_page.setdefault(fig.page, []).append(fig)
-    with pdfplumber.open(pdf_path) as pdf:
-        for number, listed in sorted(by_page.items()):
-            wanted = [
-                f for f in listed
-                if is_thermal(f) or is_family(f) or is_normalised_resistance(f) or is_gate_resistance(f) or is_voltage(f)
-                or (fet and (is_gate_charge(f) or is_capacitance(f)))
-            ]
-            if not wanted:
-                continue
-            page = pdf.pages[number - 1]
-            frames = figures.find_frames(page)
-            by_caption = figures.match_frames(page, frames, [f.label for f in listed])
-            if len(by_caption) < len(listed) and len(frames) == len(listed):
-                # Captions not found as printed: fall back to reading order.
-                by_caption = {f.label: frame for f, frame in zip(listed, frames)}
-            # One caption over a row of plots (the same figure at two temperatures, say):
-            # each plot the caption did not claim is read as a part of that figure.
-            claimed = {id(frame) for frame in by_caption.values()}
-            for fig in list(wanted):
-                first = by_caption.get(fig.label)
-                if first is None or not is_family(fig):
-                    continue
-                row = [
-                    f for f in frames
-                    if id(f) not in claimed and abs(f.top - first.top) < 6 and abs(f.bottom - first.bottom) < 6
-                ]
-                if not row:
-                    continue
-                parts = sorted([first] + row, key=lambda f: f.x0)
-                wanted.remove(fig)
-                del by_caption[fig.label]
-                for k, frame in enumerate(parts, start=1):
-                    part = fig.model_copy(update={"label": f"{fig.label} (plot {k} of {len(parts)}, left to right)"})
-                    wanted.append(part)
-                    by_caption[part.label] = frame
-                    claimed.add(id(frame))
-            located = [f for f in wanted if f.label in by_caption]
-            for fig in wanted:
-                if fig not in located:
-                    print(f"  page {number}: no plot area found for {fig.label}", file=sys.stderr)
-            if not located:
-                continue
-            claims = read_axes(render_page(pdf_path, number), [f.label for f in located]).figures
-            by_label = {c.label: c for c in claims}
-            for fig in located:
-                frame = by_caption[fig.label]
-                if fig.label not in by_label:
-                    print(f"  page {number}: no axes reported for {fig.label}", file=sys.stderr)
-                    continue
-                claim = by_label[fig.label]
-                if is_normalised_resistance(fig):
-                    new = [digitise_normalised_resistance(page, frame, fig, claim)]
-                elif is_gate_resistance(fig):
-                    new = digitise_gate_resistance(page, frame, fig, claim, obs.observations)
-                elif is_voltage(fig):
-                    new = digitise_voltage(page, frame, fig, claim, obs.observations)
-                elif is_thermal(fig):
-                    new = [digitise_thermal(page, frame, fig, claim, obs.observations)]
-                elif is_gate_charge(fig):
-                    new = [digitise_gate_charge(page, frame, fig, claim, obs.observations)]
-                elif is_capacitance(fig):
-                    new = [digitise_capacitance(page, frame, fig, claim, obs.observations)]
-                else:
-                    new = digitise_family(page, frame, fig, claim, obs.observations)
-                if frame.raster is not None:
-                    for curve in new:
-                        curve.method = "picture"
-                curves.extend(new)
-    return curves
 
 
 def _check(args: argparse.Namespace) -> int:
@@ -905,12 +870,11 @@ def _check(args: argparse.Namespace) -> int:
 
 
 def _build(args: argparse.Namespace) -> int:
-    from motionsim.fit import MissingData, build_device
-    from motionsim.observe import load_observations
-
     import yaml
 
+    from motionsim.fit import MissingData, build_device
     from motionsim.fit.typed import Mistyped, from_figures, is_figures
+    from motionsim.observe import load_observations
 
     try:
         with open(args.observations, encoding="utf-8") as f:
@@ -952,7 +916,8 @@ def _design(args: argparse.Namespace) -> int:
             if args.action == "init":
                 key = design.bring_device(args.device, Path.cwd(), workspace)
                 setup = design.starting_setup(key, workspace, args.motor)
-                setup["devices"] = [args.device]  # as the user named it: a path stays a path
+                # As the user named it; a file is named in full, so the design finds it from wherever it is kept.
+                setup["devices"] = [str(Path(args.device).resolve()) if Path(args.device).is_file() else args.device]
                 text = design.SETUP_HEAD + yaml.safe_dump(setup, sort_keys=False, allow_unicode=True)
                 if args.output:
                     Path(args.output).write_text(text, encoding="utf-8")
@@ -960,23 +925,40 @@ def _design(args: argparse.Namespace) -> int:
                 else:
                     print(text, end="")
                 return 0
+            if args.verbose:
+                import logging
+
+                logging.basicConfig(level=logging.INFO, format="%(message)s")
             setup = design.load_setup(args.setup, workspace)
             steps = tuple(x for x in design.STEPS if x not in (args.skip or []))
             result = design.run(setup, workspace, steps=steps, traces=args.traces)
         except page.Refused as exc:
             refusal = {"outcome": "refused", "refused": exc.reason, "fix": exc.fix, "field": exc.field}
-            print(json.dumps(refusal, indent=1) if getattr(args, "json", False) else f"refused: {exc.reason}" + (f"\n  {exc.fix}" if exc.fix else ""),
-                  file=sys.stdout if getattr(args, "json", False) else sys.stderr)
+            print(
+                json.dumps(refusal, indent=1)
+                if getattr(args, "json", False)
+                else f"refused: {exc.reason}" + (f"\n  {exc.fix}" if exc.fix else ""),
+                file=sys.stdout if getattr(args, "json", False) else sys.stderr,
+            )
             return 2
         report = design.markdown(result)
-        if args.md:
-            Path(args.md).write_text(report, encoding="utf-8")
+        try:
+            if args.md:
+                Path(args.md).write_text(report, encoding="utf-8")
+            if args.csv:
+                Path(args.csv).write_text(design.csv_text(result), encoding="utf-8")
+        except OSError as exc:
+            print(f"cannot write the report: {exc}", file=sys.stderr)
+            return 2
         if args.json:
-            print(json.dumps(result, indent=1, default=float))
+            print(json.dumps(page.finite(result), indent=1, default=float))
         elif not args.md:
             print(report, end="")
         else:
             print(f"{result['outcome']}: report written to {args.md}")
+    # A step that could not be run is a design that cannot be run as written, whatever the rest says.
+    if result.get("refusals"):
+        return 2
     return {"refused": 2, "does not pass": 3}.get(result["outcome"], 0)
 
 
@@ -1006,8 +988,9 @@ def _print_result(device, r) -> None:
     if device.diode is not None:
         print(f"  Tj diode   average  {r.tj_diode:8.1f} °C   peak {r.tj_diode_peak:6.1f} °C{assumed_note}")
     print(f"  T case              {r.t_case:8.1f} °C")
-    margin = device.ratings.tj_max - max(r.tj_switch_peak, r.tj_diode_peak)
-    print(f"  margin to Tj max    {margin:8.1f} °C")
+    # The margin is to the top of the range, as every other answer counts it.
+    top = max(r.tj_switch_peak, r.tj_diode_peak, *(r.tj_peak_range or ()))
+    print(f"  margin to Tj max    {device.ratings.tj_max - top:8.1f} °C")
     if r.tj_peak_range is not None:
         low, high = r.tj_peak_range
         print(f"  hottest junction    {low:8.1f} to {high:.1f} °C across the thermal assumptions")
@@ -1020,10 +1003,7 @@ def _print_result(device, r) -> None:
         print("  by position (the figures above are for the hottest)")
         for role in r.roles:
             loss = role.switch.total + role.diode.total
-            print(
-                f"    - {role.count} x {role.name}: {loss:.3f} W each, "
-                f"peak {role.hottest:.1f} °C"
-            )
+            print(f"    - {role.count} x {role.name}: {loss:.3f} W each, peak {role.hottest:.1f} °C")
     print("  not modelled")
     for limit in r.limits:
         print(f"    - {limit}")
@@ -1031,6 +1011,42 @@ def _print_result(device, r) -> None:
         print("  rating warnings")
         for warning in r.rating_warnings:
             print(f"    - {warning}")
+
+
+def _figure(text: str) -> float:
+    """A number given on the command line: a figure, not nan or inf."""
+    import math
+
+    value = float(text)
+    if not math.isfinite(value):
+        raise argparse.ArgumentTypeError(f"{text} is not a number")
+    return value
+
+
+def _above_zero(text: str) -> float:
+    value = _figure(text)
+    if value <= 0:
+        raise argparse.ArgumentTypeError(f"has to be above zero, and {text} was given")
+    return value
+
+
+def _whole(text: str, low: int, high: int) -> int:
+    value = int(text)
+    if not low <= value <= high:
+        raise argparse.ArgumentTypeError(f"has to be from {low} to {high}, and {text} was given")
+    return value
+
+
+def _repeats(text: str) -> int:
+    return _whole(text, 1, 50)
+
+
+def _count(text: str) -> int:
+    return _whole(text, 1, 12)
+
+
+def _port(text: str) -> int:
+    return _whole(text, 1, 65535)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1048,57 +1064,73 @@ def main(argv: list[str] | None = None) -> int:
         else:
             p.add_argument("device", help="device YAML file")
         p.add_argument(
-            "--pwm", choices=[m.value for m in Pwm],
-            help="modulation scheme (default: sine, or the usual one for the motor type "
-            "when a motor is given)"
+            "--pwm",
+            choices=[m.value for m in Pwm],
+            help="modulation scheme (default: sine, or the usual one for the motor type when a motor is given)",
         )
-        p.add_argument("--vdc", type=float, required=True, help="DC-link voltage, V")
+        p.add_argument("--vdc", type=_figure, required=True, help="DC-link voltage, V")
         if motor:
             p.add_argument("--motor", required=True, help="motor YAML file")
         else:
-            p.add_argument("--m", type=float, required=True, help="modulation index, 0 to 1")
-            p.add_argument("--pf", type=float, required=True, help="power factor")
-            p.add_argument(
-                "--fout", type=float, default=50.0, help="output frequency, Hz (default 50)"
-            )
-        p.add_argument("--fsw", type=float, required=True, help="switching frequency, Hz")
-        p.add_argument("--tsink", type=float, help="heatsink temperature, °C, where it is known")
-        p.add_argument("--tair", type=float, help="air temperature, °C, for cooling to air")
-        p.add_argument("--rth-heatsink", type=float, help="a heatsink in air: its thermal resistance, K/W, with every device on it")
-        p.add_argument("--rth-ja", type=float, help="no heatsink: one package's junction-to-air resistance, K/W, from its datasheet")
-        p.add_argument("--no-heatsink", action="store_true", help="no heatsink, at the usual junction-to-air figure for a TO-220, TO-247 or TO-263")
-        p.add_argument("--board-area", type=float, help="no heatsink, soldered to one board: the board's area, cm². The packages then warm each other")
-        p.add_argument("--copper", type=float, help="no heatsink, on a board: the copper each package has to itself, cm²")
-        p.add_argument("--copper-ref", type=float, help="the copper area the datasheet's junction-to-air figure was taken on, cm² (default 6.45, one square inch)")
-        p.add_argument("--tdead", type=float, default=0.0, help="dead time, s (mosfets)")
-        p.add_argument("--vdrive", type=float, help="gate drive voltage, V")
-        p.add_argument("--rgon", type=float, help="total turn-on gate resistance, ohm")
-        p.add_argument("--rgoff", type=float, help="total turn-off gate resistance, ohm")
-        p.add_argument("--lloop", type=float, help="commutation-loop inductance, H")
-        p.add_argument("--tmin", type=float, default=0.0, help="shortest pulse the gate drive passes, s")
+            p.add_argument("--m", type=_figure, required=True, help="modulation index, 0 to 1")
+            p.add_argument("--pf", type=_figure, required=True, help="power factor")
+            p.add_argument("--fout", type=_figure, default=50.0, help="output frequency, Hz (default 50)")
+        p.add_argument("--fsw", type=_figure, required=True, help="switching frequency, Hz")
+        p.add_argument("--tsink", type=_figure, help="heatsink temperature, °C, where it is known")
+        p.add_argument("--tair", type=_figure, help="air temperature, °C, for cooling to air")
         p.add_argument(
-            "--parallel", type=int, default=1, help="devices side by side at each switch position"
+            "--rth-heatsink",
+            type=_figure,
+            help="a heatsink in air: its thermal resistance, K/W, with every device on it",
         )
+        p.add_argument(
+            "--rth-ja",
+            type=_figure,
+            help="no heatsink: one package's junction-to-air resistance, K/W, from its datasheet",
+        )
+        p.add_argument(
+            "--no-heatsink",
+            action="store_true",
+            help="no heatsink, at the usual junction-to-air figure for a TO-220, TO-247 or TO-263",
+        )
+        p.add_argument(
+            "--board-area",
+            type=_figure,
+            help="no heatsink, soldered to one board: the board's area, cm². The packages then warm each other",
+        )
+        p.add_argument(
+            "--copper", type=_figure, help="no heatsink, on a board: the copper each package has to itself, cm²"
+        )
+        p.add_argument(
+            "--copper-ref",
+            type=_figure,
+            help="the copper area the datasheet's junction-to-air figure was taken on, cm² (default 6.45, one square inch)",
+        )
+        p.add_argument("--tdead", type=_figure, default=0.0, help="dead time, s (mosfets)")
+        p.add_argument("--vdrive", type=_figure, help="gate drive voltage, V")
+        p.add_argument("--rgon", type=_figure, help="total turn-on gate resistance, ohm")
+        p.add_argument("--rgoff", type=_figure, help="total turn-off gate resistance, ohm")
+        p.add_argument("--lloop", type=_figure, help="commutation-loop inductance, H")
+        p.add_argument("--tmin", type=_figure, default=0.0, help="shortest pulse the gate drive passes, s")
+        p.add_argument("--parallel", type=_count, default=1, help="devices side by side at each switch position")
         if motor:
-            p.add_argument("--tmotor", type=float, help="winding temperature, °C (default: as the motor file gives)")
+            p.add_argument("--tmotor", type=_figure, help="winding temperature, °C (default: as the motor file gives)")
 
     sim = sub.add_parser("simulate", help="losses and temperatures at one operating point")
     conditions(sim)
-    sim.add_argument("--irms", type=float, required=True, help="phase current, A rms")
+    sim.add_argument("--irms", type=_figure, required=True, help="phase current, A rms")
     sim.set_defaults(func=_simulate)
 
     lim = sub.add_parser("max-current", help="phase current that reaches the junction limit")
     conditions(lim)
-    lim.add_argument("--tj", type=float, help="junction temperature limit, °C (default: rating)")
-    lim.add_argument(
-        "--average", action="store_true", help="limit the average junction temperature, not the peak"
-    )
+    lim.add_argument("--tj", type=_figure, help="junction temperature limit, °C (default: rating)")
+    lim.add_argument("--average", action="store_true", help="limit the average junction temperature, not the peak")
     lim.set_defaults(func=_max_current)
 
     mot = sub.add_parser("motor", help="losses and temperatures at a motor speed and torque")
     conditions(mot, motor=True)
-    mot.add_argument("--rpm", type=float, required=True, help="shaft speed, rpm")
-    mot.add_argument("--torque", type=float, required=True, help="shaft torque, N·m")
+    mot.add_argument("--rpm", type=_figure, required=True, help="shaft speed, rpm")
+    mot.add_argument("--torque", type=_figure, required=True, help="shaft torque, N·m")
     mot.set_defaults(func=_motor)
 
     mp = sub.add_parser("map", help="losses and temperatures over a speed-torque grid")
@@ -1110,60 +1142,67 @@ def main(argv: list[str] | None = None) -> int:
 
     pro = sub.add_parser("propose", help="rank candidate devices for a motor and say why")
     conditions(pro, many=True, motor=True)
-    pro.add_argument("--rpm", type=float, required=True, help="shaft speed at the design point, rpm")
-    pro.add_argument("--torque", type=float, required=True, help="shaft torque at the design point, N·m")
+    pro.add_argument("--rpm", type=_figure, required=True, help="shaft speed at the design point, rpm")
+    pro.add_argument("--torque", type=_figure, required=True, help="shaft torque at the design point, N·m")
     pro.set_defaults(func=_propose)
 
-    trj = sub.add_parser(
-        "trajectory", help="losses and temperatures along currents and duty cycles from a file"
-    )
+    trj = sub.add_parser("trajectory", help="losses and temperatures along currents and duty cycles from a file")
     trj.add_argument("device", help="device YAML file")
     trj.add_argument("trajectory", help="CSV: time_s, i_a, d_a, ... (see: motionsim template trajectory)")
-    trj.add_argument("--vdc", type=float, required=True, help="DC-link voltage, V")
-    trj.add_argument("--fsw", type=float, required=True, help="switching frequency, Hz")
-    trj.add_argument("--tsink", type=float, required=True, help="heatsink temperature, °C")
-    trj.add_argument("--tdead", type=float, default=0.0, help="dead time, s (mosfets)")
-    trj.add_argument("--vdrive", type=float, help="gate drive voltage, V")
-    trj.add_argument("--rgon", type=float, help="total turn-on gate resistance, ohm")
-    trj.add_argument("--rgoff", type=float, help="total turn-off gate resistance, ohm")
-    trj.add_argument("--lloop", type=float, help="commutation-loop inductance, H")
+    trj.add_argument("--vdc", type=_figure, required=True, help="DC-link voltage, V")
+    trj.add_argument("--fsw", type=_figure, required=True, help="switching frequency, Hz")
+    trj.add_argument("--tsink", type=_figure, required=True, help="heatsink temperature, °C")
+    trj.add_argument("--tdead", type=_figure, default=0.0, help="dead time, s (mosfets)")
+    trj.add_argument("--vdrive", type=_figure, help="gate drive voltage, V")
+    trj.add_argument("--rgon", type=_figure, help="total turn-on gate resistance, ohm")
+    trj.add_argument("--rgoff", type=_figure, help="total turn-off gate resistance, ohm")
+    trj.add_argument("--lloop", type=_figure, help="commutation-loop inductance, H")
     trj.add_argument("-o", "--output", help="CSV file of temperature against time")
     trj.set_defaults(func=_trajectory)
 
     web = sub.add_parser("serve", help="open the local web page")
-    web.add_argument("--port", type=int, default=4310)
+    web.add_argument("--port", type=_port, default=4310)
     web.add_argument("--devices", help="folder of device files (default: ~/.motionsim/devices)")
     web.add_argument("--no-browser", action="store_true", help="do not open a browser window")
+    web.add_argument(
+        "--log-level",
+        default="warning",
+        choices=["debug", "info", "warning", "error"],
+        help="what the terminal is told: faults with where they happened (default), or more",
+    )
     web.set_defaults(func=lambda a: _serve(a))
 
-    rec = sub.add_parser(
-        "recommend", help="starting values for gate resistors, dead time and heatsink"
-    )
+    rec = sub.add_parser("recommend", help="starting values for gate resistors, dead time and heatsink")
     conditions(rec, motor=True)
-    rec.add_argument("--rpm", type=float, required=True, help="shaft speed at the design point, rpm")
-    rec.add_argument("--torque", type=float, required=True, help="shaft torque at the design point, N·m")
-    rec.add_argument("--tambient", type=float, help="ambient temperature, °C, to size a heatsink")
-    rec.add_argument("--dvdt", type=float, default=5.0, help="voltage slew-rate limit, V/ns (default 5)")
-    rec.add_argument("--driver-peak", type=float, help="gate driver's peak output current, A")
-    rec.add_argument("--driver-mismatch", type=float, default=None,
-                     help="difference in propagation delay between gate-driver channels, s")
+    rec.add_argument("--rpm", type=_figure, required=True, help="shaft speed at the design point, rpm")
+    rec.add_argument("--torque", type=_figure, required=True, help="shaft torque at the design point, N·m")
+    rec.add_argument("--tambient", type=_figure, help="ambient temperature, °C, to size a heatsink")
+    rec.add_argument(
+        "--tsink-max",
+        type=_figure,
+        help="the most the heatsink may reach, °C (default 100: what is mounted on it gives out before a junction does)",
+    )
+    rec.add_argument("--dvdt", type=_above_zero, default=5.0, help="voltage slew-rate limit, V/ns (default 5)")
+    rec.add_argument("--driver-peak", type=_figure, help="gate driver's peak output current, A")
+    rec.add_argument(
+        "--driver-mismatch",
+        type=_figure,
+        default=None,
+        help="difference in propagation delay between gate-driver channels, s",
+    )
     rec.set_defaults(func=_recommend)
 
-    val = sub.add_parser(
-        "validate", help="compare the model with measurements or another simulator's results"
-    )
+    val = sub.add_parser("validate", help="compare the model with measurements or another simulator's results")
     val.add_argument("device", help="device YAML file")
     val.add_argument("reference", help="reference YAML file (see: motionsim template reference)")
     val.set_defaults(func=_validate)
 
-    adv = sub.add_parser(
-        "advise", help="what kind of device to look for, from the motor and supply alone"
-    )
+    adv = sub.add_parser("advise", help="what kind of device to look for, from the motor and supply alone")
     adv.add_argument("--motor", required=True, help="motor YAML file")
-    adv.add_argument("--vdc", type=float, required=True, help="DC-link voltage, V")
-    adv.add_argument("--rpm", type=float, required=True, help="shaft speed at the design point, rpm")
-    adv.add_argument("--torque", type=float, required=True, help="shaft torque at the design point, N·m")
-    adv.add_argument("--fsw", type=float, required=True, help="switching frequency, Hz")
+    adv.add_argument("--vdc", type=_figure, required=True, help="DC-link voltage, V")
+    adv.add_argument("--rpm", type=_figure, required=True, help="shaft speed at the design point, rpm")
+    adv.add_argument("--torque", type=_figure, required=True, help="shaft torque at the design point, N·m")
+    adv.add_argument("--fsw", type=_figure, required=True, help="switching frequency, Hz")
     adv.add_argument("--supply", choices=["one-way", "battery"], default="one-way")
     adv.set_defaults(func=_advise)
 
@@ -1172,22 +1211,29 @@ def main(argv: list[str] | None = None) -> int:
     cyc.add_argument("--load", required=True, help="load YAML file")
     cyc.add_argument("--profile", required=True, help="motion profile YAML file")
     cyc.add_argument("-o", "--output", help="CSV file of every instant")
-    cyc.add_argument("--repeat", type=int, default=1, help="run the motion this many times back to back")
-    cyc.add_argument("--rth-sink", type=float, help="heatsink to ambient, K/W (with --c-sink: the heatsink warms up)")
-    cyc.add_argument("--c-sink", type=float, help="heatsink heat capacity, J/K (about 900 J/K per kg of aluminium)")
-    cyc.add_argument("--tambient", type=float, help="ambient temperature, °C (default: the starting --tsink)")
-    cyc.add_argument("--clink", type=float, help="DC-link capacitance, F")
+    cyc.add_argument("--repeat", type=_repeats, default=1, help="run the motion this many times back to back")
     cyc.add_argument(
-        "--supply", choices=["one-way", "battery"], default="one-way",
+        "--rth-sink", type=_above_zero, help="heatsink to ambient, K/W (with --c-sink: the heatsink warms up)"
+    )
+    cyc.add_argument(
+        "--c-sink", type=_above_zero, help="heatsink heat capacity, J/K (about 900 J/K per kg of aluminium)"
+    )
+    cyc.add_argument(
+        "--tsink-max", type=_figure, help="the most the heatsink may reach when one is sized, °C (default 100)"
+    )
+    cyc.add_argument("--tambient", type=_figure, help="ambient temperature, °C (default: the starting --tsink)")
+    cyc.add_argument("--clink", type=_above_zero, help="DC-link capacitance, F")
+    cyc.add_argument(
+        "--supply",
+        choices=["one-way", "battery"],
+        default="one-way",
         help="whether the supply can take braking energy back (default: one-way, it cannot)",
     )
     cyc.set_defaults(func=_cycle)
 
-    pkg = sub.add_parser(
-        "package", help="thermal resistances computed for a generic package construction"
-    )
+    pkg = sub.add_parser("package", help="thermal resistances computed for a generic package construction")
     pkg.add_argument("template", choices=["leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263"])
-    pkg.add_argument("--irated", type=float, required=True, help="rated current of the switch, A")
+    pkg.add_argument("--irated", type=_above_zero, required=True, help="rated current of the switch, A")
     pkg.add_argument("--interface", default="grease", choices=["grease", "pad"])
     pkg.add_argument("--no-diode", action="store_true", help="discrete package with no diode chip")
     pkg.set_defaults(func=_package)
@@ -1195,8 +1241,7 @@ def main(argv: list[str] | None = None) -> int:
     tpl = sub.add_parser("template", help="write a parameter file to fill in")
     tpl.add_argument(
         "kind",
-        choices=["device", "pmsm", "induction", "bldc", "dc", "stepper", "load", "profile", "reference",
-                 "trajectory"],
+        choices=["device", "pmsm", "induction", "bldc", "dc", "stepper", "load", "profile", "reference", "trajectory"],
     )
     tpl.add_argument("-o", "--output", help="file to write (default: print)")
     tpl.set_defaults(func=_template)
@@ -1209,10 +1254,8 @@ def main(argv: list[str] | None = None) -> int:
 
     cmp_ = sub.add_parser("compare", help="several devices at one operating point")
     conditions(cmp_, many=True)
-    cmp_.add_argument("--irms", type=float, required=True, help="phase current, A rms")
-    cmp_.add_argument(
-        "--sweep-fsw", metavar="LOW:HIGH", help="also sweep switching frequency, Hz, e.g. 2000:20000"
-    )
+    cmp_.add_argument("--irms", type=_figure, required=True, help="phase current, A rms")
+    cmp_.add_argument("--sweep-fsw", metavar="LOW:HIGH", help="also sweep switching frequency, Hz, e.g. 2000:20000")
     cmp_.set_defaults(func=_compare)
 
     ext = sub.add_parser("extract", help="read tabulated values from a datasheet PDF")
@@ -1236,11 +1279,20 @@ def main(argv: list[str] | None = None) -> int:
     bld.add_argument("--allow-flagged", action="store_true", help="use flagged values too")
     bld.set_defaults(func=_build)
 
-    dsn = sub.add_parser("design", help="a whole design from one file, every step of the page: for a terminal or a coding agent")
+    dsn = sub.add_parser(
+        "design", help="a whole design from one file, every step of the page: for a terminal or a coding agent"
+    )
     actions = dsn.add_subparsers(dest="action", required=True)
     ini = actions.add_parser("init", help="write a design to start from, sized to a device")
-    ini.add_argument("--device", default="example-mosfet", help="a device file, a file of typed figures, or a made-up part: example-mosfet, example")
-    ini.add_argument("--motor", help="kind of motor (default: the one usual with the device): pmsm, bldc, synrm, induction, dc, dc_series, stepper")
+    ini.add_argument(
+        "--device",
+        default="example-mosfet",
+        help="a device file, a file of typed figures, or a made-up part: example-mosfet, example",
+    )
+    ini.add_argument(
+        "--motor",
+        help="kind of motor (default: the one usual with the device): pmsm, bldc, synrm, induction, dc, dc_series, stepper",
+    )
     ini.add_argument("-o", "--output", help="file to write (default: print)")
     ini.add_argument("--workspace", help=argparse.SUPPRESS)
     ini.set_defaults(func=_design)
@@ -1248,16 +1300,40 @@ def main(argv: list[str] | None = None) -> int:
     go.add_argument("setup", help="the design file (YAML or JSON)")
     go.add_argument("--json", action="store_true", help="print everything as JSON, for a program or an agent to read")
     go.add_argument("--md", help="write the report in Markdown to this file")
-    go.add_argument("--skip", action="append", choices=["fit", "motion", "build", "drive"], help="leave a step out (may be given more than once)")
+    go.add_argument(
+        "--csv",
+        help="write the comparison as a table to this file: one row a device, and one a motor where several are compared",
+    )
+    go.add_argument(
+        "--skip",
+        action="append",
+        choices=["fit", "motion", "build", "drive"],
+        help="leave a step out (may be given more than once)",
+    )
     go.add_argument("--traces", action="store_true", help="with --json: keep the motion's traces through time")
     go.add_argument("--workspace", help="a folder to keep the device files in (default: a temporary one)")
+    go.add_argument(
+        "-v", "--verbose", action="store_true", help="say on the terminal's error stream what each step took"
+    )
     go.set_defaults(func=_design)
 
     agt = sub.add_parser("agent", help="print the guide for a coding agent that drives motionsim from the terminal")
     agt.set_defaults(func=_agent)
 
     args = parser.parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (OSError, ValueError, ArithmeticError, RecursionError) as exc:
+        # A file that is not there or is not what it is given as, a figure nothing can be
+        # worked out from: said in a line, as the refusal it is.
+        if isinstance(exc, OSError):
+            said = f"{exc.strerror or exc}: {exc.filename}" if exc.filename else str(exc)
+        else:
+            from motionsim.page import reason_of
+
+            said = reason_of(exc)
+        print(f"cannot {args.command}: {said}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

@@ -39,6 +39,7 @@ from motionsim.engine.solver import OperatingPoint, Result, ThermalRunaway, ther
 from motionsim.engine.thermal import periodic_rise
 from motionsim.load import Load, Profile, sample
 from motionsim.motor.stage import Unreachable
+from motionsim.text import written
 
 FAST = 3.0  # output periods within one instant above which the period is not followed
 STEPS_PER_PERIOD = 48
@@ -77,7 +78,7 @@ class Trace:
         return int(self.tj.argmax())
 
 
-class _Chip:
+class ChipState:
     """One junction-to-case path: a state per stage of its network."""
 
     def __init__(self, network) -> None:
@@ -142,7 +143,7 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
     the motion is followed from the hottest of them.
     A heatsink given with its heat capacity is followed from cold instead.
     """
-    from motionsim.engine.solver import _case_sink
+    from motionsim.engine.solver import case_sink
 
     held = replace(base, rth_sink=None, rth_free=None, rth_board=None)
     if heatsink is not None:
@@ -156,14 +157,16 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
             return base.t_sink + base.rth_sink * stage
         # The steady solution holds the case to the heatsink through its own layer; here
         # that layer is the package's path to the air, less what the solves below add back.
-        under = max(base.rth_free - _case_sink(device, "typical"), 0.0)
+        under = max(base.rth_free - case_sink(device, "typical"), 0.0)
         board = base.rth_board or 0.0
         return base.t_sink + max(max(under * p + board * max(stage - p, 0.0), board * stage) for p in own)
 
     limit = device.ratings.tj_max + 500.0
     t_sink, before, out = base.t_sink, None, None
     for _ in range(40):
-        out = follow(device, motor, None, None, replace(held, t_sink=t_sink), repeats=repeats, start=start, samples=samples)
+        out = follow(
+            device, motor, None, None, replace(held, t_sink=t_sink), repeats=repeats, start=start, samples=samples
+        )
         if not out[0].solved:
             return out
         after = settled(out[0])
@@ -180,13 +183,23 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
                 step = step / (1.0 - gain)
         before = (t_sink, after)
         t_sink = t_sink + min(max(step, -200.0), 200.0)
-    raise ThermalRunaway("cooled to air, the temperature of what the devices sit on does not settle through this motion")
+    raise ThermalRunaway(
+        "cooled to air, the temperature of what the devices sit on does not settle through this motion"
+    )
 
 
 def follow(
-    device: Device, motor, load: Load, profile: Profile, base: OperatingPoint,
-    *, heatsink: Heatsink | None = None, repeats: int = 1, per_segment: int = 12,
-    start=None, samples=None,
+    device: Device,
+    motor,
+    load: Load,
+    profile: Profile,
+    base: OperatingPoint,
+    *,
+    heatsink: Heatsink | None = None,
+    repeats: int = 1,
+    per_segment: int = 12,
+    start=None,
+    samples=None,
 ) -> tuple[Cycle, Trace]:
     """A motion solved instant by instant, with temperatures followed through time.
 
@@ -207,106 +220,134 @@ def follow(
     if device.diode is not None:
         chips["diode"] = device.diode
     networks = {name: thermal_network(device, chip)[0] for name, chip in chips.items()}
-    states: list[dict[str, _Chip]] = []
     cache: dict[tuple, tuple] = {}
-    t_sink = base.t_sink
-    position = None  # place in the output period, as a fraction of it
-    fast_before = False
-    now = 0.0
-    time, tj, sink, steady = [], [], [], []
-    steps: list[Step] = []
-
-    chip_trace: dict[str, list[float]] = {}
-    chip_swings: dict[str, list[tuple[float, float, float]]] = {}
     ripple: dict[tuple, float] = {}  # the swing within one output period, worked out once a step
-    for _ in range(repeats):
-        steps = []
-        chip_trace, chip_swings = {}, {}
-        for index, s in enumerate(samples):
-            # Instants that ask the same of the stage are solved once: a hold or a cruise is
-            # many instants and one operating point.
-            least = None if start is None else start.floor(s.motor_rpm)
-            key = (float(f"{s.motor_rpm:.9g}"), float(f"{s.motor_torque:.9g}"), least, round(2 * t_sink) / 2)
-            sink_then = key[3]
-            if key not in cache:
-                op = replace(base, t_sink=sink_then)
-                try:
-                    point = at_speed_and_torque(
-                        device, motor, s.motor_rpm, s.motor_torque, op,
-                        least_current=least,
-                    )
-                    cache[key] = (point, None)
-                except Unreachable as exc:
-                    cache[key] = (None, str(exc))
-                except ThermalRunaway:
-                    cache[key] = (None, "no stable junction temperature")
-            step = Step(s, *cache[key])  # the instant is this one; the answer may be shared
-            steps.append(step)
-            dt = s.duration
-            hottest_now = t_sink
-            total = 0.0
-            if step.point is None:
-                for role_states in states:
-                    for chip in role_states.values():
-                        chip.advance(0.0, dt)
-                    hottest_now = max(hottest_now, t_sink + max(c.rise for c in role_states.values()))
-                steady.append(float("nan"))
-            else:
-                result, stage = step.point.result, step.point.stage
-                total = result.p_inverter
-                if len(states) != len(result.roles):
-                    states = [{name: _Chip(net) for name, net in networks.items()} for _ in result.roles]
-                waves = [
-                    {"switch": r.p_switch, "diode": r.p_diode} for r in result.roles
-                ]
-                turns = dt / stage.period if s.motor_rpm != 0 else 0.0
-                if position is None or (turns < FAST and fast_before):
-                    worst = max(
-                        ((w[name].max(), k, name) for k, w in enumerate(waves) for name in chips),
-                        key=lambda row: row[0],
-                    )
-                    position = float(waves[worst[1]][worst[2]].argmax()) / waves[worst[1]][worst[2]].size
-                fast_before = turns >= FAST
-                for number, (role, role_states, wave) in enumerate(zip(result.roles, states, waves)):
-                    for name, chip in role_states.items():
-                        power = wave[name]
-                        offset = _static(result, role, name, networks[name].rth, sink_then)
-                        label = f"{role.name}, {name}"
-                        own = chip_trace.setdefault(label, [])
-                        if turns >= FAST:
-                            before = chip.rise
-                            chip.advance(float(power.mean()), dt)
-                            mean = role.tj_switch if name == "switch" else role.tj_diode
-                            top = role.tj_switch_peak if name == "switch" else role.tj_diode_peak
-                            reached = max(before, chip.rise) + (top - mean)
-                            own.append(t_sink + offset + chip.rise)
-                            # The chip also heats and cools once a turn, too fast for the
-                            # trace: those swings are counted here, as many as there are turns.
-                            at_step = (key, number, name)
-                            if at_step not in ripple:
-                                ripple[at_step] = float(np.ptp(periodic_rise(networks[name], power, stage.period)))
-                            if ripple[at_step] > 0:
-                                chip_swings.setdefault(label, []).append((ripple[at_step], own[-1], turns))
-                        else:
-                            n = int(np.clip(np.ceil(turns * STEPS_PER_PERIOD), 8, MAX_SUBSTEPS))
-                            reached = chip.rise
-                            for j in range(n):
-                                at = (position + turns * (j + 0.5) / n) % 1.0
-                                chip.advance(float(power[int(at * power.size) % power.size]), dt / n)
-                                reached = max(reached, chip.rise)
+    seen = [1]  # how many places the rotor could stand that load one chip or another most
+
+    def run(pick: int):
+        """The motion followed with the rotor, wherever it turns slowly, starting from the
+        pick-th of the places that load a chip most."""
+        states: list[dict[str, ChipState]] = []
+        t_sink = base.t_sink
+        position = None  # place in the output period, as a fraction of it
+        fast_before = False
+        now = 0.0
+        time, tj, sink, steady = [], [], [], []
+        steps: list[Step] = []
+
+        chip_trace: dict[str, list[float]] = {}
+        chip_swings: dict[str, list[tuple[float, float, float]]] = {}
+        for _ in range(repeats):
+            steps = []
+            chip_trace, chip_swings = {}, {}
+            for s in samples:
+                # Instants that ask the same of the stage are solved once: a hold or a cruise is
+                # many instants and one operating point.
+                least = None if start is None else start.floor(s.motor_rpm)
+                key = (
+                    float(f"{written(s.motor_rpm, 9)}"),
+                    float(f"{written(s.motor_torque, 9)}"),
+                    least,
+                    round(2 * t_sink) / 2,
+                )
+                sink_then = key[3]
+                if key not in cache:
+                    op = replace(base, t_sink=sink_then)
+                    try:
+                        point = at_speed_and_torque(
+                            device,
+                            motor,
+                            s.motor_rpm,
+                            s.motor_torque,
+                            op,
+                            least_current=least,
+                        )
+                        cache[key] = (point, None)
+                    except Unreachable as exc:
+                        cache[key] = (None, str(exc))
+                    except ThermalRunaway:
+                        cache[key] = (None, "no stable junction temperature")
+                step = Step(s, *cache[key])  # the instant is this one; the answer may be shared
+                steps.append(step)
+                dt = s.duration
+                hottest_now = t_sink
+                total = 0.0
+                if step.point is None:
+                    for role_states in states:
+                        for chip in role_states.values():
+                            chip.advance(0.0, dt)
+                        hottest_now = max(hottest_now, t_sink + max(c.rise for c in role_states.values()))
+                    steady.append(float("nan"))
+                else:
+                    result, stage = step.point.result, step.point.stage
+                    total = result.p_inverter
+                    if len(states) != len(result.roles):
+                        states = [{name: ChipState(net) for name, net in networks.items()} for _ in result.roles]
+                    waves = [{"switch": r.p_switch, "diode": r.p_diode} for r in result.roles]
+                    turns = dt / stage.period if s.motor_rpm != 0 else 0.0
+                    if position is None or (turns < FAST and fast_before):
+                        # The rotor may stand anywhere when it slows or stops. The places that
+                        # count are those where one chip or another is loaded most.
+                        places = sorted({float(w[name].argmax()) / w[name].size for w in waves for name in chips})
+                        seen[0] = max(seen[0], len(places))
+                        position = places[pick % len(places)]
+                    fast_before = turns >= FAST
+                    for number, (role, role_states, wave) in enumerate(zip(result.roles, states, waves)):
+                        for name, chip in role_states.items():
+                            power = wave[name]
+                            offset = _static(result, role, name, networks[name].rth, sink_then)
+                            label = f"{role.name}, {name}"
+                            own = chip_trace.setdefault(label, [])
+                            if turns >= FAST:
+                                before = chip.rise
+                                chip.advance(float(power.mean()), dt)
+                                mean = role.tj_switch if name == "switch" else role.tj_diode
+                                top = role.tj_switch_peak if name == "switch" else role.tj_diode_peak
+                                reached = max(before, chip.rise) + (top - mean)
                                 own.append(t_sink + offset + chip.rise)
-                        hottest_now = max(hottest_now, t_sink + offset + reached)
-                position = (position + turns) % 1.0
-                steady.append(hottest(result) + (t_sink - sink_then))
-            if heatsink is not None:
-                decay = np.exp(-dt / (heatsink.rth * heatsink.capacity))
-                settled = heatsink.t_ambient + total * heatsink.rth
-                t_sink = settled + (t_sink - settled) * decay
-            now += dt
-            time.append(now)
-            tj.append(hottest_now)
-            sink.append(t_sink)
+                                # The chip also heats and cools once a turn, too fast for the
+                                # trace: those swings are counted here, as many as there are turns.
+                                at_step = (key, number, name)
+                                if at_step not in ripple:
+                                    ripple[at_step] = float(np.ptp(periodic_rise(networks[name], power, stage.period)))
+                                if ripple[at_step] > 0:
+                                    chip_swings.setdefault(label, []).append((ripple[at_step], own[-1], turns))
+                            else:
+                                n = int(np.clip(np.ceil(turns * STEPS_PER_PERIOD), 8, MAX_SUBSTEPS))
+                                reached = chip.rise
+                                for j in range(n):
+                                    at = (position + turns * (j + 0.5) / n) % 1.0
+                                    chip.advance(float(power[int(at * power.size) % power.size]), dt / n)
+                                    reached = max(reached, chip.rise)
+                                    own.append(t_sink + offset + chip.rise)
+                            hottest_now = max(hottest_now, t_sink + offset + reached)
+                    position = (position + turns) % 1.0
+                    steady.append(hottest(result) + (t_sink - sink_then))
+                if heatsink is not None:
+                    decay = np.exp(-dt / (heatsink.rth * heatsink.capacity))
+                    settled = heatsink.t_ambient + total * heatsink.rth
+                    t_sink = settled + (t_sink - settled) * decay
+                now += dt
+                time.append(now)
+                tj.append(hottest_now)
+                sink.append(t_sink)
+        return max(tj, default=base.t_sink), steps, time, tj, sink, steady, chip_trace, chip_swings
+
+    # Which place leaves a junction hottest depends on what follows it, so each is followed
+    # and the hottest kept: held still, that is the position that loads the hottest chip most.
+    best = run(0)
+    for pick in range(1, 8):
+        if pick >= seen[0]:
+            break
+        other = run(pick)
+        if other[0] > best[0]:
+            best = other
+    _, steps, time, tj, sink, steady, chip_trace, chip_swings = best
     return Cycle(steps), Trace(
-        np.array(time), np.array(tj), np.array(sink), np.array(steady),
-        chips={k: np.array(v) for k, v in chip_trace.items()}, swings=chip_swings,
+        np.array(time),
+        np.array(tj),
+        np.array(sink),
+        np.array(steady),
+        chips={k: np.array(v) for k, v in chip_trace.items()},
+        swings=chip_swings,
     )

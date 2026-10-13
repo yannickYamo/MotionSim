@@ -27,8 +27,11 @@ def module_coupling(construction: str, i_rated: float, variant: str, interface: 
     if construction in _TEMPLATE:
         return summary(_TEMPLATE[construction], i_rated, variant, interface).coupling
     # Construction not known: span both kinds, and take the more cautious one as typical.
-    choice = {"low": ("substrate-module", "low"), "typical": ("leadframe-module", "typical"),
-              "high": ("leadframe-module", "high")}[variant]
+    choice = {
+        "low": ("substrate-module", "low"),
+        "typical": ("leadframe-module", "typical"),
+        "high": ("leadframe-module", "high"),
+    }[variant]
     return summary(choice[0], i_rated, choice[1], interface).coupling
 
 
@@ -37,8 +40,11 @@ def module_interface(construction: str, i_rated: float, variant: str, interface:
     the module loses crosses it, a chip's own as much as its neighbours'."""
     if construction in _TEMPLATE:
         return summary(_TEMPLATE[construction], i_rated, variant, interface).interface
-    choice = {"low": ("substrate-module", "low"), "typical": ("leadframe-module", "typical"),
-              "high": ("leadframe-module", "high")}[variant]
+    choice = {
+        "low": ("substrate-module", "low"),
+        "typical": ("leadframe-module", "typical"),
+        "high": ("leadframe-module", "high"),
+    }[variant]
     return summary(choice[0], i_rated, choice[1], interface).interface
 
 
@@ -47,9 +53,7 @@ def interface_resistance(outline: str, i_rated: float, variant: str, interface: 
     return summary(outline, i_rated, variant, interface).interface
 
 
-def response(
-    template: str, i_rated: float, variant: str, interface: str, chip: str
-) -> tuple[tuple[float, float], ...]:
+def response(template: str, i_rated: float, variant: str, interface: str, chip: str) -> tuple[tuple[float, float], ...]:
     """Stages (share of the resistance, time constant in s) of a chip's thermal response."""
     return response_shape(template, i_rated, variant, interface, chip)
 

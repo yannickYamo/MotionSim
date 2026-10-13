@@ -22,7 +22,7 @@ AIR_DENSITY = 1.2  # kg/m3
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class Gravity(_Model):
@@ -44,7 +44,7 @@ class Vehicle(_Model):
 
 class Load(_Model):
     name: str = "load"
-    gear_ratio: float = Field(default=1.0, gt=0, description="motor turns per load turn")
+    gear_ratio: float = Field(default=1.0, gt=0, le=1e5, description="motor turns per load turn")
     gear_efficiency: float = Field(default=1.0, gt=0, le=1)
     motor_inertia: float = Field(default=0.0, ge=0, description="rotor inertia, kg·m2")
     inertia: float = Field(default=0.0, ge=0, description="load inertia, kg·m2")
@@ -91,9 +91,9 @@ class Load(_Model):
 class Segment(_Model):
     """A stretch of motion with speed changing linearly from start to end."""
 
-    duration: float = Field(gt=0, description="s")
-    speed_start: float = Field(description="load speed at the start, rpm")
-    speed_end: float = Field(description="load speed at the end, rpm")
+    duration: float = Field(gt=0, le=1e6, description="s")
+    speed_start: float = Field(ge=-1e6, le=1e6, description="load speed at the start, rpm")
+    speed_end: float = Field(ge=-1e6, le=1e6, description="load speed at the end, rpm")
 
 
 class Profile(_Model):

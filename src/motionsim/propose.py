@@ -11,7 +11,7 @@ from motionsim.drivers import MotorPoint, at_speed_and_torque
 from motionsim.engine.limits import hottest
 from motionsim.engine.solver import OperatingPoint, ThermalRunaway
 from motionsim.motor.stage import Unreachable
-
+from motionsim.text import written
 
 LEVEL = 0.05  # two losses closer than this share of the lower one are not told apart
 
@@ -145,17 +145,22 @@ def requirements(device: Device, positions: int, base: OperatingPoint) -> list[s
     charge = device.switch.charge
     if charge is not None and base.v_drive is not None:
         power = (charge.q_gs + charge.q_gd) * base.v_drive * base.f_sw
-        line = f"each channel delivers at least {power * 1e3:.3g} mW of gate power"
+        line = f"each channel delivers at least {written(power * 1e3, 3)} mW of gate power"
         if base.rg_on:
             peak = base.v_drive / base.rg_on  # at the first instant the whole drive voltage is across it
-            line += f" and about {peak:.2g} A at turn-on"
+            line += f" and about {written(peak, 2)} A at turn-on"
         needs.append(line)
     return needs
 
 
 def propose(
-    devices: list[Device], motor, rpm: float, torque: float, base: OperatingPoint,
-    *, tune=None,
+    devices: list[Device],
+    motor,
+    rpm: float,
+    torque: float,
+    base: OperatingPoint,
+    *,
+    tune=None,
 ) -> list[Candidate]:
     """Candidates ranked: those that pass every check by loss, then the failures.
 
@@ -187,13 +192,11 @@ def propose(
             elif stall is not None:
                 for c in guard.check(device, base, stall.result, stall.stage.i_peak):
                     if c.topic == "temperature" and c.level is not guard.Level.ok:
-                        checks.append(guard.Check(c.level, "standstill", f"holding this torque at standstill: {c.message}"))
-        needs = [] if design is None else requirements(
-            device, sum(r.count for r in design.stage.roles), base
-        )
-        out.append(Candidate(
-            device, design, stall, checks, problem, needs, base, switching_footing(device, base)
-        ))
+                        checks.append(
+                            guard.Check(c.level, "standstill", f"holding this torque at standstill: {c.message}")
+                        )
+        needs = [] if design is None else requirements(device, sum(r.count for r in design.stage.roles), base)
+        out.append(Candidate(device, design, stall, checks, problem, needs, base, switching_footing(device, base)))
     return sorted(out, key=lambda c: (c.level is guard.Level.fail, c.loss))
 
 
@@ -252,10 +255,7 @@ def explain(candidates: list[Candidate]) -> list[str]:
                 "and something else has to decide."
             )
         else:
-            lines.append(
-                f"{name} has the lowest power-stage loss among the devices that pass: "
-                f"{best.loss:.1f} W."
-            )
+            lines.append(f"{name} has the lowest power-stage loss among the devices that pass: {best.loss:.1f} W.")
         if best.level is guard.Level.caution:
             lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
         if not best.device.package.integrated_driver:
@@ -274,7 +274,10 @@ def explain(candidates: list[Candidate]) -> list[str]:
             lines.append(f"{other.name} loses {extra:.1f} W more{share}.")
         # Loss is not the only thing to choose on: the room left to the junction limit is
         # what a hot day, a blocked fan or a harder load is paid from.
-        for what, room in (("at the design point", lambda c: c.margin), ("holding the torque at standstill", lambda c: c.stall_margin)):
+        for what, room in (
+            ("at the design point", lambda c: c.margin),
+            ("holding the torque at standstill", lambda c: c.stall_margin),
+        ):
             known = [c for c in usable if room(c) is not None]
             if len(known) < 2 or room(best) is None:
                 continue

@@ -25,6 +25,7 @@ def legs_of(roles: list[Role]) -> list[tuple[np.ndarray, np.ndarray]] | None:
 
     None for a stage whose legs cannot be told from its roles (a stepper's two bridges).
     """
+
     def top(role: Role) -> tuple[np.ndarray, np.ndarray]:
         duty = role.d_switch + role.d_reverse
         return duty, np.where(role.d_reverse > 0, -role.current, role.current)
@@ -82,7 +83,7 @@ def phase_ripple(roles: list[Role], v_dc: float, f_sw: float, l_phase: float) ->
     # Half a PWM period, in order: no leg on, then one more leg at each step, then all on.
     spans = np.vstack([1 - duty[:1], duty[:-1] - duty[1:], duty[-1:]]) / 2
     place = np.argmax(order == 0, axis=0)  # where the first leg sits in the switching order
-    reference = (legs[0][0] - np.mean([d for d, _ in legs], axis=0))  # what the phase gets on average
+    reference = legs[0][0] - np.mean([d for d, _ in legs], axis=0)  # what the phase gets on average
     flux = np.zeros_like(reference)
     low = np.zeros_like(reference)
     high = np.zeros_like(reference)
@@ -95,3 +96,21 @@ def phase_ripple(roles: list[Role], v_dc: float, f_sw: float, l_phase: float) ->
     # departure from its mean there is the first half's with the sign turned: the whole
     # swing is twice the largest departure.
     return 2 * np.maximum(high, -low) * v_dc / (l_phase * f_sw)
+
+
+def states_capacitor(states: list[tuple[float, float, float]]) -> tuple[float, float]:
+    """capacitor_ripple for a stage given as its states over one PWM period."""
+    mean = sum(share * drawn for share, drawn, _ in states)
+    mean_square = sum(share * drawn**2 for share, drawn, _ in states)
+    return float(np.sqrt(max(mean_square - mean**2, 0.0))), float(mean)
+
+
+def states_ripple(states: list[tuple[float, float, float]], v_dc: float, f_sw: float, l_winding: float) -> float:
+    """Peak-to-peak ripple on the winding current, in A, for a stage given as its states
+    over one PWM period. l_winding is the inductance the states' voltage is across."""
+    mean = sum(share * volts for share, _, volts in states)
+    flux = low = high = 0.0
+    for share, _, volts in states:
+        flux += (volts - mean) * share
+        low, high = min(low, flux), max(high, flux)
+    return (high - low) * v_dc / (l_winding * f_sw)

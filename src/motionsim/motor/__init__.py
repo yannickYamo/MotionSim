@@ -1,18 +1,19 @@
 from motionsim.motor.machines import (
+    TEMPLATES,
     Bldc,
     BrushedDc,
     Induction,
     Pmsm,
     SeriesDc,
-    SynRm,
-    TEMPLATES,
     Stepper,
+    SynRm,
     load_machine,
 )
 from motionsim.motor.pmsm import DriveState, Motor, operating_state
 from motionsim.motor.stage import Stage, Unreachable
 
 __all__ = [
+    "TEMPLATES",
     "Bldc",
     "BrushedDc",
     "DriveState",
@@ -20,10 +21,9 @@ __all__ = [
     "Motor",
     "Pmsm",
     "SeriesDc",
-    "SynRm",
     "Stage",
     "Stepper",
-    "TEMPLATES",
+    "SynRm",
     "Unreachable",
     "load_machine",
     "operating_state",

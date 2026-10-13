@@ -167,10 +167,15 @@ def transcribe(page_png: bytes, client: anthropic.Anthropic | None = None) -> st
         model=MODEL,
         max_tokens=8000,
         system=TRANSCRIBE_SYSTEM,
-        messages=[{"role": "user", "content": [
-            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image}},
-            {"type": "text", "text": "Transcribe this page."},
-        ]}],
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": image}},
+                    {"type": "text", "text": "Transcribe this page."},
+                ],
+            }
+        ],
     )
     if response.stop_reason == "refusal":
         raise ReaderRefused("the model declined to read this page")
@@ -199,9 +204,7 @@ def read_document(path) -> tuple[Document, list[str]]:
     return document, pages
 
 
-def read_axes(
-    page_png: bytes, labels: list[str], client: anthropic.Anthropic | None = None
-) -> ReadPageAxes:
+def read_axes(page_png: bytes, labels: list[str], client: anthropic.Anthropic | None = None) -> ReadPageAxes:
     """Axis limits of the named figures on one rendered page."""
     client = client or anthropic.Anthropic()
     image = base64.standard_b64encode(page_png).decode("ascii")

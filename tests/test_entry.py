@@ -46,16 +46,19 @@ def test_a_typed_part_loses_what_the_closed_form_says() -> None:
     assert r.switch.conduction == pytest.approx(0.5 * 20.0**2 * 4.0e-3, rel=0.02)
 
 
-@pytest.mark.parametrize("change, field", [
-    ({"rds_on": 4000}, "rds_on"),  # typed in micro-ohm, or a figure in ohm read as milliohm
-    ({"v_plateau": 2.0}, "v_plateau"),
-    ({"rds_on_hot": 2.0}, "rds_on_hot"),
-    ({"rth_jc": 62}, "rth_jc"),  # the junction-to-ambient figure in the wrong box
-    ({"q_gs": ""}, "q_gs"),
-    ({"q_gd": "abc"}, "q_gd"),
-    ({"oss_v": None}, "oss_v"),
-    ({"part_number": " "}, "part_number"),
-])
+@pytest.mark.parametrize(
+    "change, field",
+    [
+        ({"rds_on": 4000}, "rds_on"),  # typed in micro-ohm, or a figure in ohm read as milliohm
+        ({"v_plateau": 2.0}, "v_plateau"),
+        ({"rds_on_hot": 2.0}, "rds_on_hot"),
+        ({"rth_jc": 62}, "rth_jc"),  # the junction-to-ambient figure in the wrong box
+        ({"q_gs": ""}, "q_gs"),
+        ({"q_gd": "abc"}, "q_gd"),
+        ({"oss_v": None}, "oss_v"),
+        ({"part_number": " "}, "part_number"),
+    ],
+)
 def test_a_slip_is_refused_at_the_figure_it_sits_in(change, field) -> None:
     with pytest.raises(Mistyped) as caught:
         from_figures({**FIGURES, **change})
@@ -84,10 +87,15 @@ def test_the_command_line_builds_a_device_from_the_template(tmp_path, capsys) ->
 
 
 def test_both_made_up_parts_are_shipped_and_the_same_as_the_examples() -> None:
-    for packed, example in (("example_mosfet.yaml", "synthetic_mosfet_100v_100a.yaml"),
-                            ("example_device.yaml", "synthetic_igbt_600v_30a.yaml")):
+    for packed, example in (
+        ("example_mosfet.yaml", "synthetic_mosfet_100v_100a.yaml"),
+        ("example_device.yaml", "synthetic_igbt_600v_30a.yaml"),
+    ):
         assert (ROOT / "src/motionsim" / packed).read_text() == (ROOT / "examples" / example).read_text()
-    assert load_device(ROOT / "examples/synthetic_mosfet_100v_100a.yaml").switch.conduction.source.kind.value == "synthetic"
+    assert (
+        load_device(ROOT / "examples/synthetic_mosfet_100v_100a.yaml").switch.conduction.source.kind.value
+        == "synthetic"
+    )
 
 
 def test_a_dead_time_left_open_is_chosen_counted_and_said() -> None:
@@ -157,8 +165,15 @@ def test_the_page_asks_for_what_each_cooling_needs(tmp_path) -> None:
     assert caught.value.field == "rth_ja"
     # The motion follows the same cooling: the packages sit above the air, not at it.
     info = page.setup(ws)
-    motion = page.cycle({**base, "conditions": {**start, "cooling": "none", "t_ambient": 30},
-                         "load": info["load"], "profile": info["profile"]}, ws)
+    motion = page.cycle(
+        {
+            **base,
+            "conditions": {**start, "cooling": "none", "t_ambient": 30},
+            "load": info["load"],
+            "profile": info["profile"],
+        },
+        ws,
+    )
     assert min(motion["t_sink"]) > 30 and motion["sink_name"].startswith("each package")
     # And the advice says what no heatsink at all would ask of the package.
     advice = page.recommendations({**base, "conditions": {**start, "t_sink": 60}}, ws)["items"]
@@ -173,7 +188,7 @@ def test_copper_and_a_shared_board_follow_the_published_figures() -> None:
     assert on_copper(43.0, 6.45) == pytest.approx(43.0)
     assert on_copper(43.0, 2.0) == pytest.approx(26.51 + 128 / (1.69 + 2.0), rel=0.02)
     # And the one printed for a DPAK, 33.32 + 154/(1.73 + A), is the same curve as a ratio.
-    dpak = lambda a: 33.32 + 154 / (1.73 + a)  # noqa: E731
+    dpak = lambda a: 33.32 + 154 / (1.73 + a)
     for area in (0.5, 2.0, 12.0, 25.0):
         assert on_copper(1.0, area) == pytest.approx(dpak(area) / dpak(6.45), rel=0.03)
     # A board to still air at 10 W/(m² K) from both faces.
@@ -213,7 +228,7 @@ def test_the_board_through_the_page_and_the_command_line(tmp_path, capsys) -> No
     motors = page.setup(ws)["motors"]
     base = {"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "devices": [key], "device": key}
     start = motors["pmsm"]["start"]
-    run = lambda **c: page.proposal({**base, "conditions": {**start, **c}}, ws)["candidates"][0]  # noqa: E731
+    run = lambda **c: page.proposal({**base, "conditions": {**start, **c}}, ws)["candidates"][0]
     with pytest.raises(page.Refused) as caught:
         run(cooling="board", t_ambient=30, rth_ja=45)
     assert caught.value.field == "board_area"
@@ -227,10 +242,33 @@ def test_the_board_through_the_page_and_the_command_line(tmp_path, capsys) -> No
     assert any("share a 80 cm² board" in line for line in board["gate"]["lines"])
     # The command line takes the same cooling.
     device = tmp_path / f"{key}.device.yaml"
-    common = [str(device), "--vdc", "48", "--irms", "10", "--m", "0.8", "--pf", "0.9", "--fsw", "20000",
-              "--vdrive", "10", "--rgon", "5", "--rgoff", "5", "--tdead", "1.5e-7"]
-    for cooling in (["--tsink", "60"], ["--tair", "30", "--rth-heatsink", "4"], ["--tair", "30", "--rth-ja", "45"],
-                    ["--tair", "30", "--rth-ja", "45", "--board-area", "80", "--copper", "1.5"]):
+    common = [
+        str(device),
+        "--vdc",
+        "48",
+        "--irms",
+        "10",
+        "--m",
+        "0.8",
+        "--pf",
+        "0.9",
+        "--fsw",
+        "20000",
+        "--vdrive",
+        "10",
+        "--rgon",
+        "5",
+        "--rgoff",
+        "5",
+        "--tdead",
+        "1.5e-7",
+    ]
+    for cooling in (
+        ["--tsink", "60"],
+        ["--tair", "30", "--rth-heatsink", "4"],
+        ["--tair", "30", "--rth-ja", "45"],
+        ["--tair", "30", "--rth-ja", "45", "--board-area", "80", "--copper", "1.5"],
+    ):
         assert cli.main(["simulate", *common, *cooling]) == 0
     assert "power-stage loss" in capsys.readouterr().out
     for wrong in ([], ["--tair", "30"], ["--rth-ja", "45"], ["--tair", "30", "--rth-ja", "45", "--rth-heatsink", "4"]):
@@ -242,11 +280,20 @@ def test_the_dead_time_advice_says_what_common_firmware_would_cost(tmp_path) -> 
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
     motors = page.setup(ws)["motors"]
-    out = page.recommendations({"motor": {"type": "pmsm", **motors["pmsm"]["values"]}, "device": key,
-                                "conditions": {**motors["pmsm"]["start"], "t_sink": 60}}, ws)["items"]
+    out = page.recommendations(
+        {
+            "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+            "device": key,
+            "conditions": {**motors["pmsm"]["start"], "t_sink": 60},
+        },
+        ws,
+    )["items"]
     dead = next(x for x in out if x["topic"] == "dead time")
     assert 100e-9 <= dead["value"]["t_dead"] < 500e-9
-    assert any("firmware" in line and "more than" in line for line in dead["lines"]) and dead["value"]["loss_at_common"] > 0
+    assert (
+        any("firmware" in line and "more than" in line for line in dead["lines"])
+        and dead["value"]["loss_at_common"] > 0
+    )
 
 
 HELD = [  # a motor, a speed and a torque held for a minute, and the cooling
@@ -266,14 +313,26 @@ def test_a_point_held_as_a_motion_is_the_steady_solution(tmp_path, kind, rpm, to
     the two are worked out by different code."""
     from motionsim.drivers import at_speed_and_torque
     from motionsim.engine.solver import OperatingPoint
-    from motionsim.motor.machines import _ADAPTER
+    from motionsim.motor.machines import ADAPTER
     from motionsim.transient import follow
 
     values = page.setup(page.Workspace(tmp_path))["motors"][kind]["values"]
-    motor = _ADAPTER.validate_python({"type": kind, **values})
+    motor = ADAPTER.validate_python({"type": kind, **values})
     device = load_device(ROOT / "examples/synthetic_mosfet_100v_100a.yaml")
-    op = OperatingPoint(v_dc=48, i_rms=0, modulation_index=0, power_factor=1, f_sw=20e3, t_sink=40, v_drive=10,
-                        rg_on=5, rg_off=5, t_dead=1.5e-7, pwm=motor.default_pwm, **cooling)
+    op = OperatingPoint(
+        v_dc=48,
+        i_rms=0,
+        modulation_index=0,
+        power_factor=1,
+        f_sw=20e3,
+        t_sink=40,
+        v_drive=10,
+        rg_on=5,
+        rg_off=5,
+        t_dead=1.5e-7,
+        pwm=motor.default_pwm,
+        **cooling,
+    )
     steady = hottest(at_speed_and_torque(device, motor, rpm, torque, op).result)
     samples = page._mission({"time": [0, 30, 60], "rpm": [rpm] * 3, "torque": [torque] * 3})
     cycle, trace = follow(device, motor, None, None, op, samples=samples)
@@ -283,14 +342,26 @@ def test_a_point_held_as_a_motion_is_the_steady_solution(tmp_path, kind, rpm, to
 
 def test_a_motion_that_cannot_settle_in_air_says_so(tmp_path) -> None:
     from motionsim.engine.solver import OperatingPoint, ThermalRunaway
-    from motionsim.motor.machines import _ADAPTER
+    from motionsim.motor.machines import ADAPTER
     from motionsim.transient import follow
 
     values = page.setup(page.Workspace(tmp_path))["motors"]["pmsm"]["values"]
-    motor = _ADAPTER.validate_python({"type": "pmsm", **values})
+    motor = ADAPTER.validate_python({"type": "pmsm", **values})
     device = load_device(ROOT / "examples/synthetic_mosfet_100v_100a.yaml")
-    op = OperatingPoint(v_dc=48, i_rms=0, modulation_index=0, power_factor=1, f_sw=20e3, t_sink=40, v_drive=10,
-                        rg_on=5, rg_off=5, t_dead=1.5e-7, pwm=motor.default_pwm, rth_free=61.4)
+    op = OperatingPoint(
+        v_dc=48,
+        i_rms=0,
+        modulation_index=0,
+        power_factor=1,
+        f_sw=20e3,
+        t_sink=40,
+        v_drive=10,
+        rg_on=5,
+        rg_off=5,
+        t_dead=1.5e-7,
+        pwm=motor.default_pwm,
+        rth_free=61.4,
+    )
     samples = page._mission({"time": [0, 30, 60], "rpm": [1500.0] * 3, "torque": [3.5] * 3})
     with pytest.raises(ThermalRunaway):
         follow(device, motor, None, None, op, samples=samples)

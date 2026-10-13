@@ -21,14 +21,17 @@ F_SW = 8000.0
 
 def igbt():
     return linear_device(
-        sw_curves=[line(25.0, V0, R)], d_curves=[line(25.0, VF0, RF)],
-        k_on=K_ON, k_off=K_OFF, k_rr=K_RR, rth_sw=0.01, rth_d=0.01,
+        sw_curves=[line(25.0, V0, R)],
+        d_curves=[line(25.0, VF0, RF)],
+        k_on=K_ON,
+        k_off=K_OFF,
+        k_rr=K_RR,
+        rth_sw=0.01,
+        rth_d=0.01,
     )
 
 
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=F_SW, t_sink=25.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=F_SW, t_sink=25.0)
 
 
 def by_name(result):
@@ -86,9 +89,7 @@ def test_brushless_dc_block_commutation() -> None:
     assert low.switch.turn_on == 0.0
     assert low.diode.conduction == pytest.approx((1 - duty) * current * (VF0 + RF * current) / 3)
     assert low.diode.recovery == pytest.approx(F_SW * K_RR * current / 3)
-    assert point.result.p_inverter == pytest.approx(
-        3 * (high.switch.total + low.switch.total + low.diode.total)
-    )
+    assert point.result.p_inverter == pytest.approx(3 * (high.switch.total + low.switch.total + low.diode.total))
     assert point.stage.p_electrical == pytest.approx(point.stage.p_shaft + point.stage.p_motor_loss)
 
 
@@ -99,9 +100,7 @@ def test_voltage_limits_are_refused() -> None:
         at_speed_and_torque(igbt(), Bldc(type="bldc", pole_pairs=4, kt=0.4, r=1.5), 9000.0, 4.0, BASE)
 
 
-IM = Induction(
-    type="induction", pole_pairs=2, rs=1.2, rr=0.9, lm=0.12, lls=0.006, llr=0.006, i_magnetising=3.0
-)
+IM = Induction(type="induction", pole_pairs=2, rs=1.2, rr=0.9, lm=0.12, lls=0.006, llr=0.006, i_magnetising=3.0)
 
 
 def test_induction_motor_power_balance_and_slip() -> None:
@@ -136,10 +135,18 @@ def test_stepper_is_two_h_bridges_of_sinusoidal_legs() -> None:
     v_peak = math.hypot(resistive, w * 0.003 * 2.0 + back_emf * math.sqrt(1 - working**2))
     point = at_speed_and_torque(igbt(), STEP, rpm, 0.2, BASE)
     assert point.stage.roles[0].count == 8
-    same_leg = solve(igbt(), OperatingPoint(
-        v_dc=V_REF, i_rms=2.0 / math.sqrt(2), modulation_index=v_peak / V_REF,
-        power_factor=resistive / v_peak, f_sw=F_SW, t_sink=25.0, n_steps=1440,
-    ))
+    same_leg = solve(
+        igbt(),
+        OperatingPoint(
+            v_dc=V_REF,
+            i_rms=2.0 / math.sqrt(2),
+            modulation_index=v_peak / V_REF,
+            power_factor=resistive / v_peak,
+            f_sw=F_SW,
+            t_sink=25.0,
+            n_steps=1440,
+        ),
+    )
     assert point.result.p_inverter == pytest.approx(same_leg.p_inverter * 8 / 6, rel=1e-9)
     assert point.stage.p_electrical == pytest.approx(
         2 * (v_peak / math.sqrt(2)) * (2.0 / math.sqrt(2)) * resistive / v_peak
@@ -233,8 +240,9 @@ def test_each_motor_type_has_its_usual_modulation() -> None:
 
     pmsm = Pmsm(pole_pairs=4, flux_linkage=0.1, l=0.008, rs=1.0)
     assert pmsm.default_pwm is Pwm.space_vector and pmsm.scheme(Pwm.space_vector) == "space-vector PWM"
-    induction = Induction(type="induction", pole_pairs=2, rs=4, rr=3.5, lm=0.32, lls=0.015,
-                          llr=0.015, i_magnetising=2.4)
+    induction = Induction(
+        type="induction", pole_pairs=2, rs=4, rr=3.5, lm=0.32, lls=0.015, llr=0.015, i_magnetising=2.4
+    )
     assert induction.default_pwm is Pwm.space_vector
     assert "trapezoidal" in Bldc(type="bldc", pole_pairs=4, kt=0.4, r=1.5).scheme(Pwm.sine)
     assert "H-bridge" in BrushedDc(type="dc", kt=0.5, r=2.0).scheme(Pwm.sine)
@@ -276,10 +284,16 @@ def test_modulation_recommendation_names_the_saving() -> None:
     assert modulation({}, "sine").value == {}
 
 
-@pytest.mark.parametrize("values", [
-    dict(pole_pairs="abc", kv=100), dict(pole_pairs=None, kv=100), dict(pole_pairs=7, kv=0),
-    dict(pole_pairs=7, kv="fast"), dict(pole_pairs=0, ke=10),
-])
+@pytest.mark.parametrize(
+    "values",
+    [
+        dict(pole_pairs="abc", kv=100),
+        dict(pole_pairs=None, kv=100),
+        dict(pole_pairs=7, kv=0),
+        dict(pole_pairs=7, kv="fast"),
+        dict(pole_pairs=0, ke=10),
+    ],
+)
 def test_bad_catalogue_values_are_refused_cleanly(values) -> None:
     from pydantic import ValidationError
 
@@ -313,19 +327,18 @@ def test_running_backwards_is_not_standing_still() -> None:
     assert pmsm.stage(-2000, -2.0, V_REF, Pwm.sine).period == pytest.approx(
         pmsm.stage(2000, 2.0, V_REF, Pwm.sine).period
     )
-    induction = Induction(type="induction", pole_pairs=2, rs=4, rr=3.5, lm=0.32, lls=0.015,
-                          llr=0.015, i_magnetising=2.4)
+    induction = Induction(
+        type="induction", pole_pairs=2, rs=4, rr=3.5, lm=0.32, lls=0.015, llr=0.015, i_magnetising=2.4
+    )
     assert induction.stage(-1400, -6.0, 540, Pwm.sine).period == pytest.approx(
         induction.stage(1400, 6.0, 540, Pwm.sine).period
     )
 
 
 def test_an_idle_induction_motor_with_no_stator_resistance_stays_finite() -> None:
-    from motionsim.engine.modulation import Pwm
     from motionsim.motor import Induction
 
-    motor = Induction(type="induction", pole_pairs=2, rs=0, rr=3.5, lm=0.32, lls=0.015,
-                      llr=0.015, i_magnetising=2.4)
+    motor = Induction(type="induction", pole_pairs=2, rs=0, rr=3.5, lm=0.32, lls=0.015, llr=0.015, i_magnetising=2.4)
     point = at_speed_and_torque(igbt(), motor, 0.0, 0.0, BASE)
     assert math.isfinite(point.result.p_inverter) and math.isfinite(point.stage.p_electrical)
 
@@ -343,11 +356,17 @@ def test_reluctance_motor_uses_least_current_then_trades_it_for_voltage() -> Non
     weak = motor.stage(3000, 3.0, 540, Pwm.space_vector)
     assert dict((a, b) for a, b, _ in weak.summary)["field weakening"] == 1.0
     assert weak.i_peak > math.sqrt(2) * math.sqrt(3.0 / (1.5 * 2 * (0.22 - 0.045)))
-    for stage in (easy, weak, motor.stage(1500, -torque, 540, Pwm.space_vector), motor.stage(0, torque, 540, Pwm.space_vector)):
+    for stage in (
+        easy,
+        weak,
+        motor.stage(1500, -torque, 540, Pwm.space_vector),
+        motor.stage(0, torque, 540, Pwm.space_vector),
+    ):
         assert stage.p_electrical == pytest.approx(stage.p_shaft + stage.p_motor_loss, abs=1e-6)
     with pytest.raises(Unreachable, match="any current angle"):
         motor.stage(9000, 5.0, 540, Pwm.space_vector)
     from pydantic import ValidationError
+
     with pytest.raises(ValidationError, match="larger than lq"):
         SynRm(type="synrm", pole_pairs=2, ld=0.04, lq=0.2, rs=1)
 
@@ -379,7 +398,16 @@ def test_inset_magnets_allow_a_little_saliency_and_surface_magnets_none() -> Non
 
 
 def test_an_induction_motor_respects_its_current_limit() -> None:
-    values = {"type": "induction", "pole_pairs": 2, "rs": 1.2, "rr": 1.0, "lm": 0.14, "lls": 0.006, "llr": 0.006, "i_magnetising": 3.0}
+    values = {
+        "type": "induction",
+        "pole_pairs": 2,
+        "rs": 1.2,
+        "rr": 1.0,
+        "lm": 0.14,
+        "lls": 0.006,
+        "llr": 0.006,
+        "i_magnetising": 3.0,
+    }
     free = load_machine_from(values).stage(1400, 6.0, 540.0, Pwm.space_vector)
     asked = free.i_peak / math.sqrt(2)
     with pytest.raises(Unreachable, match="above the"):
@@ -396,8 +424,8 @@ def load_machine_from(values: dict):
 
 
 def test_a_hot_motor_needs_more_current_and_loses_more_in_its_windings() -> None:
-    from motionsim.motor.machines import COPPER, MAGNET, at_temperature
     from motionsim.motor import Pmsm
+    from motionsim.motor.machines import COPPER, MAGNET, at_temperature
 
     cold = Pmsm(type="pmsm", pole_pairs=4, kv=40, l=0.002, rs=0.2)
     hot = at_temperature(cold, 100.0)
@@ -410,6 +438,7 @@ def test_a_hot_motor_needs_more_current_and_loses_more_in_its_windings() -> None
     assert "motor taken at 100 °C" in hot.temperature_note
     # An induction motor has no magnets to weaken.
     from motionsim.motor.machines import Induction
+
     plain = Induction(type="induction", pole_pairs=2, rs=1.0, rr=1.0, lm=0.1, lls=0.01, llr=0.01, i_magnetising=2.0)
     assert "magnet" not in at_temperature(plain, 100.0).temperature_note
 
@@ -420,7 +449,9 @@ def test_iron_loss_is_supplied_through_the_windings_and_grows_with_speed() -> No
 
     plain = Pmsm(type="pmsm", pole_pairs=4, kv=40, l=0.002, rs=0.2)
     lossy = plain.model_copy(update={"p_iron": 30.0, "n_iron": 3000.0})
-    assert lossy.iron_loss(3000) == pytest.approx(30.0) and lossy.iron_loss(1500) == pytest.approx(30.0 * (0.25 + 0.125))
+    assert lossy.iron_loss(3000) == pytest.approx(30.0) and lossy.iron_loss(1500) == pytest.approx(
+        30.0 * (0.25 + 0.125)
+    )
     a = at_speed_and_torque(igbt(), plain, 3000, 2.0, BASE)
     b = at_speed_and_torque(igbt(), lossy, 3000, 2.0, BASE)
     assert b.stage.p_shaft == pytest.approx(a.stage.p_shaft)  # the shaft gives the same
@@ -431,8 +462,8 @@ def test_iron_loss_is_supplied_through_the_windings_and_grows_with_speed() -> No
 
 
 def test_saturation_takes_torque_from_a_reluctance_motor_and_inductance_from_a_magnet_one() -> None:
-    from motionsim.motor.machines import SynRm
     from motionsim.motor import Pmsm
+    from motionsim.motor.machines import SynRm
 
     hard = SynRm(type="synrm", pole_pairs=2, ld=0.22, lq=0.045, rs=2.2)
     soft = hard.model_copy(update={"i_sat": 4.0})
@@ -441,9 +472,14 @@ def test_saturation_takes_torque_from_a_reluctance_motor_and_inductance_from_a_m
     assert b.i_peak > 1.05 * a.i_peak  # the same torque takes more current once the steel saturates
     assert any("saturating about 4 A" in n for n in b.notes)
     # Far below saturation nothing changes.
-    assert hard.model_copy(update={"i_sat": 1e6}).stage(1000, 4.0, 540.0, Pwm.space_vector).i_peak == pytest.approx(a.i_peak, rel=1e-6)
+    assert hard.model_copy(update={"i_sat": 1e6}).stage(1000, 4.0, 540.0, Pwm.space_vector).i_peak == pytest.approx(
+        a.i_peak, rel=1e-6
+    )
     magnet = Pmsm(type="pmsm", magnets="interior", pole_pairs=4, kv=40, ld=0.002, lq=0.004, rs=0.2)
-    assert magnet.model_copy(update={"i_sat": 5.0}).stage(1000, 6.0, 300.0, Pwm.space_vector).i_peak > magnet.stage(1000, 6.0, 300.0, Pwm.space_vector).i_peak
+    assert (
+        magnet.model_copy(update={"i_sat": 5.0}).stage(1000, 6.0, 300.0, Pwm.space_vector).i_peak
+        > magnet.stage(1000, 6.0, 300.0, Pwm.space_vector).i_peak
+    )
 
 
 def test_a_buried_magnet_motor_reaches_further_into_field_weakening_than_full_opposition() -> None:
@@ -453,7 +489,7 @@ def test_a_buried_magnet_motor_reaches_further_into_field_weakening_than_full_op
 
     motor = pmsm.Motor(pole_pairs=4, flux_linkage=0.05, ld=0.001, lq=0.004, rs=0.02)
     v_max, torque = 100.0, 4.0
-    w_at = lambda rpm: 4 * 2 * math.pi * rpm / 60  # noqa: E731
+    w_at = lambda rpm: 4 * 2 * math.pi * rpm / 60
     # The voltage at full opposition, the old stopping point, and whether a point beyond is found.
     reached = None
     for rpm in range(2000, 40000, 500):

@@ -150,10 +150,10 @@ body[data-at="4"] #app { --panel: clamp(460px, 45vw, 680px); }
 .schematic .motor .rotor.turning { animation: turn 3s linear infinite; }
 @keyframes turn { to { transform: rotate(360deg); } }
 .schematic .mark { stroke: var(--line-strong); stroke-width: 1; }
-.schematic text { fill: var(--ink-2); font: 500 12.5px "Funnel Sans", sans-serif; font-variant-numeric: tabular-nums; }
+.schematic text { fill: var(--ink-2); font: 500 13.5px "Funnel Sans", sans-serif; font-variant-numeric: tabular-nums; }
 .schematic .plate-title { fill: var(--ink-3); font-weight: 400; }
 .schematic .plate-note { fill: var(--ink-3); font-weight: 400; }
-.schematic .ref, .schematic .leg { fill: var(--ink-3); font-size: 11.5px; }
+.schematic .ref, .schematic .leg { fill: var(--ink-3); font-size: 12.5px; }
 .schematic .source-ring { fill: none; stroke: var(--ink); stroke-width: 1.4; }
 @container (max-width: 620px) {
   .schematic text { font-size: 17px; }
@@ -634,7 +634,7 @@ label.add-part:focus-within { outline: 2px solid var(--orange); outline-offset: 
   #report .best { color: #111; font-weight: 700; }
 }
 
-/* ---------- found on the phone-width pass ---------- */
+/* ---------- phone width ---------- */
 .top-button, .about summary { white-space: nowrap; }
 @media (max-width: 520px) { .top-button span { display: none; } .top-note { display: none; } }
 .compare-table thead th { overflow-wrap: normal; min-width: 132px; hyphens: none; }
@@ -720,3 +720,64 @@ button.link:disabled { opacity: 0.45; cursor: default; }
 /* Charts set one above another: the same air between each, and under a chart's key. */
 #tab-body .chart + .chart, #tab-body .legend.inline + .chart { margin-top: 26px; }
 .chart .zero { stroke: var(--line-strong); stroke-width: 1; }
+.shared-scale { margin-top: 10px; }
+
+/* --- figures that cannot be read ---
+   A figure that cannot be read as a number: said at its box, with the figure still in use. */
+.field.is-unread .control, td.is-unread .control { border-color: var(--caution); }
+.help.unread { color: var(--caution); }
+/* A count on a fold's face sits at the end of its title's line, not under it. */
+.more.counted > summary { grid-template-columns: minmax(0, 1fr) auto auto; }
+.more.counted > summary > .count { grid-column: 2; grid-row: 1; color: var(--ink-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.more.counted > summary::after { grid-column: 3; }
+/* What has the keyboard is never under the bar that holds Back and Next. */
+#panel { scroll-padding-bottom: 96px; }
+/* The key to a map: a figure and its unit on one line. */
+.scale span { white-space: nowrap; }
+/* A comparison keeps every column wide enough to read, and scrolls when there are more than fit. */
+#compare-table table.data.wide { width: 100%; min-width: calc(150px + var(--cols, 2) * 116px); table-layout: fixed; }
+#compare-table table.data.wide th:first-child { width: 150px; }
+#compare-table table.data.wide tr > :first-child { white-space: normal; }
+#compare-table table.data.wide td, #compare-table table.data.wide th { overflow-wrap: anywhere; }
+/* Small text held at 11.5 px or more: the step numbers, and a map's figures on a phone. */
+.station-number { font-size: 0.78rem; }
+@container panel (max-width: 430px) { .chart.map text.cell-text { font-size: 17px; } }
+.compare-bar .segmented button { flex: 1 1 auto; }
+#compare-table table.data.wide td .basis { min-width: 0; }
+/* Reset sits last in the top bar, at the right-hand end, beside the two it follows. */
+.top-button.reset { margin-left: 0; }
+@media (max-width: 520px) { .top { gap: 8px; padding: 0 14px; } }
+.brand { white-space: nowrap; }
+
+/* ---------- the narrowest screens, long names, scrolling strips ---------- */
+@media (max-width: 400px) { .about summary span { display: none; } .top { gap: 6px; padding: 0 10px; } }
+.tag { white-space: nowrap; }
+.chip-item, .switcher .chip { min-width: 0; overflow-wrap: anywhere; }
+.chip-item button { flex: none; }
+/* A strip of tabs wider than its place shows, at the edge, that more lies that way. */
+.tabs {
+  background:
+    linear-gradient(to right, var(--ground) 40%, transparent) left / 36px 100% no-repeat local,
+    linear-gradient(to left, var(--ground) 40%, transparent) right / 36px 100% no-repeat local,
+    linear-gradient(to right, color-mix(in srgb, var(--orange) 45%, transparent), transparent) left / 14px 100% no-repeat scroll,
+    linear-gradient(to left, color-mix(in srgb, var(--orange) 45%, transparent), transparent) right / 14px 100% no-repeat scroll;
+}
+@media print { #report .plain, #report .plain li { color: #111; max-width: none; } #report .plain li::before { background: #111; } }
+#panel h2 { scroll-margin-top: 72px; }
+.field { min-width: 0; }
+@container panel (max-width: 330px) {
+  .candidate > summary { grid-template-columns: 26px repeat(2, max-content) 1fr; }
+  .candidate > summary .still { grid-column: 2 / -1; grid-row: 3; }
+  .candidate > summary .verdict { grid-row: 4; }
+}
+@media (max-width: 340px) { .schematic text { font-size: 17.5px; } }
+#compare-table { min-width: 0; max-width: 100%; }
+#stage > * { min-width: 0; }
+@media (max-width: 340px) { .chart text { font-size: 21px; } .chart.map text.cell-text { font-size: 18px; } .chart.small text { font-size: 14px; } }
+.compare-bar, .compare-bar > * { min-width: 0; max-width: 100%; }
+.add-load select { min-width: 0; max-width: 100%; }
+@container (max-width: 300px) { .chart.pwm text { font-size: 21.5px; } }
+#compare-table tr.group th { padding-top: 16px; color: var(--ink); font-weight: 600; font-size: 0.9rem; white-space: normal; position: static; background: none; }
+.control .in-control { flex: none; display: grid; place-items: center; width: 40px; height: 100%; background: none; border: 0; border-left: 1px solid var(--edge); color: var(--ink-2); cursor: pointer; }
+.control .in-control:hover { color: var(--orange); }
+.compare-table td .sub { display: block; font-weight: 400; font-size: 0.88rem; color: var(--ink-3); }

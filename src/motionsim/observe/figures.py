@@ -105,29 +105,22 @@ def find_frames(page) -> list[Frame]:
     A plot area is where a set of horizontal grid lines sharing one left and
     right end crosses a set of vertical grid lines sharing one top and bottom.
     """
-    thin = [
-        ln for ln in page.lines
-        if (ln["linewidth"] or 0) <= GRID_MAX_WIDTH and _neutral(ln.get("stroking_color"))
-    ]
-    vertical = _merged(
-        [ln for ln in thin if abs(ln["x0"] - ln["x1"]) < STRAIGHT], "x0", "top", "bottom"
-    )
-    horizontal = _merged(
-        [ln for ln in thin if abs(ln["top"] - ln["bottom"]) < STRAIGHT], "top", "x0", "x1"
-    )
+    thin = [ln for ln in page.lines if (ln["linewidth"] or 0) <= GRID_MAX_WIDTH and _neutral(ln.get("stroking_color"))]
+    vertical = _merged([ln for ln in thin if abs(ln["x0"] - ln["x1"]) < STRAIGHT], "x0", "top", "bottom")
+    horizontal = _merged([ln for ln in thin if abs(ln["top"] - ln["bottom"]) < STRAIGHT], "top", "x0", "x1")
 
     frames = []
     for x0, x1 in _extents(horizontal, "x0", "x1"):
         for top, bottom in _extents(vertical, "top", "bottom"):
             rows = [
-                ln for ln in horizontal
-                if abs(ln["x0"] - x0) <= 2.5 and abs(ln["x1"] - x1) <= 2.5
-                and top - 1 <= ln["top"] <= bottom + 1
+                ln
+                for ln in horizontal
+                if abs(ln["x0"] - x0) <= 2.5 and abs(ln["x1"] - x1) <= 2.5 and top - 1 <= ln["top"] <= bottom + 1
             ]
             columns = [
-                ln for ln in vertical
-                if abs(ln["top"] - top) <= 2.5 and abs(ln["bottom"] - bottom) <= 2.5
-                and x0 - 1 <= ln["x0"] <= x1 + 1
+                ln
+                for ln in vertical
+                if abs(ln["top"] - top) <= 2.5 and abs(ln["bottom"] - bottom) <= 2.5 and x0 - 1 <= ln["x0"] <= x1 + 1
             ]
             grid_x = tuple(sorted({round(ln["x0"], 1) for ln in columns}))
             grid_y = tuple(sorted({round(ln["top"], 1) for ln in rows}))
@@ -155,18 +148,26 @@ def find_frames(page) -> list[Frame]:
     distinct: list[Frame] = []
     for f in frames:
         if not any(
-            abs(f.x0 - g.x0) <= 4 and abs(f.x1 - g.x1) <= 4
-            and abs(f.top - g.top) <= 4 and abs(f.bottom - g.bottom) <= 4
+            abs(f.x0 - g.x0) <= 4
+            and abs(f.x1 - g.x1) <= 4
+            and abs(f.top - g.top) <= 4
+            and abs(f.bottom - g.bottom) <= 4
             for g in distinct
         ):
             distinct.append(f)
+
     # A legend box or an inset drawn over the grid cuts grid lines short, and the shorter
     # lines make a second, smaller area in a corner of the real one.
     def inside(f: Frame, g: Frame) -> bool:
         within = f.x0 >= g.x0 - 4 and f.x1 <= g.x1 + 4 and f.top >= g.top - 4 and f.bottom <= g.bottom + 4
-        shared = sum((
-            abs(f.x0 - g.x0) <= 4, abs(f.x1 - g.x1) <= 4, abs(f.top - g.top) <= 4, abs(f.bottom - g.bottom) <= 4,
-        ))
+        shared = sum(
+            (
+                abs(f.x0 - g.x0) <= 4,
+                abs(f.x1 - g.x1) <= 4,
+                abs(f.top - g.top) <= 4,
+                abs(f.bottom - g.bottom) <= 4,
+            )
+        )
         return f is not g and within and shared >= 2
 
     frames = [f for f in distinct if not any(inside(f, g) for g in distinct)]
@@ -178,8 +179,14 @@ def find_frames(page) -> list[Frame]:
         grid_x, grid_y = raster.positions(plot)
         frames.append(
             Frame(
-                x0=grid_x[0], x1=grid_x[-1], top=grid_y[0], bottom=grid_y[-1],
-                grid_x=grid_x, grid_y=grid_y, grid_width=plot.scale, raster=plot,
+                x0=grid_x[0],
+                x1=grid_x[-1],
+                top=grid_y[0],
+                bottom=grid_y[-1],
+                grid_x=grid_x,
+                grid_y=grid_y,
+                grid_width=plot.scale,
+                raster=plot,
             )
         )
     # Reading order: rows of figures top to bottom, left to right within a row.
@@ -283,10 +290,7 @@ def _flatten(path, samples: int = 24) -> np.ndarray:
     t = np.linspace(0, 1, samples + 1)[1:]
     for command in path:
         kind = command[0]
-        if kind == "m":
-            current = command[1]
-            points.append(current)
-        elif kind == "l":
+        if kind == "m" or kind == "l":
             current = command[1]
             points.append(current)
         elif kind == "c":
@@ -460,16 +464,15 @@ def coloured_curves_in(page, frame: Frame, margin: float = 2.0) -> list[tuple[tu
     def inside(obj) -> bool:
         """Touches the plot area. A drawing may run past it and be cut off by the PDF's own
         clipping, so what counts is the part within: see within()."""
-        return (
-            obj["x0"] < frame.x1 and obj["x1"] > frame.x0
-            and obj["top"] < frame.bottom and obj["bottom"] > frame.top
-        )
+        return obj["x0"] < frame.x1 and obj["x1"] > frame.x0 and obj["top"] < frame.bottom and obj["bottom"] > frame.top
 
     def within(points: np.ndarray) -> list[np.ndarray]:
         """The stretches of a drawing that lie in the plot area, in drawing order."""
         keep = (
-            (points[:, 0] >= frame.x0 - margin) & (points[:, 0] <= frame.x1 + margin)
-            & (points[:, 1] >= frame.top - margin) & (points[:, 1] <= frame.bottom + margin)
+            (points[:, 0] >= frame.x0 - margin)
+            & (points[:, 0] <= frame.x1 + margin)
+            & (points[:, 1] >= frame.top - margin)
+            & (points[:, 1] <= frame.bottom + margin)
         )
         runs, start = [], None
         for k, ok in enumerate(np.append(keep, False)):
@@ -508,9 +511,7 @@ def coloured_curves_in(page, frame: Frame, margin: float = 2.0) -> list[tuple[tu
         if stroked and _white(obj.get("stroking_color")):
             continue
         if stroked and data_like(obj):
-            by_colour.setdefault(_colour_key(obj.get("stroking_color")), []).extend(
-                within(_flatten(obj["path"]))
-            )
+            by_colour.setdefault(_colour_key(obj.get("stroking_color")), []).extend(within(_flatten(obj["path"])))
         elif obj.get("fill") and not stroked and not _white(obj.get("non_stroking_color")):
             middle = _centreline(_flatten(obj["path"]))
             if middle is not None:
@@ -552,7 +553,14 @@ def colour_name(key: tuple | None) -> str | None:
     import colorsys
 
     hue = colorsys.rgb_to_hsv(*key)[0] * 360
-    for name, lo, hi in (("red", 0, 18), ("orange", 18, 50), ("green", 70, 170), ("blue", 190, 262), ("purple", 262, 330), ("red", 342, 361)):
+    for name, lo, hi in (
+        ("red", 0, 18),
+        ("orange", 18, 50),
+        ("green", 70, 170),
+        ("blue", 190, 262),
+        ("purple", 262, 330),
+        ("red", 342, 361),
+    ):
         if lo <= hue < hi:
             return name
     return None
@@ -578,14 +586,11 @@ def spanning(curves: list[np.ndarray], frame: Frame, share: float = 0.25) -> lis
         return upright or level
 
     return [
-        c for c in curves
-        if (np.ptp(c[:, 0]) > share * width or np.ptp(c[:, 1]) > share * height) and not border(c)
+        c for c in curves if (np.ptp(c[:, 0]) > share * width or np.ptp(c[:, 1]) > share * height) and not border(c)
     ]
 
 
-def digitise(
-    curve: np.ndarray, frame: Frame, x_axis: Axis, y_axis: Axis
-) -> tuple[np.ndarray, np.ndarray]:
+def digitise(curve: np.ndarray, frame: Frame, x_axis: Axis, y_axis: Axis) -> tuple[np.ndarray, np.ndarray]:
     """A curve in axis units. The y axis runs upward, so its low end is the frame's bottom."""
     x = to_value(curve[:, 0], frame.x0, frame.x1, x_axis)
     y = to_value(curve[:, 1], frame.bottom, frame.top, y_axis)

@@ -8,9 +8,10 @@ import numpy as np
 
 from motionsim.device.schema import Device
 from motionsim.engine.limits import hottest
-from motionsim.engine.link import capacitor_ripple, phase_ripple
+from motionsim.engine.link import capacitor_ripple, phase_ripple, states_capacitor, states_ripple
 from motionsim.engine.solver import OperatingPoint, Result, ThermalRunaway, solve_roles
 from motionsim.motor.stage import Stage, Unreachable
+from motionsim.text import written
 
 
 @dataclass(frozen=True)
@@ -28,9 +29,7 @@ class MotorPoint:
         """Shaft power over DC input power: motor winding loss and power-stage loss included."""
         if self.stage.p_shaft <= 0:
             return None
-        return self.stage.p_shaft / (
-            self.stage.p_shaft + self.stage.p_motor_loss + self.result.p_inverter
-        )
+        return self.stage.p_shaft / (self.stage.p_shaft + self.stage.p_motor_loss + self.result.p_inverter)
 
 
 def _raised(motor, stage, rpm: float, torque: float, base: OperatingPoint, least: float):
@@ -52,11 +51,11 @@ def _raised(motor, stage, rpm: float, torque: float, base: OperatingPoint, least
     return replace(
         stage,
         roles=[replace(r, current=r.current * k) for r in stage.roles],
+        states=stage.states and [(share, drawn * k, volts) for share, drawn, volts in stage.states],
         p_motor_loss=loss,
         p_electrical=stage.p_shaft + loss,
-        notes=stage.notes + [
-            f"open-loop start: the drive holds {least / 2**0.5:.3g} A rms here, whatever the torque"
-        ],
+        notes=stage.notes
+        + [f"open-loop start: the drive holds {written(least / 2**0.5, 3)} A rms here, whatever the torque"],
     )
 
 
@@ -68,19 +67,34 @@ def _usable(device: Device, base: OperatingPoint, i_peak: float) -> float:
     to either rail than that. And the switch and the diode each drop a volt or two of what
     is left, which matters on a low supply.
     """
-    from motionsim.engine.solver import _voltage
+    from motionsim.engine.losses import voltage
 
     timing = 2.0 * (base.t_dead + base.t_min_pulse) * base.f_sw
+    if timing >= 0.5:
+        # Not a design to be given a figure for: half of every period or more is spent with
+        # both switches off. Said, and not hidden under the floor below.
+        raise Unreachable(
+            f"the dead time and the shortest pulse take {timing:.0%} of each switching period at "
+            f"{written(base.f_sw / 1000, 3)} kHz: the stage cannot make its voltage. Lower the switching frequency, "
+            "or give a shorter dead time"
+        )
     drop = 0.0
     if i_peak > 0:
         chips = [device.switch] + ([device.diode] if device.diode is not None else [])
-        drop = max(float(_voltage(c, np.array([i_peak / max(int(base.parallel), 1)]), base.t_sink)[0]) for c in chips)
+        drop = max(float(voltage(c, np.array([i_peak / max(int(base.parallel), 1)]), base.t_sink)[0]) for c in chips)
     return float(np.clip(1.0 - timing - drop / (base.v_dc / 2), 0.5, 1.0))
 
 
 def at_speed_and_torque(
-    device: Device, motor, rpm: float, torque: float, base: OperatingPoint,
-    *, least_current: float | None = None, ripple: bool = True, spread: bool = True,
+    device: Device,
+    motor,
+    rpm: float,
+    torque: float,
+    base: OperatingPoint,
+    *,
+    least_current: float | None = None,
+    ripple: bool = True,
+    spread: bool = True,
 ) -> MotorPoint:
     """Solve the power stage at a motor speed and torque.
 
@@ -114,22 +128,32 @@ def at_speed_and_torque(
     if least_current:
         stage = _raised(motor, stage, rpm, torque, base, least_current)
     if iron:
-        notes.append(f"iron loss in the motor: {iron:.3g} W at this speed, supplied through the windings")
-        stage = replace(stage, p_shaft=torque * w * np.sign(rpm) if rpm else 0.0, p_motor_loss=stage.p_motor_loss + iron)
+        notes.append(f"iron loss in the motor: {written(iron, 3)} W at this speed, supplied through the windings")
+        stage = replace(
+            stage, p_shaft=torque * w * np.sign(rpm) if rpm else 0.0, p_motor_loss=stage.p_motor_loss + iron
+        )
     if motor.temperature_note:
         notes.append(motor.temperature_note)
     if notes:
         stage = replace(stage, notes=stage.notes + notes)
-    capacitor = capacitor_ripple(stage.roles)
+    capacitor = states_capacitor(stage.states) if stage.states else capacitor_ripple(stage.roles)
     # The stage handed back is the motor's own, at the fundamental. What is solved carries
     # the ripple as well.
     solved, ripple_pp = _with_ripple(stage, base) if ripple else (stage, None)
     result = solve_roles(
-        device, solved.roles, base, period=stage.period, p_out=stage.p_electrical,
-        extra_notes=stage.notes, stalled=stage.stalled, spread=spread,
+        device,
+        solved.roles,
+        base,
+        period=stage.period,
+        p_out=stage.p_electrical,
+        extra_notes=stage.notes,
+        stalled=stage.stalled,
+        spread=spread,
     )
     return MotorPoint(
-        stage=stage, result=result, ripple_pp=ripple_pp,
+        stage=stage,
+        result=result,
+        ripple_pp=ripple_pp,
         capacitor_rms=None if capacitor is None else capacitor[0],
     )
 
@@ -146,7 +170,13 @@ def _with_ripple(stage: Stage, base: OperatingPoint) -> tuple[Stage, float | Non
 
     if not stage.l_phase:
         return stage, None
-    pp = phase_ripple(stage.roles, base.v_dc, base.f_sw, stage.l_phase)
+    if stage.states:
+        if base.f_sw <= 0:
+            return stage, None
+        swing = states_ripple(stage.states, base.v_dc, base.f_sw, 2 * stage.l_phase)
+        pp = np.full_like(stage.roles[0].current, swing)
+    else:
+        pp = phase_ripple(stage.roles, base.v_dc, base.f_sw, stage.l_phase)
     if pp is None:
         return stage, None
     named = any(r.leg is not None for r in stage.roles)
@@ -181,9 +211,7 @@ class Map:
     reason: list[list[str]]  # why a cell is empty, else ""
 
 
-def speed_torque_map(
-    device: Device, motor, rpm: np.ndarray, torque: np.ndarray, base: OperatingPoint
-) -> Map:
+def speed_torque_map(device: Device, motor, rpm: np.ndarray, torque: np.ndarray, base: OperatingPoint) -> Map:
     shape = (len(torque), len(rpm))
     p, tj, eff, cur = (np.full(shape, np.nan) for _ in range(4))
     reason = [["" for _ in rpm] for _ in torque]
@@ -202,5 +230,12 @@ def speed_torque_map(
             cur[a, b] = point.stage.i_peak
             if point.system_efficiency is not None:
                 eff[a, b] = point.system_efficiency
-    return Map(rpm=np.asarray(rpm), torque=np.asarray(torque), p_inverter=p, tj_peak=tj,
-               efficiency=eff, i_peak=cur, reason=reason)
+    return Map(
+        rpm=np.asarray(rpm),
+        torque=np.asarray(torque),
+        p_inverter=p,
+        tj_peak=tj,
+        efficiency=eff,
+        i_peak=cur,
+        reason=reason,
+    )

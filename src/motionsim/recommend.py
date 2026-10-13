@@ -13,12 +13,15 @@ time are settled on the bench, with a probe on the switch.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from math import log
-from typing import Callable
+
+import numpy as np
 
 from motionsim.device.schema import ChipKind, Device
 from motionsim.engine.solver import OperatingPoint, ThermalRunaway
+from motionsim.text import written
 
 
 @dataclass(frozen=True)
@@ -73,7 +76,11 @@ COMMON_FIRMWARE = 500e-9  # s: open motor-control firmware runs 300 to 800 ns by
 
 
 def dead_time(
-    device: Device, op: OperatingPoint, *, margin: float = DEAD_MARGIN, igbt_margin: float = 2.0,
+    device: Device,
+    op: OperatingPoint,
+    *,
+    margin: float = DEAD_MARGIN,
+    igbt_margin: float = 2.0,
     driver_mismatch: float | None = None,
 ) -> Recommendation:
     """Shortest safe time between one switch of a leg turning off and the other turning on.
@@ -86,17 +93,22 @@ def dead_time(
     """
     topic = "dead time"
     if device.package.integrated_driver:
-        return Recommendation(topic, lines=[
-            "this package has its own gate drivers: use the dead time its datasheet specifies",
-        ])
+        return Recommendation(
+            topic,
+            lines=[
+                "this package has its own gate drivers: use the dead time its datasheet specifies",
+            ],
+        )
     sw = device.switch
     lines: list[str] = []
     if sw.kind is ChipKind.mosfet and sw.charge is not None and op.v_drive and op.rg_off:
         if op.v_drive <= sw.charge.v_plateau:
-            return Recommendation(topic, lines=[
-                f"gate drive voltage {op.v_drive:g} V does not exceed the plateau "
-                f"({sw.charge.v_plateau:g} V)",
-            ])
+            return Recommendation(
+                topic,
+                lines=[
+                    f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({sw.charge.v_plateau:g} V)",
+                ],
+            )
         delay, rise, fall = turn_off_time(device, op.v_drive, op.rg_off)
         needed = delay + rise + fall
         factor = margin
@@ -122,9 +134,21 @@ def dead_time(
                 f"{igbt_margin:g} times, not {margin:g}"
             )
     else:
+        if sw.kind is ChipKind.igbt:
+            # Nothing on the datasheet to work one out from: the usual figure, and said to be.
+            return Recommendation(
+                topic,
+                {"t_dead": IGBT_DEAD_TIME, "usual": 1.0},
+                [
+                    f"the datasheet gives no turn-off delay and fall time to work one out from: {IGBT_DEAD_TIME * 1e6:g} µs "
+                    "is taken, usual for an IGBT. Use the figure from your gate driver's or module's own datasheet "
+                    "where there is one"
+                ],
+            )
         missing = (
             "the gate drive voltage and turn-off gate resistor (--vdrive, --rgoff)"
-            if sw.charge is not None else "a turn-off delay and fall time in the device model"
+            if sw.charge is not None
+            else "a turn-off delay and fall time in the device model"
         )
         return Recommendation(topic, lines=[f"cannot be worked out without {missing}"])
     assumed = driver_mismatch is None
@@ -155,12 +179,17 @@ def _round_up(value: float) -> float:
     if value <= 0:
         return 0.0
     scale = 10 ** (floor(log10(value)) - 1)
-    return float(f"{ceil(value / scale - 1e-9) * scale:.6g}")
+    return float(f"{written(ceil(value / scale - 1e-9) * scale, 6)}")
 
 
 def gate_resistors(
-    device: Device, op: OperatingPoint, i_peak: float, *, voltage_share: float = 0.8,
-    dvdt_max: float = 5e9, driver_peak: float | None = None,
+    device: Device,
+    op: OperatingPoint,
+    i_peak: float,
+    *,
+    voltage_share: float = 0.8,
+    dvdt_max: float = 5e9,
+    driver_peak: float | None = None,
 ) -> Recommendation:
     """Smallest turn-on and turn-off gate resistance that respects the limits given.
 
@@ -179,17 +208,23 @@ def gate_resistors(
     if device.package.integrated_driver:
         return Recommendation(topic, lines=["this package has its own gate drivers and resistors"])
     if sw.charge is None:
-        return Recommendation(topic, lines=[
-            "needs gate-charge data, which this device model does not have; start from the "
-            "gate resistor the datasheet's switching energy was measured with",
-        ])
+        return Recommendation(
+            topic,
+            lines=[
+                "needs gate-charge data, which this device model does not have; start from the "
+                "gate resistor the datasheet's switching energy was measured with",
+            ],
+        )
     if not op.v_drive:
         return Recommendation(topic, lines=["cannot be worked out without the gate drive voltage (--vdrive)"])
     c = sw.charge
     if op.v_drive <= c.v_plateau:
-        return Recommendation(topic, lines=[
-            f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)",
-        ])
+        return Recommendation(
+            topic,
+            lines=[
+                f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)",
+            ],
+        )
     lines: list[str] = []
     on: dict[str, float] = {}
     off: dict[str, float] = {}
@@ -198,9 +233,7 @@ def gate_resistors(
     off[f"voltage slew rate under {slew}"] = op.v_dc * c.v_plateau / (c.q_gd * dvdt_max)
     v_limit = voltage_share * device.ratings.v_max
     if op.l_loop is None:
-        lines.append(
-            "turn-off overshoot is not considered: give the commutation-loop inductance (--lloop)"
-        )
+        lines.append("turn-off overshoot is not considered: give the commutation-loop inductance (--lloop)")
     elif v_limit <= op.v_dc:
         lines.append(
             f"the supply is already at {op.v_dc / device.ratings.v_max:.0%} of the voltage rating, "
@@ -225,25 +258,26 @@ def gate_resistors(
             # The chip's own gate resistance is there whatever is fitted outside it.
             value[key] = inside
             lines.append(
-                f"{name}: {inside:.2g} ohm in total, which is the transistor's own gate resistance: no "
+                f"{name}: {written(inside, 2)} ohm in total, which is the transistor's own gate resistance: no "
                 f"external resistor is needed for the limits, and none can make it faster"
             )
         else:
-            lines.append(f"{name}: at least {value[key]:.2g} ohm in total, set by {reason}")
+            lines.append(f"{name}: at least {written(value[key], 2)} ohm in total, set by {reason}")
             if inside is not None:
                 lines.append(
-                    f"{name}: the transistor's own gate resistance is {inside:.2g} ohm of that, leaving "
-                    f"{max(value[key] - inside, 0):.2g} ohm for the driver and the external resistor"
+                    f"{name}: the transistor's own gate resistance is {written(inside, 2)} ohm of that, leaving "
+                    f"{written(max(value[key] - inside, 0), 2)} ohm for the driver and the external resistor"
                 )
-    from motionsim.engine.mosfet import output_charge
+    from dataclasses import replace
 
-    moved = c.q_gs - c.q_g_th + c.q_gd
-    e_on = 0.5 * op.v_dc * i_peak * moved * value["rg_on"] / (op.v_drive - c.v_plateau)
-    e_on += (output_charge(c, op.v_dc) + c.q_rr) * op.v_dc
-    e_off = 0.5 * op.v_dc * i_peak * moved * value["rg_off"] / c.v_plateau
+    from motionsim.engine.mosfet import charge_energies
+
+    # The engine's own energies, so that the line and a run with these resistors agree.
+    fitted = replace(op, rg_on=value["rg_on"], rg_off=value["rg_off"])
+    e_on, e_off = (float(e[0]) for e in charge_energies(sw, np.array([i_peak]), fitted))
     lines.append(
-        f"at these values a switching event at {i_peak:.3g} A costs about {e_on * 1e6:.3g} µJ "
-        f"turning on and {e_off * 1e6:.3g} µJ turning off; both grow with the resistor"
+        f"at these values a switching event at {written(i_peak, 3)} A costs about {written(e_on * 1e6, 3)} µJ "
+        f"turning on and {written(e_off * 1e6, 3)} µJ turning off; both grow with the resistor"
     )
     return Recommendation(topic, value, lines)
 
@@ -277,18 +311,48 @@ def choose_gate_drive(device: Device, op: OperatingPoint, i_peak: float) -> Gate
     from dataclasses import replace
 
     gate = _choose_gate(device, op, i_peak)
-    if device.switch.kind is not ChipKind.mosfet or gate.op.t_dead > 0:
+    found, line = open_dead_time(device, gate.op)
+    if found is None:
         return gate
-    found = dead_time(device, gate.op).value.get("t_dead")
-    if not found:
-        return gate
-    found = _round_up(found)  # never under the rule's own least
-    line = (
-        f"dead time taken as {found * 1e9:.0f} ns, the shortest a drive with this gate drive would "
-        "be set to: its loss is counted. Much firmware runs 300 to 800 ns by default; give yours "
-        "if it is longer"
-    )
     return replace(gate, op=replace(gate.op, t_dead=found), t_dead=found, lines=[*gate.lines, line])
+
+
+IGBT_DEAD_TIME = 1e-6  # s, usual for a silicon IGBT where its datasheet gives no turn-off times
+
+
+def open_dead_time(device: Device, op: OperatingPoint) -> tuple[float | None, str]:
+    """The dead time for a device whose user gave none, and the line that says so; None
+    where the user gave one, or where none can be taken (a module with its own drivers
+    sets its own).
+
+    Every half-bridge has one, whatever switches in it. For a transistor it costs loss in
+    the body diode; for an IGBT that loss is the diode's own conduction, already counted,
+    and what the dead time takes is a slice of the voltage the stage can give. Left out for
+    one kind and not the other, a comparison leans to the one it was left out for.
+    """
+    if op.t_dead > 0 or device.package.integrated_driver:
+        return None, ""
+    advice = dead_time(device, op).value
+    found = advice.get("t_dead")
+    if device.switch.kind is ChipKind.mosfet:
+        if not found:
+            return None, ""
+        found = _round_up(found)  # never under the rule's own least
+        return found, (
+            f"dead time taken as {found * 1e9:.0f} ns, the shortest a drive with this gate drive would "
+            "be set to: its loss is counted. Much firmware runs 300 to 800 ns by default; give yours "
+            "if it is longer"
+        )
+    if found and not advice.get("usual"):
+        found = _round_up(found)
+        return found, (
+            f"dead time taken as {found * 1e9:.0f} ns, from the datasheet's turn-off times: it takes from "
+            "the voltage the stage can give. Give yours if it differs"
+        )
+    return IGBT_DEAD_TIME, (
+        f"dead time taken as {IGBT_DEAD_TIME * 1e6:g} µs, usual for an IGBT: the datasheet gives no turn-off "
+        "times to work one out from. It takes from the voltage the stage can give. Give yours if it differs"
+    )
 
 
 def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive:
@@ -305,9 +369,13 @@ def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive
         from dataclasses import replace as _replace
 
         op = _replace(op, v_drive=None, rg_on=None, rg_off=None)
-        return GateDrive(op, "built in", lines=[
-            "the gate drivers and their resistors are inside this module; there is nothing to choose",
-        ])
+        return GateDrive(
+            op,
+            "built in",
+            lines=[
+                "the gate drivers and their resistors are inside this module; there is nothing to choose",
+            ],
+        )
     measured = sw.e_on is not None and sw.e_off is not None
     if measured or sw.charge is None:
         lines = []
@@ -320,7 +388,9 @@ def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive
                 f"the datasheet's switching energy was taken at {sw.e_on.rg:g} ohm",
             ]
             if not (lo <= op.rg_on <= hi and lo <= op.rg_off <= hi):
-                lines.append("your resistor is outside that range: the nearest end of the figure is used, not a guess beyond it")
+                lines.append(
+                    "your resistor is outside that range: the nearest end of the figure is used, not a guess beyond it"
+                )
             return GateDrive(op, "given", op.v_drive, op.rg_on, op.rg_off, lines)
         rg = sw.e_on.rg if sw.e_on is not None else None
         rg_off = sw.e_off.rg if sw.e_off is not None and sw.e_off.rg else rg
@@ -337,15 +407,23 @@ def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive
             )
         lines.append(
             "give your own gate resistors and the losses follow them, along the datasheet's figure "
-            "of energy against gate resistance" if follows else
-            "a larger resistor switches slower and loses more than shown here; a smaller one "
+            "of energy against gate resistance"
+            if follows
+            else "a larger resistor switches slower and loses more than shown here; a smaller one "
             "loses less but raises overshoot and interference"
         )
         return GateDrive(op, "datasheet", rg_on=rg, rg_off=rg_off if rg else None, lines=lines)
     if op.v_drive is not None and op.rg_on is not None and op.rg_off is not None:
-        return GateDrive(op, "given", op.v_drive, op.rg_on, op.rg_off, [
-            "gate drive voltage and resistors as you gave them",
-        ])
+        return GateDrive(
+            op,
+            "given",
+            op.v_drive,
+            op.rg_on,
+            op.rg_off,
+            [
+                "gate drive voltage and resistors as you gave them",
+            ],
+        )
     from dataclasses import replace
 
     lines = []
@@ -372,16 +450,24 @@ def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive
         "the voltage slew rate and the turn-off overshoot in bounds"
     )
     lines += [ln for ln in found.lines if ln.startswith(("turn-on:", "turn-off:"))]
-    lines.append("these are total values: the driver's own resistance and the transistor's internal one count towards them")
+    lines.append(
+        "these are total values: the driver's own resistance and the transistor's internal one count towards them"
+    )
     return GateDrive(replace(op, v_drive=v_drive, rg_on=rg_on, rg_off=rg_off), "chosen", v_drive, rg_on, rg_off, lines)
 
 
 def heatsink(
-    device: Device, t_ambient: float, evaluate: Callable[[float], tuple[float, float]],
-    *, margin: float = 25.0,
+    device: Device,
+    t_ambient: float,
+    evaluate: Callable[[float], tuple[float, float]],
+    *,
+    margin: float = 25.0,
+    sink_limit: float | None = None,
 ) -> Recommendation:
     """Largest heatsink-to-ambient thermal resistance that keeps the hottest junction
-    `margin` below its rating.
+    `margin` below its rating, and the heatsink itself no hotter than `sink_limit`
+    (cooling.HEATSINK_LIMIT where none is given): what is mounted on a heatsink gives
+    out long before a junction does.
 
     evaluate(t_sink) returns the hottest junction temperature and the loss
     flowing into the heatsink, with the heatsink at t_sink. The hottest
@@ -398,13 +484,38 @@ def heatsink(
             return float("inf")
 
     if junction(t_ambient) > limit:
-        return Recommendation(topic, lines=[
-            f"even with the heatsink held at the {t_ambient:g} °C ambient the hottest junction "
-            f"is above {limit:g} °C ({margin:g} °C under the rating): no heatsink is enough",
-        ])
-    low, high = t_ambient, device.ratings.tj_max
+        return Recommendation(
+            topic,
+            lines=[
+                f"even with the heatsink held at the {t_ambient:g} °C ambient the hottest junction "
+                f"is above {limit:g} °C ({margin:g} °C under the rating): no heatsink is enough",
+            ],
+        )
+    from motionsim.cooling import HEATSINK_LIMIT
+
+    cap = HEATSINK_LIMIT if sink_limit is None else sink_limit
+    if cap <= t_ambient:
+        if sink_limit is not None:
+            # A limit the user gave is held to, or said to be out of reach: never dropped.
+            return Recommendation(
+                topic,
+                lines=[
+                    f"no heatsink stays at {written(cap, 3)} °C in air at {written(t_ambient, 3)} °C: the air is already "
+                    "that warm. Raise the limit on the heatsink, or cool the air"
+                ],
+            )
+        set_aside = (
+            f"the air is already at {written(t_ambient, 3)} °C, so the usual limit of {written(cap, 3)} °C on the "
+            "heatsink is set aside: the junction alone decides. What is mounted on the heatsink has to stand it"
+        )
+    else:
+        set_aside = ""
+    capped = cap > t_ambient and cap < device.ratings.tj_max
+    low, high = t_ambient, cap if capped else device.ratings.tj_max
+    held_by_sink = False
     if junction(high) <= limit:
         low = high
+        held_by_sink = capped
     else:
         for _ in range(30):
             middle = (low + high) / 2
@@ -418,12 +529,28 @@ def heatsink(
     if loss <= 0:
         return Recommendation(topic, lines=["no loss flows into the heatsink at this point"])
     rth = (low - t_ambient) / loss
-    return Recommendation(topic, {"rth_sink": rth, "t_sink": low, "loss": loss}, [
-        f"the heatsink may reach {low:.0f} °C before the hottest junction passes {limit:g} °C "
-        f"({margin:g} °C under its {device.ratings.tj_max:g} °C rating)",
-        f"it then carries {loss:.3g} W into {t_ambient:g} °C air: {rth:.2g} K/W or lower, "
-        "heatsink to ambient",
-    ])
+    if held_by_sink:
+        return Recommendation(
+            topic,
+            {"rth_sink": rth, "t_sink": low, "loss": loss, "sink_limit": cap},
+            [
+                f"the heatsink is kept at or below {written(cap, 3)} °C, for what is mounted on it: the board, the capacitors, "
+                f"the connectors. The hottest junction is then at {hottest:.0f} °C, {device.ratings.tj_max - hottest:.0f} °C "
+                f"under its {written(device.ratings.tj_max, 3)} °C rating",
+                f"it then carries {written(loss, 3)} W into {written(t_ambient, 3)} °C air: {written(rth, 2)} K/W or lower, heatsink to ambient",
+            ],
+        )
+    return Recommendation(
+        topic,
+        {"rth_sink": rth, "t_sink": low, "loss": loss},
+        ([set_aside] if set_aside else [])
+        + [
+            f"the heatsink may reach {low:.0f} °C before the hottest junction passes {limit:g} °C "
+            f"({margin:g} °C under its {device.ratings.tj_max:g} °C rating)",
+            f"it then carries {written(loss, 3)} W into {t_ambient:g} °C air: {written(rth, 2)} K/W or lower, "
+            "heatsink to ambient",
+        ],
+    )
 
 
 def modulation(losses: dict[str, float], default: str) -> Recommendation:
@@ -432,16 +559,20 @@ def modulation(losses: dict[str, float], default: str) -> Recommendation:
     losses: power-stage loss in W for each scheme that reaches the operating point.
     """
     topic = "modulation"
+    if not losses:
+        return Recommendation(topic, lines=["no scheme could be worked out at this point"])
     if default not in losses or len(losses) < 2:
         return Recommendation(topic, lines=["this motor type decides its own modulation"])
     best = min(losses, key=losses.get)
-    lines = [f"{default} PWM, the usual scheme for this motor: {losses[default]:.3g} W"]
+    lines = [f"{default} PWM, the usual scheme for this motor: {written(losses[default], 3)} W"]
     saving = losses[default] - losses[best]
+    if losses[default] <= 0:  # nothing is lost at this point, so nothing is to be saved
+        return Recommendation(topic, {"saving": 0.0}, lines)
     if best == default or saving < 0.02 * losses[default]:
         lines.append("no other scheme saves more than 2% here")
         return Recommendation(topic, {"saving": 0.0}, lines)
     lines.append(
-        f"{best} PWM loses {losses[best]:.3g} W, {saving:.3g} W less "
+        f"{best} PWM loses {written(losses[best], 3)} W, {written(saving, 3)} W less "
         f"({saving / losses[default]:.0%}): it stops switching each leg for part of the cycle"
     )
     if "discontinuous" in best:

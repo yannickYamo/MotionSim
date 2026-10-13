@@ -32,8 +32,11 @@ def at(x, y, where):
 
 
 def spanning(curves, frame, share=0.4):
-    return [c for c in curves if np.ptp(c[:, 0]) > share * (frame.x1 - frame.x0)
-            or np.ptp(c[:, 1]) > share * (frame.bottom - frame.top)]
+    return [
+        c
+        for c in curves
+        if np.ptp(c[:, 0]) > share * (frame.x1 - frame.x0) or np.ptp(c[:, 1]) > share * (frame.bottom - frame.top)
+    ]
 
 
 ONSEMI = "onsemi_FGHL40T65MQD.pdf"
@@ -41,10 +44,18 @@ EPC = "epc_EPC2302.pdf"
 MODULE_C = "module_c.pdf"
 
 
-@pytest.mark.parametrize(("name", "number", "count"), [
-    (ONSEMI, 4, 6), (ONSEMI, 6, 6), (ONSEMI, 7, 2), (EPC, 3, 6), (EPC, 4, 6), (EPC, 5, 2),
-    (MODULE_C, 14, 12),
-])
+@pytest.mark.parametrize(
+    ("name", "number", "count"),
+    [
+        (ONSEMI, 4, 6),
+        (ONSEMI, 6, 6),
+        (ONSEMI, 7, 2),
+        (EPC, 3, 6),
+        (EPC, 4, 6),
+        (EPC, 5, 2),
+        (MODULE_C, 14, 12),
+    ],
+)
 def test_plot_areas_found(name: str, number: int, count: int) -> None:
     assert len(find_frames(page(name, number))) == count
 
@@ -63,9 +74,7 @@ def test_onsemi_switching_energy_curves() -> None:
     frame = find_frames(p)[1]
     curves = spanning(curves_in(p, frame), frame)
     assert len(curves) == 4
-    at_40 = sorted(
-        at(*digitise(c, frame, Axis(0, 150, False), Axis(100, 10000, True)), 40.0) for c in curves
-    )
+    at_40 = sorted(at(*digitise(c, frame, Axis(0, 150, False), Axis(100, 10000, True)), 40.0) for c in curves)
     assert at_40 == pytest.approx([520, 770, 860, 1280], rel=0.04)  # table, in µJ
 
 
@@ -77,9 +86,7 @@ def test_onsemi_diode_forward_curves() -> None:
 
 def test_onsemi_thermal_impedance_plateaus() -> None:
     p = page(ONSEMI, 7)
-    for frame, y_axis, table in zip(
-        find_frames(p), (Axis(0.01, 1, True), Axis(0.001, 2, True)), (0.63, 1.6)
-    ):
+    for frame, y_axis, table in zip(find_frames(p), (Axis(0.01, 1, True), Axis(0.001, 2, True)), (0.63, 1.6)):
         curves = spanning(curves_in(p, frame), frame)
         single = max(curves, key=lambda c: c[np.argmin(c[:, 0]), 1])
         _, z = digitise(single, frame, Axis(1e-5, 10, True), y_axis)
@@ -137,10 +144,18 @@ def test_module_against_the_vendor_simulator() -> None:
     reference = data["parts"][data["aliases"]["module_c"]]
     for row in reference["points"]:
         f_out, f_sw, pf, total, t_case = row[0], row[1], row[2], row[5], row[6]
-        r = solve(device, OperatingPoint(
-            v_dc=300, i_rms=reference["i_rms"], modulation_index=0.8, power_factor=pf,
-            f_sw=f_sw * 1000, t_sink=t_case, f_out=f_out,
-        ))
+        r = solve(
+            device,
+            OperatingPoint(
+                v_dc=300,
+                i_rms=reference["i_rms"],
+                modulation_index=0.8,
+                power_factor=pf,
+                f_sw=f_sw * 1000,
+                t_sink=t_case,
+                f_out=f_out,
+            ),
+        )
         # Up to 13% high: turn-off energy still comes from the table, because this
         # datasheet's hot turn-off curve and its table disagree by 17%.
         assert r.p_inverter == pytest.approx(total, rel=0.15)

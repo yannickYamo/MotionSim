@@ -10,14 +10,13 @@ from scipy.special import k0
 
 from motionsim.package.plate import ChipSite, Plate, Stack, thermal_matrix
 
-STACK = Stack(k_plate=390.0, t_plate=0.5e-3, k_insulation=2.0, t_insulation=0.4e-3,
-              t_die=0.0, t_attach=0.0)
+STACK = Stack(k_plate=390.0, t_plate=0.5e-3, k_insulation=2.0, t_insulation=0.4e-3, t_die=0.0, t_attach=0.0)
 
 
 def test_chip_covering_the_whole_plate_is_one_dimensional() -> None:
     """No sideways flow: resistance is the insulation's thickness over conductivity and area."""
     plate = Plate(0.01, 0.006, (ChipSite("all", 0.005, 0.003, 0.01, 0.006),))
-    (r,), = thermal_matrix(plate, STACK)
+    ((r,),) = thermal_matrix(plate, STACK)
     assert r == pytest.approx(0.4e-3 / (2.0 * 0.01 * 0.006), rel=1e-6)
 
 

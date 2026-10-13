@@ -8,6 +8,10 @@ export function sig(value: number, digits = 3): string {
   return value.toFixed(Math.min(decimals, 6));
 }
 
+/** A figure the engine worked out, to three figures however large: 1378 J is 1380 J. Not for
+ *  a figure the user typed, which is shown as typed. */
+export const fig = (value: number, digits = 3): string => (Number.isFinite(value) ? sig(Number(value.toPrecision(digits)), digits) : sig(value));
+
 const PREFIX: [number, string][] = [[1e6, "M"], [1e3, "k"], [1, ""], [1e-3, "m"], [1e-6, "µ"], [1e-9, "n"]];
 
 /** 0.00012 H becomes "120 µH". */

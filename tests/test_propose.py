@@ -11,15 +11,18 @@ from motionsim.motor import Pmsm
 from motionsim.propose import explain, propose
 
 MOTOR = Pmsm(pole_pairs=4, flux_linkage=0.1, ld=0.008, lq=0.008, rs=1.0)
-BASE = OperatingPoint(
-    v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0
-)
+BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
 
 
 def igbt(name: str, v0: float, rth: float = 1.0, v_max: float = 600.0):
     d = linear_device(
-        sw_curves=[line(25.0, v0, 0.03)], d_curves=[line(25.0, 1.0, 0.025)],
-        k_on=20e-6, k_off=15e-6, k_rr=5e-6, rth_sw=rth, rth_d=rth,
+        sw_curves=[line(25.0, v0, 0.03)],
+        d_curves=[line(25.0, 1.0, 0.025)],
+        k_on=20e-6,
+        k_off=15e-6,
+        k_rr=5e-6,
+        rth_sw=rth,
+        rth_d=rth,
     )
     d.part_number = name
     d.ratings.v_max = v_max
@@ -102,7 +105,8 @@ def test_what_a_device_needs_around_it() -> None:
     module.package.topology = Topology.six_pack
     module.package.integrated_driver = True
     assert requirements(module, 6, BASE) == [
-        "1 package for the 6 switches", "gate drivers are inside the package",
+        "1 package for the 6 switches",
+        "gate drivers are inside the package",
     ]
     assert requirements(module, 4, BASE)[0] == "1 package for the 4 switches (2 switches left unused)"
     assert requirements(module, 8, BASE)[0] == "2 packages for the 8 switches (4 switches left unused)"

@@ -27,7 +27,8 @@ from motionsim import page  # noqa: E402
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     files = sorted(
-        p for p in PACKAGE.rglob("*")
+        p
+        for p in PACKAGE.rglob("*")
         if p.is_file() and not SKIP.intersection(p.relative_to(PACKAGE).parts) and p.suffix in {".py", ".yaml"}
     )
     with zipfile.ZipFile(OUT / "motionsim.zip", "w", zipfile.ZIP_DEFLATED) as z:

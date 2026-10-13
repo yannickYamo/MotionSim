@@ -58,17 +58,29 @@ def with_start(samples: list[Sample], start: Start) -> list[Sample]:
     first = samples[0]
     before = []
     if start.flux_time > 0:
-        before.append(replace(
-            first, duration=start.flux_time, load_speed=0.0, load_acceleration=0.0,
-            motor_rpm=0.0, motor_torque=0.0,
-        ))
+        before.append(
+            replace(
+                first,
+                duration=start.flux_time,
+                load_speed=0.0,
+                load_acceleration=0.0,
+                motor_rpm=0.0,
+                motor_torque=0.0,
+            )
+        )
     # A motor that is already turning is caught at its speed: there is nothing to align.
     caught = first.motor_rpm != 0 and abs(first.motor_rpm) >= start.handover_rpm
     if start.method == "open_loop" and start.align_time > 0 and start.current > 0 and not caught:
-        before.append(replace(
-            first, duration=start.align_time, load_speed=0.0, load_acceleration=0.0,
-            motor_rpm=0.0, motor_torque=0.0,
-        ))
+        before.append(
+            replace(
+                first,
+                duration=start.align_time,
+                load_speed=0.0,
+                load_acceleration=0.0,
+                motor_rpm=0.0,
+                motor_torque=0.0,
+            )
+        )
     return before + samples
 
 

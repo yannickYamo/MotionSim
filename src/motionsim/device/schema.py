@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class _Model(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
 
 
 class SourceKind(str, Enum):
@@ -172,12 +172,12 @@ class ChargeModel(_Model):
     )
     oss_voltage: list[float] | None = Field(default=None, description="V, increasing")
     oss_charge: list[float] | None = Field(
-        default=None, description="output charge at each oss_voltage, C: the area under the "
-        "output-capacitance curve"
+        default=None, description="output charge at each oss_voltage, C: the area under the output-capacitance curve"
     )
     q_rr: float = Field(default=0.0, ge=0, description="reverse-recovery charge of the reverse path")
     q_rr_current: float | None = Field(
-        default=None, gt=0,
+        default=None,
+        gt=0,
         description="current the recovery charge was measured at, A. Below it the charge is "
         "scaled down with current; left out, the full charge is used at any current above zero",
     )
@@ -245,7 +245,8 @@ class Topology(str, Enum):
 class Package(_Model):
     topology: Topology
     rth_case_sink: float | None = Field(
-        default=None, ge=0,
+        default=None,
+        ge=0,
         description="case to heatsink, whole package, K/W. Left out, it is computed for a "
         "discrete package whose outline is given, and taken as zero otherwise",
     )
@@ -266,9 +267,7 @@ class Package(_Model):
     interface: Literal["grease", "pad"] = Field(
         default="grease", description="what sits between the package and the heatsink"
     )
-    integrated_driver: bool = Field(
-        default=False, description="the package contains its own gate drivers"
-    )
+    integrated_driver: bool = Field(default=False, description="the package contains its own gate drivers")
 
 
 class SwitchingTimes(_Model):
@@ -282,7 +281,7 @@ class SwitchingTimes(_Model):
 class Ratings(_Model):
     v_max: float = Field(gt=0)
     i_nominal: float = Field(gt=0)
-    tj_max: float
+    tj_max: float = Field(gt=0, le=1000)
     i_pulsed: float | None = Field(default=None, gt=0, description="pulsed or peak current rating, A")
     t_sc: float | None = Field(default=None, gt=0, description="short-circuit withstand time, s")
 

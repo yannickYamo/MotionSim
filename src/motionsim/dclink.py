@@ -19,6 +19,7 @@ import numpy as np
 
 from motionsim import guard
 from motionsim.cycle import Cycle
+from motionsim.text import written
 
 
 @dataclass(frozen=True)
@@ -33,7 +34,11 @@ class Returned:
 
 
 def returned(
-    cycle: Cycle, v_dc: float, v_rated: float, *, capacitance: float | None = None,
+    cycle: Cycle,
+    v_dc: float,
+    v_rated: float,
+    *,
+    capacitance: float | None = None,
     voltage_share: float = 0.8,
 ) -> Returned:
     """Energy a motion sends back to the DC link, and where it takes the link voltage."""
@@ -64,15 +69,18 @@ def check(r: Returned, v_dc: float, v_rated: float, *, supply: str) -> list[guar
     if r.energy <= 0:
         return []
     came_back = (
-        f"braking returns {r.energy:.3g} J to the DC link, {r.burst_energy:.3g} J of it in one "
-        f"stretch of {r.burst_time:.2g} s, at up to {r.peak_power:.3g} W"
+        f"braking returns {written(r.energy, 3)} J to the DC link, {written(r.burst_energy, 3)} J of it in one "
+        f"stretch of {written(r.burst_time, 2)} s, at up to {written(r.peak_power, 3)} W"
     )
     if supply == "battery":
-        return [guard.Check(
-            guard.Level.ok, "braking",
-            f"{came_back}; a battery takes it back, as up to {r.peak_power / v_dc:.3g} A of "
-            "charging current, which its own limit must allow",
-        )]
+        return [
+            guard.Check(
+                guard.Level.ok,
+                "braking",
+                f"{came_back}; a battery takes it back, as up to {written(r.peak_power / v_dc, 3)} A of "
+                "charging current, which its own limit must allow",
+            )
+        ]
     if r.v_peak is None:
         if r.capacitance_needed is None:
             advice = (
@@ -82,18 +90,25 @@ def check(r: Returned, v_dc: float, v_rated: float, *, supply: str) -> list[guar
         else:
             advice = (
                 f"a supply that cannot take it back needs at least "
-                f"{r.capacitance_needed * 1e6:.3g} µF on the link to stay under {r.v_limit:.0f} V, "
-                f"or a braking resistor able to take {r.peak_power:.3g} W"
+                f"{written(r.capacitance_needed * 1e6, 3)} µF on the link to stay under {r.v_limit:.0f} V, "
+                f"or a braking resistor able to take {written(r.peak_power, 3)} W"
             )
         return [guard.Check(guard.Level.caution, "braking", f"{came_back}; {advice}")]
     reach = f"{came_back}; with nowhere else to go it lifts the link from {v_dc:g} V to {r.v_peak:.0f} V"
     if r.v_peak > v_rated:
-        return [guard.Check(
-            guard.Level.fail, "braking", f"{reach}, above the {v_rated:g} V device rating",
-        )]
+        return [
+            guard.Check(
+                guard.Level.fail,
+                "braking",
+                f"{reach}, above the {v_rated:g} V device rating",
+            )
+        ]
     if r.v_peak > r.v_limit:
-        return [guard.Check(
-            guard.Level.caution, "braking",
-            f"{reach}, {r.v_peak / v_rated:.0%} of the {v_rated:g} V device rating",
-        )]
+        return [
+            guard.Check(
+                guard.Level.caution,
+                "braking",
+                f"{reach}, {r.v_peak / v_rated:.0%} of the {v_rated:g} V device rating",
+            )
+        ]
     return [guard.Check(guard.Level.ok, "braking", f"{reach}, within the device rating")]

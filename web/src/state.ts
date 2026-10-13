@@ -7,7 +7,7 @@ export type Tab = "proposal" | "losses" | "motion" | "map" | "settings" | "capab
 /** A load set beside the one of step 4, to compare what different loads ask of one device. */
 export interface LoadItem { id: string; label: string; loadKind: string; load: State["load"]; segments: Segment[]; mission?: Mission | null }
 /** A motor kept as it was set, with the supply and design point that went with it. */
-export interface MotorItem { id: string; label: string; motor: Record<string, string | number>; conditions: Record<string, number> }
+export interface MotorItem { id: string; label: string; motor: Record<string, string | number>; conditions: Record<string, number | string | null> }
 /** Motor speed and torque against time, as measured or planned. */
 export interface Mission { name: string; time: number[]; rpm: number[]; torque: number[] }
 
@@ -40,19 +40,23 @@ export interface State {
   loadSet: LoadItem[]; // loads compared with the one of step 4
   loadKind: string; // which kind of load the figures describe
   loadTouched: boolean; // the user has picked a load or edited one
+  loadTouchedBefore: boolean; // as it was before a mission profile was brought, to go back to
   segments: Segment[];
   sink: { rth: string; capacity: string; t_ambient: string; c_link_uf: string; precharge: string; repeats: number };
   start: { method: string; current: string; align_time: string; handover_rpm: string; flux_time: string };
   devices: string[];
   motorTouched: boolean; // the user has picked or edited the motor or the conditions
+  motorEdited: string[]; // the kinds of motor whose figures the user has typed into
+  pointOf: Record<string, { v_dc: number; rpm: number; torque: number; f_khz: number; pwm: string }>; // the supply and design point each kind was left at
   added: string[]; // the parts this user brought to the page; nothing else is listed
   focus: string | null;
+  focusPicked: boolean; // the user chose which device the drawing shows, and it stays theirs
   tab: Tab;
   metric: "loss" | "tj" | "efficiency";
   map: { rpm_max: string; torque_max: string };
 }
 
-const KEY = "motionsim.bench.v10";
+export const KEY = "motionsim.bench.v10";
 
 export function initial(setup: Setup): State {
   const kind = "pmsm";
@@ -89,13 +93,17 @@ export function initial(setup: Setup): State {
     pwmPeriods: 5,
     mapAt: "",
     loadTouched: false,
+    loadTouchedBefore: false,
     segments: setup.profile.segments.map((s) => ({ ...s })),
     sink: { rth: "", capacity: "", t_ambient: "", c_link_uf: "", precharge: "", repeats: 1 },
     start: { method: "sensor", current: "", align_time: "", handover_rpm: "", flux_time: "" },
     devices: [], // the user brings the part; none is chosen for them
     added: [],
     motorTouched: false,
+    motorEdited: [],
+    pointOf: {},
     focus: null,
+    focusPicked: false,
     tab: "proposal",
     metric: "loss",
     map: { rpm_max: "", torque_max: "" },
@@ -121,6 +129,7 @@ export function restore(setup: Setup, keepDevices = false): State {
       devices: keepDevices ? saved.devices : saved.devices.filter((d) => known.has(d)),
       added: keepDevices ? saved.added ?? [] : (saved.added ?? []).filter((d) => known.has(d)),
       focus: saved.focus && (keepDevices || known.has(saved.focus)) ? saved.focus : null,
+      focusPicked: Boolean(saved.focusPicked) && Boolean(saved.focus) && (keepDevices || known.has(saved.focus!)),
     };
   } catch {
     return fresh;
@@ -135,7 +144,11 @@ export function save(state: State): void {
   }
 }
 
-const number = (text: string, scale = 1): number | null => (text === "" || text === null ? null : Number(text) * scale);
+const number = (text: string, scale = 1): number | null => {
+  if (text === "" || text === null) return null;
+  const value = Number(String(text).trim().replace(/^(-?\d+),(\d+)$/, "$1.$2"));
+  return Number.isNaN(value) ? null : value * scale;
+};
 
 /** The request the engine expects, in SI units. */
 export function request(state: State) {
@@ -147,7 +160,8 @@ export function request(state: State) {
       pwm: c.pwm || null, v_drive: number(c.v_drive), rg_on: number(c.rg_on), rg_off: number(c.rg_off),
       t_dead: number(c.t_dead_ns, 1e-9) ?? 0, l_loop: number(c.l_loop_nh, 1e-9),
       t_min_pulse: number(c.t_min_ns, 1e-9) ?? 0,
-      parallel: Math.max(1, Math.round(Number(c.parallel) || 1)),
+      // As typed, so that 0 or 2.5 devices is refused at its box and not quietly taken as another number.
+      parallel: String(c.parallel ?? "").trim() === "" || Number.isNaN(Number(c.parallel)) ? 1 : Number(c.parallel),
       cooling: c.cooling, t_ambient: c.t_ambient, rth_sink: number(c.rth_sink), rth_ja: number(c.rth_ja),
       board_area: number(c.board_area), copper: number(c.copper), copper_ref: number(c.copper_ref),
     },
@@ -157,7 +171,7 @@ export function request(state: State) {
 
 export function motionRequest(state: State) {
   const l = state.load;
-  const gravity = l.mass > 0 && l.arm > 0 ? { gravity: { mass: l.mass, arm: l.arm } } : {};
+  const gravity = Number(l.mass) !== 0 && Number(l.arm) !== 0 ? { gravity: { mass: l.mass, arm: l.arm } } : {};
   const vehicle = l.v_mass > 0 && l.wheel_radius > 0
     ? { vehicle: { mass: l.v_mass, wheel_radius: l.wheel_radius, rolling_resistance: l.rolling_resistance, drag_area: l.drag_area, slope_percent: l.slope_percent } }
     : {};

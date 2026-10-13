@@ -31,6 +31,7 @@ from motionsim.observe.schema import (
     ReadSeries,
 )
 from motionsim.observe.verify import normalise_unit
+from motionsim.text import written
 
 ANCHOR_TOLERANCE = 0.08
 AMBIGUITY_MARGIN = 0.03  # a rival assignment must be worse by at least this much
@@ -48,9 +49,7 @@ _SERIES = {
     "e_off": (Quantity.e_off_curve, Quantity.e_off),
     "e_rr": (Quantity.e_rr_curve, Quantity.e_rr),
 }
-SHARED_LABEL = (
-    "{n} curves carry this label (for example high side and low side); the highest is used"
-)
+SHARED_LABEL = "{n} curves carry this label (for example high side and low side); the highest is used"
 
 
 def is_family(figure: ReadFigure) -> bool:
@@ -91,8 +90,7 @@ def _traces(page, frame, axes: ReadAxes, kind: FigureKind, flags: list[str]) -> 
         agreement = figures.grid_agreement(drawn, axis, start, end)
         if agreement is not None and agreement < 0.8:
             flags.append(
-                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only "
-                f"{agreement:.0%} of the drawn grid lines"
+                f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only {agreement:.0%} of the drawn grid lines"
             )
 
     traces = []
@@ -117,8 +115,11 @@ def _anchors(observations: list[Observation], quantity: Quantity, tj: float | No
     bounds a typical curve from above."""
     wanted = (quantity, Quantity.v_sd) if quantity is Quantity.vf else (quantity,)
     return [
-        o for o in observations
-        if o.quantity in wanted and (o.typ is not None or o.max is not None) and o.current_a
+        o
+        for o in observations
+        if o.quantity in wanted
+        and (o.typ is not None or o.max is not None)
+        and o.current_a
         and (25.0 if o.tj_c is None and o.quantity is Quantity.v_sd else o.tj_c) == tj
         and o.status is not ReviewStatus.flagged
     ]
@@ -195,18 +196,23 @@ def digitise_family(
         quantity = _SERIES[series[0].name][0] if series else Quantity.vce_curve
         return [
             CurveObservation(
-                quantity=quantity, page=figure.page, label=figure.label, x=[], y=[],
-                x_axis=axes.x, y_axis=axes.y, method="vector",
-                status=ReviewStatus.flagged, flags=flags + [reason],
+                quantity=quantity,
+                page=figure.page,
+                label=figure.label,
+                x=[],
+                y=[],
+                x_axis=axes.x,
+                y_axis=axes.y,
+                method="vector",
+                status=ReviewStatus.flagged,
+                flags=flags + [reason],
             )
         ]
 
     if flags:
         return failed("axes could not be confirmed")
     if not series or len(traces) != len(axes.series):
-        return failed(
-            f"{len(traces)} curves drawn but the reader described {len(axes.series)}"
-        )
+        return failed(f"{len(traces)} curves drawn but the reader described {len(axes.series)}")
 
     # A switching-energy figure that states no temperature is taken at 25 °C, where the
     # tables are; the tabulated value still has to confirm each curve.
@@ -221,10 +227,7 @@ def digitise_family(
         groups.setdefault((s.name, s.tj_c), []).append(position)
     scored = []
     for order in permutations(range(len(traces)), len(series)):
-        if any(
-            [order[k] for k in members] != sorted(order[k] for k in members)
-            for members in groups.values()
-        ):
+        if any([order[k] for k in members] != sorted(order[k] for k in members) for members in groups.values()):
             continue
         costs = [_cost(traces[k], a) for k, a in zip(order, anchors)]
         known = [c for c in costs if c is not None]
@@ -241,15 +244,13 @@ def digitise_family(
     scored.sort(key=lambda row: row[0])
     close = [row for row in scored if row[0] - scored[0][0] < AMBIGUITY_MARGIN]
     if len(close) > 1:
-        close = [
-            row for row in close if _ordered([traces[k] for k in row[1]], series, energy)
-        ]
+        close = [row for row in close if _ordered([traces[k] for k in row[1]], series, energy)]
         if len(close) != 1:
             return failed(
                 "several assignments of curves fit the tables about equally well, and the "
                 "temperature ordering does not settle it"
             )
-    total, order, costs = close[0]
+    _total, order, costs = close[0]
 
     out = []
     for members in groups.values():
@@ -274,12 +275,12 @@ def digitise_family(
                 page=figure.page,
                 label=figure.label,
                 tj_c=s.tj_c,
-                x=[float(f"{v:.6g}") for v in trace.current],
-                y=[float(f"{v:.6g}") for v in trace.value],
+                x=[float(f"{written(v, 6)}") for v in trace.current],
+                y=[float(f"{written(v, 6)}") for v in trace.value],
                 x_axis=axes.x,
                 y_axis=axes.y,
                 test_voltage_v=anchor[0].voltage_v if anchor else (axes.test_voltage_v if energy else None),
-                anchor_error=None if cost is None else float(f"{cost:.3g}"),
+                anchor_error=None if cost is None else float(f"{written(cost, 3)}"),
                 method="vector",
                 status=ReviewStatus.flagged if own else ReviewStatus.unverified,
                 flags=own,
@@ -301,7 +302,11 @@ def is_voltage(figure: ReadFigure) -> bool:
 
 
 def digitise_voltage(
-    page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes, observations: list[Observation],
+    page,
+    frame: figures.Frame,
+    figure: ReadFigure,
+    axes: ReadAxes,
+    observations: list[Observation],
 ) -> list[CurveObservation]:
     """Turn-on and turn-off energy against the voltage switched, at one current. Tied to the
     table the same way as the figure against gate resistance: each curve has to pass
@@ -310,7 +315,11 @@ def digitise_voltage(
 
 
 def digitise_gate_resistance(
-    page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes, observations: list[Observation],
+    page,
+    frame: figures.Frame,
+    figure: ReadFigure,
+    axes: ReadAxes,
+    observations: list[Observation],
     against: str = "resistance",
 ) -> list[CurveObservation]:
     """Turn-on and turn-off energy against gate resistance, at the one current the figure
@@ -323,15 +332,31 @@ def digitise_gate_resistance(
     scale it.
     """
     by_voltage = against == "voltage"
-    names = {"e_on": (Quantity.e_on_v_curve if by_voltage else Quantity.e_on_rg_curve, Quantity.e_on, Quantity.rg_on_test),
-             "e_off": (Quantity.e_off_v_curve if by_voltage else Quantity.e_off_rg_curve, Quantity.e_off, Quantity.rg_off_test)}
+    names = {
+        "e_on": (Quantity.e_on_v_curve if by_voltage else Quantity.e_on_rg_curve, Quantity.e_on, Quantity.rg_on_test),
+        "e_off": (
+            Quantity.e_off_v_curve if by_voltage else Quantity.e_off_rg_curve,
+            Quantity.e_off,
+            Quantity.rg_off_test,
+        ),
+    }
     series = [s for s in axes.series if s.name in names]
 
     def failed(reason: str) -> list[CurveObservation]:
-        return [CurveObservation(
-            quantity=names["e_on"][0], page=figure.page, label=figure.label, x=[], y=[],
-            x_axis=axes.x, y_axis=axes.y, method="vector", status=ReviewStatus.flagged, flags=[reason],
-        )]
+        return [
+            CurveObservation(
+                quantity=names["e_on"][0],
+                page=figure.page,
+                label=figure.label,
+                x=[],
+                y=[],
+                x_axis=axes.x,
+                y_axis=axes.y,
+                method="vector",
+                status=ReviewStatus.flagged,
+                flags=[reason],
+            )
+        ]
 
     x_unit, y_unit = normalise_unit(axes.x_unit), normalise_unit(axes.y_unit)
     if x_unit is None or y_unit is None or (x_unit[0], y_unit[0]) != ("V" if by_voltage else "ohm", "J"):
@@ -353,8 +378,15 @@ def digitise_gate_resistance(
         """(resistance, energy) the table gives for this series, or None."""
         _, energy, resistor = names[s.name]
         tj = 25.0 if s.tj_c is None else s.tj_c
-        rows = [o for o in observations if o.quantity is energy and o.typ and o.tj_c == tj
-                and o.current_a == axes.test_current_a and o.status is not ReviewStatus.flagged]
+        rows = [
+            o
+            for o in observations
+            if o.quantity is energy
+            and o.typ
+            and o.tj_c == tj
+            and o.current_a == axes.test_current_a
+            and o.status is not ReviewStatus.flagged
+        ]
         if by_voltage:  # the table's own test voltage is where the curve has to meet it
             return (rows[0].voltage_v, rows[0].typ) if rows and rows[0].voltage_v else None
         at = [o for o in observations if o.quantity is resistor and o.typ and o.status is not ReviewStatus.flagged]
@@ -382,13 +414,26 @@ def digitise_gate_resistance(
     out = []
     for k, s, error, (rg, _) in zip(order, series, errors, anchors):
         r, e = curves[k]
-        out.append(CurveObservation(
-            quantity=names[s.name][0], page=figure.page, label=figure.label, tj_c=s.tj_c,
-            x=[float(f"{v:.6g}") for v in r], y=[float(f"{v:.6g}") for v in e],
-            x_axis=axes.x, y_axis=axes.y, test_voltage_v=axes.test_voltage_v,
-            anchor_error=float(f"{error:.3g}"), method="vector", status=ReviewStatus.unverified, flags=[],
-            notes=[f"at {axes.test_current_a:g} A; passes through the tabulated energy at {rg:g} {'V' if by_voltage else 'ohm'}"],
-        ))
+        out.append(
+            CurveObservation(
+                quantity=names[s.name][0],
+                page=figure.page,
+                label=figure.label,
+                tj_c=s.tj_c,
+                x=[float(f"{written(v, 6)}") for v in r],
+                y=[float(f"{written(v, 6)}") for v in e],
+                x_axis=axes.x,
+                y_axis=axes.y,
+                test_voltage_v=axes.test_voltage_v,
+                anchor_error=float(f"{written(error, 3)}"),
+                method="vector",
+                status=ReviewStatus.unverified,
+                flags=[],
+                notes=[
+                    f"at {axes.test_current_a:g} A; passes through the tabulated energy at {rg:g} {'V' if by_voltage else 'ohm'}"
+                ],
+            )
+        )
     return out
 
 
@@ -399,9 +444,7 @@ def is_normalised_resistance(figure: ReadFigure) -> bool:
     return figure.kind is FigureKind.normalized_on_resistance
 
 
-def digitise_normalised_resistance(
-    page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes
-) -> CurveObservation:
+def digitise_normalised_resistance(page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes) -> CurveObservation:
     """On-resistance against temperature, normalised to 25 °C.
 
     The curve checks itself: it must read 1.0 at 25 °C, which a wrong axis
@@ -439,7 +482,7 @@ def digitise_normalised_resistance(
         else:
             at_25 = float(np.interp(25, x, y))
             if abs(at_25 - 1) > NORMALISATION_TOLERANCE:
-                flags.append(f"reads {at_25:.3g} at 25 °C where a normalised curve reads 1")
+                flags.append(f"reads {written(at_25, 3)} at 25 °C where a normalised curve reads 1")
         # Below room temperature a silicon-carbide transistor's resistance can rise again,
         # so the check starts at 25 °C.
         if np.any(np.diff(y[x >= 25]) < -0.01):
@@ -448,8 +491,8 @@ def digitise_normalised_resistance(
         quantity=Quantity.rds_norm_curve,
         page=figure.page,
         label=figure.label,
-        x=[float(f"{v:.6g}") for v in x],
-        y=[float(f"{v:.6g}") for v in y],
+        x=[float(f"{written(v, 6)}") for v in x],
+        y=[float(f"{written(v, 6)}") for v in y],
         x_axis=axes.x,
         y_axis=axes.y,
         method="vector",

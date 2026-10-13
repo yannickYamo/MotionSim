@@ -16,7 +16,9 @@ MOTOR = Pmsm(type="pmsm", pole_pairs=4, kv=40, l=0.002, rs=0.2)
 
 
 def device():
-    return linear_device(sw_curves=[line(25.0, 1.0, 0.03)], d_curves=[line(25.0, 1.0, 0.03)], k_on=4e-5, k_off=4e-5, k_rr=1e-5)
+    return linear_device(
+        sw_curves=[line(25.0, 1.0, 0.03)], d_curves=[line(25.0, 1.0, 0.03)], k_on=4e-5, k_off=4e-5, k_rr=1e-5
+    )
 
 
 def test_at_the_limit_the_hottest_junction_is_at_its_rating() -> None:

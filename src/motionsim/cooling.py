@@ -28,6 +28,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from motionsim.device.schema import Device
+from motionsim.text import written
 
 # Junction to still air of one package, K/W, as datasheets give it: the leaded outlines
 # standing free, the surface-mount one on a square inch of copper.
@@ -35,6 +36,9 @@ FREE_AIR = {"TO-220": 62.0, "TO-247": 40.0, "TO-263": 43.0}
 REFERENCE_COPPER = 6.45  # cm², one square inch: what most datasheets take the figure on
 STILL_AIR = 10.0  # W/(m²·K), a board's face to still air, convection and radiation
 BOARD_LIMIT = 120.0  # °C, above which ordinary board material is past its rating
+# °C, the most a heatsink is let reach when one is sized: the junctions may stand more, but
+# the board, the capacitors, the connectors and the plastic fixed to it do not.
+HEATSINK_LIMIT = 100.0
 
 
 def _pad(area_cm2: float) -> float:
@@ -62,8 +66,13 @@ class NoHeatsink:
 
 
 def no_heatsink(
-    device: Device, rth_ja: float | None = None, *, board_area: float | None = None,
-    copper: float | None = None, copper_ref: float | None = None, packages: int | None = None,
+    device: Device,
+    rth_ja: float | None = None,
+    *,
+    board_area: float | None = None,
+    copper: float | None = None,
+    copper_ref: float | None = None,
+    packages: int | None = None,
 ) -> NoHeatsink:
     """What lies between a package's case and the air with no heatsink.
 
@@ -102,16 +111,16 @@ def no_heatsink(
         rth_board = board_to_air(board_area)
         if abs(pad - reference) > 1e-9:
             lines.append(
-                f"junction to air {rth_ja:g} K/W on {reference:g} cm² of copper is {used:.3g} K/W on the "
+                f"junction to air {rth_ja:g} K/W on {reference:g} cm² of copper is {written(used, 3)} K/W on the "
                 f"{pad:g} cm² each package has"
             )
         lines.append(
-            f"the packages share a {board_area:g} cm² board, which still air cools at {rth_board:.3g} K/W: "
+            f"the packages share a {board_area:g} cm² board, which still air cools at {written(rth_board, 3)} K/W: "
             "each one is warmed by its neighbours' loss through that"
         )
     if used <= inside:
         raise ValueError(
-            f"junction to air of {used:.3g} K/W is not above this part's {inside:g} K/W from junction "
+            f"junction to air of {written(used, 3)} K/W is not above this part's {inside:g} K/W from junction "
             "to case: give the junction-to-air figure, RthJA"
         )
     return NoHeatsink(used - inside, rth_board, used, lines)

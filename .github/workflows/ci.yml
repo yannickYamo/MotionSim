@@ -13,8 +13,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install ".[dev]"
-      - run: pytest -q
+      - run: pip install ".[dev]" build
+      - run: ruff format --check src tests web/scripts
+      - run: ruff check src tests web/scripts
+      - run: pytest -q --cov=motionsim --cov-report=term-missing:skip-covered
+      # The package as a user gets it: built, installed on its own, and asked the README's question.
+      - run: python -m build --wheel
+      - run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install -q dist/*.whl
+          /tmp/clean/bin/motionsim --version
+          /tmp/clean/bin/motionsim simulate examples/synthetic_igbt_600v_30a.yaml --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60 | grep "45.19 W"
+          /tmp/clean/bin/motionsim design init -o /tmp/design.yaml
+          /tmp/clean/bin/motionsim design run /tmp/design.yaml --json > /dev/null
   page:
     runs-on: ubuntu-latest
     steps:
@@ -30,5 +41,10 @@ jobs:
         working-directory: web
       - run: npx tsc --noEmit
         working-directory: web
+      - run: npm test
+        working-directory: web
       - run: npm run build
         working-directory: web
+      # The page shipped in the package has to be the page these sources build: a change to
+      # the page or the engine without a rebuild fails here.
+      - run: git diff --exit-code -- src/motionsim/webui

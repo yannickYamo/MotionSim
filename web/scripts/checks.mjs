@@ -57,7 +57,11 @@ export async function measure(page, name) {
       if (!n.textContent.trim() || !visible(el) || el.closest(".sr, option, svg, .skip")) continue;
       const range = document.createRange();
       range.selectNodeContents(n);
-      for (const r of range.getClientRects()) if (r.width > 1 && r.height > 1) boxes.push({ id: boxes.length, node: n, text: n.textContent.trim().slice(0, 28), l: r.left, t: r.top, r: r.right, b: r.bottom });
+      // Text slid out of a strip that scrolls sideways (the tabs, a wide table) is not on
+      // screen, and cannot be on top of anything.
+      let strip = null;
+      for (let a = el; a && a !== document.body; a = a.parentElement) if (a.scrollWidth > a.clientWidth + 1 && /auto|scroll|hidden/.test(getComputedStyle(a).overflowX)) { strip = a.getBoundingClientRect(); break; }
+      for (const r of range.getClientRects()) if (r.width > 1 && r.height > 1 && !(strip && Math.min(r.right, strip.right) - Math.max(r.left, strip.left) < 0.5 * r.width)) boxes.push({ id: boxes.length, node: n, text: n.textContent.trim().slice(0, 28), l: r.left, t: r.top, r: r.right, b: r.bottom });
     }
     for (const el of document.querySelectorAll("svg text")) {
       // A drawing that cannot run is dimmed under its notice; the notice is what is read.
