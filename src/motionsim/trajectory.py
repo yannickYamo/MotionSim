@@ -24,16 +24,17 @@ switch and the high-side reverse path do.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 
 from motionsim.device.schema import Device
 from motionsim.engine.modulation import Role
-from motionsim.engine.solver import OperatingPoint, Result, solve_roles, thermal_network
+from motionsim.engine.solver import OperatingPoint, Result, package_waves, solve_roles, thermal_network
+from motionsim.engine.thermal import repeating_rise
 from motionsim.text import written
-from motionsim.transient import ChipState
+from motionsim.transient import ChipState, Lag, shared_time
 
 LEGS = "abcd"
 MAX_SAMPLES = 8192
@@ -72,7 +73,7 @@ def load_trajectory(path: str | Path) -> Trajectory:
         raise BadTrajectory(f"not a number: {exc}") from exc
     if data.shape[1] != len(header):
         raise BadTrajectory("every row must have as many values as the header has names")
-    columns = dict(zip(header, data.T))
+    columns = dict(zip(header, data.T, strict=True))
     legs = [leg for leg in LEGS if f"i_{leg}" in columns]
     if not legs:
         raise BadTrajectory("no current column found: expected i_a, with d_a")
@@ -136,6 +137,9 @@ class Outcome:
     result: Result  # taking the trajectory to repeat without end
     time: np.ndarray
     tj_from_start: np.ndarray  # hottest junction against time, starting at the sink temperature
+    # The hottest switch junction once the trajectory has repeated long enough to settle:
+    # the lowest it falls to and the highest it reaches, °C.
+    switch_span: tuple[float, float] = (float("nan"), float("nan"))
 
     @property
     def peak_from_start(self) -> float:
@@ -165,18 +169,52 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
         chips["diode"] = device.diode
     networks = {name: thermal_network(device, chip)[0] for name, chip in chips.items()}
     dt = trajectory.duration / trajectory.time.size
+    # What a chip shares with the rest of its package follows the package's loss through
+    # the trajectory, as in a motion (see transient.py): a burst heats the case and the
+    # neighbours while it lasts, and the settled solution above holds them at their mean.
+    tau = shared_time(device, op)
+    shared = package_waves(device, stage, result, op)
     hottest = np.full(trajectory.time.size, op.t_sink)
-    for role in result.roles:
+    followed = []
+    spans = []
+    for role, role_shared in zip(result.roles, shared, strict=True):
+        peaks = {}
         for name, network in networks.items():
             wave = role.p_switch if name == "switch" else role.p_diode
             mean = role.switch.total if name == "switch" else role.diode.total
             settled = role.tj_switch if name == "switch" else role.tj_diode
-            static = settled - network.rth * mean - op.t_sink
-            chip = ChipState(network)
+            target = role_shared[name]
+            # What is left stays where the mean loss puts it: a heatsink in air, a board.
+            still = settled - network.rth * mean - float(target.mean())
+            swing = repeating_rise(network.r, network.tau, wave, dt) + repeating_rise([1.0], [tau], target, dt)
+            peaks[name] = still + float(swing.max())
+            if name == "switch":
+                spans.append((still + float(swing.min()), peaks[name]))
+            chip, rest = ChipState(network), Lag(tau)
             for k, p in enumerate(wave):
                 chip.advance(float(p), dt)
-                hottest[k] = max(hottest[k], op.t_sink + static + chip.rise)
-    return Outcome(result, trajectory.time + dt, hottest)
+                rest.advance(float(target[k]), dt)
+                hottest[k] = max(hottest[k], still + rest.value + chip.rise)
+        followed.append(
+            replace(role, tj_switch_peak=peaks["switch"], tj_diode_peak=peaks.get("diode", peaks["switch"]))
+        )
+    worst = max(followed, key=lambda r: r.hottest)
+    moved = worst.hottest - max(result.tj_switch_peak, result.tj_diode_peak)
+    result = replace(
+        result,
+        roles=followed,
+        switch=worst.switch,
+        diode=worst.diode,
+        tj_switch=worst.tj_switch,
+        tj_diode=worst.tj_diode,
+        tj_switch_peak=worst.tj_switch_peak,
+        tj_diode_peak=worst.tj_diode_peak,
+        t_case=worst.t_case,
+        tj_peak_range=None
+        if result.tj_peak_range is None
+        else (result.tj_peak_range[0] + moved, result.tj_peak_range[1] + moved),
+    )
+    return Outcome(result, trajectory.time + dt, hottest, max(spans, key=lambda span: span[1]))
 
 
 def example(f_out: float = 50.0, i_rms: float = 10.0, m: float = 0.8, pf: float = 0.85, n: int = 200) -> str:

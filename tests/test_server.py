@@ -282,12 +282,12 @@ def test_an_open_loop_start_holds_its_current_until_the_handover_and_heats_the_s
     assert len(blind["rpm"]) == len(sensed["rpm"]) + 1 and blind["rpm"][0] == 0
     peak = used["current"] * 2**0.5
     assert blind["i_peak"][0] == pytest.approx(peak)
-    below = [i for n, i in zip(blind["rpm"], blind["i_peak"]) if abs(n) < used["handover_rpm"]]
-    above = [(n, i) for n, i in zip(blind["rpm"], blind["i_peak"]) if abs(n) >= used["handover_rpm"]]
+    below = [i for n, i in zip(blind["rpm"], blind["i_peak"], strict=True) if abs(n) < used["handover_rpm"]]
+    above = [(n, i) for n, i in zip(blind["rpm"], blind["i_peak"], strict=True) if abs(n) >= used["handover_rpm"]]
     assert below and all(i == pytest.approx(peak) for i in below)
     # Past the handover the two drives ask the same of the stage.
     assert [i for _, i in above] == pytest.approx(
-        [i for n, i in zip(sensed["rpm"], sensed["i_peak"]) if abs(n) >= used["handover_rpm"]]
+        [i for n, i in zip(sensed["rpm"], sensed["i_peak"], strict=True) if abs(n) >= used["handover_rpm"]]
     )
     # A fan asks for almost nothing at low speed, so the held current is what heats the start.
     assert blind["p_stage"][1] > 3 * sensed["p_stage"][0]

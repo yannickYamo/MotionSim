@@ -50,6 +50,11 @@ class OperatingPoint:
     # K/W, with rth_free: the packages share a board, and each watt lost anywhere on it
     # warms every package by this much (see cooling.py)
     rth_board: float | None = None
+    # Between the package and the heatsink, which belongs to how the stage is built and
+    # not to the device: a known figure in K/W for one package, or what the layer is made
+    # of. Left out, the device's own figure or the layer computed for its package is used.
+    rth_case_sink: float | None = None
+    interface: str | None = None  # "grease" or "pad"
     n_steps: int = 2048
 
     def __post_init__(self) -> None:
@@ -71,6 +76,7 @@ class OperatingPoint:
             "heatsink thermal resistance": self.rth_sink,
             "case-to-air thermal resistance": self.rth_free,
             "board thermal resistance": self.rth_board,
+            "case-to-heatsink thermal resistance": self.rth_case_sink,
         }
         for name, value in figures.items():
             if value is not None and not np.isfinite(value):
@@ -82,6 +88,8 @@ class OperatingPoint:
                 raise ValueError(f"the {name} cannot be negative, and {value:g} was given")
         if abs(self.power_factor) > 1:
             raise ValueError(f"a power factor lies between -1 and 1, and {self.power_factor:g} was given")
+        if self.interface not in (None, "grease", "pad"):
+            raise ValueError(f"the layer under the package is grease or pad, and {self.interface!r} was given")
         if self.parallel < 1:
             raise ValueError(f"at least one device at each position, and {self.parallel} was given")
         if 2 * (self.t_dead + self.t_min_pulse) * self.f_sw >= 1:
@@ -162,6 +170,7 @@ class Result:
     assumptions: list[str] = field(default_factory=list)  # thermal values assumed, not given
     tj_peak_range: tuple[float, float] | None = None  # hottest junction across those assumptions
     t_sink: float | None = None  # °C, what the packages sit on: the heatsink, or the air without one
+    doubt: float = 0.0  # share of the stage's loss that rests on data the datasheet does not hold
 
     @property
     def efficiency(self) -> float | None:

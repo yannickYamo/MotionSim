@@ -33,6 +33,7 @@ them to a person, carry the cautions and the "what this rests on" section with t
 |---|---|
 | 0 | The part passes, with or without cautions. Read the cautions. |
 | 3 | No part passes, or the part followed passes at the design point and fails a check through the motion. `verdict.candidates[].checks` and `motion.checks` say which check failed and why. |
+| 4 | Undecided: the estimate is under the rating and the top of its range is over it, so what the datasheet leaves out decides; or it passes as drawn on losses taken beyond the datasheet's last data point, and would not if they were as far off as they can be. `outcome` is `undecided`; the temperature check says what would narrow it. Do not treat it as a pass. |
 | 2 | The design cannot be run as written, in whole or in one step. The output has `refused` (why), `fix` (what to change) and `field` (which figure) at the top, for the first step refused, and `refusals` lists every such step by name; each of those steps holds its own three in its place. Also a file that cannot be read, or a report that cannot be written where it was asked for: said in one line on the error stream. |
 | 1 | A fault in the tool. Report it; do not work around it. |
 
@@ -56,6 +57,8 @@ conditions:
   cooling: held               # held | heatsink | none | board
   t_sink: 60                  # °C, with cooling: held
   # cooling: heatsink  ->  rth_sink (K/W, every device on it), t_ambient (°C)
+  # on a heatsink, either cooling: interface (grease | pad, the layer under each package) and
+  #   rth_case_sink (K/W case to heatsink of one package, where measured); left out, worked out
   # cooling: none      ->  rth_ja (K/W junction to air, one package), t_ambient
   # cooling: board     ->  rth_ja, board_area (cm²), copper (cm² a part), t_ambient
   # optional: v_drive, rg_on, rg_off (ohm), t_dead (s), l_loop (H), t_min_pulse (s),

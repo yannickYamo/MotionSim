@@ -33,6 +33,14 @@ INTERFACE = {
     "pad": {"low": (3.0, 150e-6), "typical": (1.5, 200e-6), "high": (1.0, 250e-6)},
 }
 
+# Under a moulded module the layer is thicker than under a discrete package's tab: the
+# body is held by a screw at each end and its face is not flat, and module makers'
+# mounting guidance asks for about 100 µm of grease.
+MOULDED_INTERFACE = {
+    "grease": {"low": (2.0, 50e-6), "typical": (1.0, 100e-6), "high": (0.8, 150e-6)},
+    "pad": INTERFACE["pad"],
+}
+
 # Rated current per unit of switch chip area, A/m2. A denser chip is smaller
 # and heats more, so the "high" case has the highest density.
 CURRENT_DENSITY = {"low": 1.2e6, "typical": 1.6e6, "high": 2.2e6}
@@ -46,17 +54,20 @@ class PackageModel:
     name: str
     plates: tuple[Plate, ...]
     stack: Stack
-    footprint: float  # m2 of package face on the heatsink
-    interface_resistance: float  # K/W, interface layer alone under the whole footprint
+    footprint: float  # m2 of package face that carries heat to the heatsink
+    interface_resistance: float  # K/W, interface layer alone under that face
+    case: Stack | None = None  # the same stack down to the package's own face, no interface layer
 
     @property
     def chip_names(self) -> list[str]:
         return [c.name for p in self.plates for c in p.chips]
 
-    def matrix(self, cell: float = 0.25e-3) -> np.ndarray:
-        """Junction-to-heatsink thermal resistance matrix, K/W. Chips on separate
-        plates are taken not to heat each other through the package."""
-        blocks = [thermal_matrix(p, self.stack, cell) for p in self.plates]
+    def matrix(self, cell: float = 0.25e-3, *, to_case: bool = False) -> np.ndarray:
+        """Junction-to-heatsink thermal resistance matrix, K/W, or junction to the
+        package's own face held at one temperature. Chips on separate plates are taken
+        not to heat each other through the package."""
+        stack = self.case if to_case and self.case is not None else self.stack
+        blocks = [thermal_matrix(p, stack, cell) for p in self.plates]
         n = sum(b.shape[0] for b in blocks)
         out = np.zeros((n, n))
         at = 0
@@ -80,7 +91,7 @@ def _sides(i_rated: float, variant: str) -> tuple[float, float]:
 def _row(names: list[str], sides: list[float], gap: float, margin: float):
     """Chips in a row with a fixed gap between them; returns the chips and the plate size."""
     chips, x = [], margin
-    for name, side in zip(names, sides):
+    for name, side in zip(names, sides, strict=True):
         chips.append((name, x + side / 2, side))
         x += side + gap
     width = x - gap + margin
@@ -107,24 +118,30 @@ def _six_pack(i_rated: float, variant: str, interface: str, *, substrate: bool) 
     for phase in "UVW":
         chips, w2, h2 = _row([f"LS switch {phase}", f"LS diode {phase}"], [sw, d], gap, margin)
         plates.append(Plate(w2, h2, chips))
-    k_if, t_if = INTERFACE[interface][variant]
+    copper = sum(p.width * p.height for p in plates)
     if substrate:
-        # Copper on a ceramic, soldered or pressed to the package face.
-        ceramic = (ALUMINA, 0.38e-3)
-        k_ins, t_ins = _series(ceramic, (COPPER, 0.3e-3), (k_if, t_if))
-        stack = Stack(COPPER, 0.3e-3, k_ins, t_ins, k_die=SILICON)
+        # Copper on a ceramic, soldered or pressed to the package face. The copper under
+        # the ceramic spreads the heat over a face wider than the copper the chips sit on.
+        k_if, t_if = INTERFACE[interface][variant]
+        inside = _series((ALUMINA, 0.38e-3), (COPPER, 0.3e-3))
+        k_plate, t_plate = COPPER, 0.3e-3
+        footprint = copper * 1.6
     else:
         # Leadframe with a layer of thermally conductive moulding compound beneath it.
-        mould = {"low": (2.5, 0.30e-3), "typical": (1.8, 0.35e-3), "high": (1.2, 0.45e-3)}[variant]
-        k_ins, t_ins = _series(mould, (k_if, t_if))
-        stack = Stack(LEADFRAME, 0.5e-3, k_ins, t_ins, k_die=SILICON)
-    footprint = sum(p.width * p.height for p in plates) * 1.6  # leads and moulding around the copper
+        # Nothing spreads the heat below the leadframe, so it crosses the interface
+        # under the copper and nowhere else.
+        k_if, t_if = MOULDED_INTERFACE[interface][variant]
+        inside = {"low": (2.5, 0.30e-3), "typical": (1.8, 0.35e-3), "high": (1.2, 0.45e-3)}[variant]
+        k_plate, t_plate = LEADFRAME, 0.5e-3
+        footprint = copper
+    k_ins, t_ins = _series(inside, (k_if, t_if))
     return PackageModel(
         name="ceramic-substrate module" if substrate else "moulded leadframe module",
         plates=tuple(plates),
-        stack=stack,
+        stack=Stack(k_plate, t_plate, k_ins, t_ins, k_die=SILICON),
         footprint=footprint,
         interface_resistance=t_if / (k_if * footprint),
+        case=Stack(k_plate, t_plate, *inside, k_die=SILICON),
     )
 
 
@@ -183,23 +200,34 @@ class Summary:
 
     self_switch: float  # junction to heatsink, switch alone, K/W
     self_diode: float | None
-    coupling: float  # mean rise of a chip per watt in another chip, K/W
-    interface: float  # K/W, the share of that which a uniform interface layer explains
+    # Mean rise of a chip per watt in another chip, K/W, over the package's own face: what
+    # the package does inside itself, whatever it is mounted on.
+    coupling: float
+    interface: float  # K/W, case to heatsink: the interface layer under the package
 
 
 def summarise(model: PackageModel) -> Summary:
     m = model.matrix()
+    inside = model.matrix(to_case=True)
     names = model.chip_names
     switches = [i for i, n in enumerate(names) if "switch" in n]
     diodes = [i for i, n in enumerate(names) if "diode" in n]
     n = len(names)
-    off = (m.sum() - np.trace(m)) / (n * (n - 1)) if n > 1 else 0.0
+    off = (inside.sum() - np.trace(inside)) / (n * (n - 1)) if n > 1 else 0.0
     return Summary(
         self_switch=float(np.mean([m[i, i] for i in switches])),
         self_diode=float(np.mean([m[i, i] for i in diodes])) if diodes else None,
         coupling=float(off),
         interface=model.interface_resistance,
     )
+
+
+def shared_time(template: str, i_rated: float, interface: str = "grease") -> float:
+    """Seconds the copper under the chips takes to follow a change of loss: the plate
+    equation's own time constant, the copper's heat capacity over a unit of area charged
+    through the layers beneath it."""
+    stack = build(template, i_rated, "typical", interface).stack
+    return stack.c_plate * stack.t_plate * stack.t_insulation / stack.k_insulation
 
 
 @lru_cache(maxsize=256)
@@ -238,4 +266,4 @@ def response_shape(
     z = step_response(plate, model.stack, index, times)
     fit = fit_foster(times, z, max_order=3, target=0.05)
     total = sum(fit.r)
-    return tuple((r / total, tau) for r, tau in zip(fit.r, fit.tau))
+    return tuple((r / total, tau) for r, tau in zip(fit.r, fit.tau, strict=True))

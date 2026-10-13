@@ -58,7 +58,7 @@ def digitise_curves(pdf_path: str, obs) -> list:
             by_caption = figures.match_frames(page, frames, [f.label for f in listed])
             if len(by_caption) < len(listed) and len(frames) == len(listed):
                 # Captions not found as printed: fall back to reading order.
-                by_caption = {f.label: frame for f, frame in zip(listed, frames)}
+                by_caption = {f.label: frame for f, frame in zip(listed, frames, strict=True)}
             # One caption over a row of plots (the same figure at two temperatures, say):
             # each plot the caption did not claim is read as a part of that figure.
             claimed = {id(frame) for frame in by_caption.values()}

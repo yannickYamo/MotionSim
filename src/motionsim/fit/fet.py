@@ -110,7 +110,7 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
     return ConductionModel(
         curves=[
             Curve(tj=t, current=[0.0, i_top], value=[0.0, float(rds.typ * k * i_top)])
-            for t, k in zip(temperatures, factors)
+            for t, k in zip(temperatures, factors, strict=True)
         ],
         source=_source(
             obs,

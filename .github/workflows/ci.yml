@@ -48,3 +48,9 @@ jobs:
       # The page shipped in the package has to be the page these sources build: a change to
       # the page or the engine without a rebuild fails here.
       - run: git diff --exit-code -- src/motionsim/webui
+      # The engine as the hosted page runs it, inside the browser's Python, gives the figures
+      # the installed engine gives.
+      - run: npm run engine-check
+        working-directory: web
+        env:
+          PYTHON: python

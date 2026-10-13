@@ -175,7 +175,8 @@ STARTING = {
     "synrm": dict(v_dc=540, rpm=1500, torque=5.0, f_sw=8000),
     "induction": dict(v_dc=540, rpm=1400, torque=6.0, f_sw=8000),
     "dc": dict(v_dc=24, rpm=2500, torque=0.4, f_sw=20000),
-    "dc_series": dict(v_dc=24, rpm=3000, torque=1.0, f_sw=20000),
+    # Under the speed its supply reaches at this torque with room for what the stage takes of it.
+    "dc_series": dict(v_dc=24, rpm=2600, torque=1.0, f_sw=20000),
     "stepper": dict(v_dc=48, rpm=300, torque=0.8, f_sw=30000),
 }
 
@@ -361,12 +362,13 @@ def _pwm(name) -> Pwm:
 def _conditions(data: dict, motor) -> OperatingPoint:
     pwm = data.get("pwm") or motor.default_pwm.value
     floor = {"rg_on": 0.01, "rg_off": 0.01, "v_drive": 0.1}  # a gate resistance is never nothing
-    most = {"rg_on": 1e4, "rg_off": 1e4, "v_drive": 100, "l_loop": 1e-3}
+    most = {"rg_on": 1e4, "rg_off": 1e4, "v_drive": 100, "l_loop": 1e-3, "rth_case_sink": 50}
     words = {
         "rg_on": "turn-on gate resistance",
         "rg_off": "turn-off gate resistance",
         "v_drive": "gate drive voltage",
         "l_loop": "loop inductance",
+        "rth_case_sink": "case-to-heatsink thermal resistance",
     }
     optional = lambda key: (  # noqa: E731
         None
@@ -396,6 +398,14 @@ def _conditions(data: dict, motor) -> OperatingPoint:
                 "rth_sink",
             )
         rth_sink = _number(data["rth_sink"], "heatsink thermal resistance", low=0.001, high=500, field="rth_sink")
+    # What lies between a package and its heatsink belongs to the build. With no heatsink
+    # there is no such layer, and what was typed for another cooling is left alone.
+    on_heatsink = cooling in ("held", "heatsink")
+    layer = (data.get("interface") or None) if on_heatsink else None
+    if layer not in (None, "grease", "pad"):
+        raise Refused(
+            f"the layer under the package (interface) is grease or pad, and {layer!r} was given", "", "interface"
+        )
     return OperatingPoint(
         v_dc=_number(data.get("v_dc"), "supply voltage", low=1, high=2000, field="v_dc"),
         i_rms=0.0,
@@ -405,6 +415,8 @@ def _conditions(data: dict, motor) -> OperatingPoint:
         f_sw=_number(data.get("f_sw"), "switching frequency", low=100, high=1e7, field="f_sw"),
         t_sink=t_sink,
         rth_sink=rth_sink,
+        rth_case_sink=optional("rth_case_sink") if on_heatsink else None,
+        interface=layer,
         pwm=_pwm(pwm),
         t_dead=_number(data.get("t_dead", 0) or 0, "dead time", low=0, high=1e-4, field="t_dead"),
         t_min_pulse=_number(data.get("t_min_pulse", 0) or 0, "shortest pulse", low=0, high=1e-4, field="t_min_pulse"),
@@ -569,7 +581,12 @@ def _result(r, tj_max: float, parallel: int = 1) -> dict:
 
 
 def _checks(checks) -> list[dict]:
-    word = {guard.Level.ok: "ok", guard.Level.caution: "caution", guard.Level.fail: "fail"}
+    word = {
+        guard.Level.ok: "ok",
+        guard.Level.caution: "caution",
+        guard.Level.undecided: "undecided",
+        guard.Level.fail: "fail",
+    }
     return [{"level": word[c.level], "topic": c.topic, "message": c.message} for c in checks]
 
 
@@ -1114,8 +1131,13 @@ def proposal(data: dict, workspace: Workspace) -> dict:
         candidates = propose(devices, motor, rpm, torque, op, tune=lambda d: gates[id(d)].op)
     except Unreachable as exc:
         raise _unreachable(exc, op.v_dc) from None
-    word = {guard.Level.ok: "ok", guard.Level.caution: "caution", guard.Level.fail: "fail"}
-    by_object = {id(d): k for d, k in zip(devices, keys)}
+    word = {
+        guard.Level.ok: "ok",
+        guard.Level.caution: "caution",
+        guard.Level.undecided: "undecided",
+        guard.Level.fail: "fail",
+    }
+    by_object = {id(d): k for d, k in zip(devices, keys, strict=True)}
     out = []
     for c in candidates:
         problem, fix = c.problem, ""
@@ -1190,19 +1212,21 @@ def _mission(given) -> list | None:
         raise Refused(
             "the mission profile needs at least two rows, with all three columns filled", "check the file", "mission"
         )
-    if any(b <= a for a, b in zip(time, time[1:])) or not all(map(math.isfinite, time + rpm + torque)):
+    if any(b <= a for a, b in zip(time, time[1:], strict=False)) or not all(map(math.isfinite, time + rpm + torque)):
         raise Refused("the mission profile's time does not run forward", "sort the rows by time", "mission")
     if len(time) > MOST_POINTS:
         # Thin by keeping, in each stretch, the instant that asks the most torque.
         edges = np.linspace(0, len(time), MOST_POINTS + 1).astype(int)
         keep = sorted(
-            {int(a + np.argmax(np.abs(torque[a:b]))) for a, b in zip(edges, edges[1:]) if b > a} | {0, len(time) - 1}
+            {int(a + np.argmax(np.abs(torque[a:b]))) for a, b in zip(edges, edges[1:], strict=False) if b > a}
+            | {0, len(time) - 1}
         )
         time, rpm, torque = [time[k] for k in keep], [rpm[k] for k in keep], [torque[k] for k in keep]
-    spans = [b - a for a, b in zip(time, time[1:])]
+    spans = [b - a for a, b in zip(time, time[1:], strict=False)]
     spans.append(spans[-1])
     return [
-        Sample(t - time[0], dt, n * math.pi / 30, 0.0, 0.0, n, tq) for t, dt, n, tq in zip(time, spans, rpm, torque)
+        Sample(t - time[0], dt, n * math.pi / 30, 0.0, 0.0, n, tq)
+        for t, dt, n, tq in zip(time, spans, rpm, torque, strict=True)
     ]
 
 

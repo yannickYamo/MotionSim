@@ -259,13 +259,34 @@ def test_the_summary_reports_the_diodes_own_resistance_and_not_the_switchs() -> 
 
 @pytest.mark.parametrize("template", ["leadframe-module", "substrate-module"])
 def test_a_fifteen_amp_module_has_the_interface_resistance_the_thermal_notes_print(template) -> None:
-    # docs/THERMAL_MODEL.md: interface alone 0.11 K/W for either module at 15 A on grease.
+    # docs/THERMAL_MODEL.md, the layer under a module of 15 A on grease: 0.36 K/W moulded,
+    # 0.11 K/W on a ceramic substrate.
     model = build(template, 15.0)
-    assert round(model.interface_resistance, 2) == 0.11
-    # The package face is larger than the copper inside it, so the layer resists less than under the copper alone.
     copper = sum(p.width * p.height for p in model.plates)
-    assert model.footprint > 1.3 * copper
-    assert model.interface_resistance == pytest.approx(50e-6 / (1.0 * model.footprint))
+    if template == "leadframe-module":
+        # Nothing under a leadframe spreads the heat, so it crosses the layer under the
+        # copper alone, and a moulded body sits on about 100 µm of grease.
+        assert round(model.interface_resistance, 2) == 0.36
+        assert model.interface_resistance == pytest.approx(100e-6 / (1.0 * copper))
+    else:
+        # The copper under the ceramic spreads it over a face larger than the copper above.
+        assert round(model.interface_resistance, 2) == 0.11
+        assert model.footprint > 1.3 * copper
+        assert model.interface_resistance == pytest.approx(50e-6 / (1.0 * model.footprint))
+
+
+def test_what_chips_do_to_each_other_is_reckoned_over_the_package_face_whatever_lies_under_it() -> None:
+    from motionsim.package.templates import summary
+
+    for template in ("leadframe-module", "substrate-module"):
+        grease, pad = summary(template, 15.0, "typical", "grease"), summary(template, 15.0, "typical", "pad")
+        assert pad.interface > 1.3 * grease.interface
+        assert pad.coupling == pytest.approx(grease.coupling, rel=1e-12)
+    # Measured from the heatsink the same chips heat each other more, by about the layer.
+    model = build("leadframe-module", 15.0)
+    from_sink, over_case = model.matrix(), model.matrix(to_case=True)
+    heated = over_case > 0  # chips on separate copper do not heat each other through the package
+    assert (from_sink[heated] > over_case[heated]).all()
 
 
 def test_an_insulating_pad_has_three_distinct_cases_and_a_typical_one_of_ordinary_silicone() -> None:

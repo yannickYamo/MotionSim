@@ -23,7 +23,9 @@ out = {}
 for kind, m in info["motors"].items():
     req = {"motor": {"type": kind, **m["values"]}, "conditions": {**m["start"], "t_sink": 60}}
     stage = page.stage(req)["stage"]
-    best = page.proposal({**req, "devices": ["example"]}, ws)["candidates"][0]["result"]
+    # A low-voltage motor on the low-voltage part: the other's own drop takes a sixth of 24 V.
+    part = "example" if m["start"]["v_dc"] > 100 else "example-mosfet"
+    best = page.proposal({**req, "devices": [part]}, ws)["candidates"][0]["result"]
     out[kind] = [stage["i_peak"], stage["p_electrical"], best["loss"], best["conduction"], best["switching"], best["tj_peak"]]
 pm = info["motors"]["pmsm"]
 req = {"motor": {"type": "pmsm", **pm["values"]}, "conditions": {**pm["start"], "t_sink": 60}, "device": "example"}
@@ -32,7 +34,9 @@ out["map"] = page.speed_torque({**req, "rpm_max": 4000, "torque_max": 2, "n": 4}
 result = json.dumps(out)
 `;
 
-const native = JSON.parse(execFileSync(join(root, ".venv", "bin", "python"), ["-c", `${QUESTIONS}\nprint(result)`], { encoding: "utf8" }));
+// The native engine: this checkout's own environment, or the Python named (as in CI, where there is none here).
+const python = process.env.PYTHON ?? join(root, ".venv", "bin", "python");
+const native = JSON.parse(execFileSync(python, ["-c", `${QUESTIONS}\nprint(result)`], { encoding: "utf8" }));
 
 const py = await loadPyodide();
 await py.loadPackage(["numpy", "scipy", "pydantic", "pyyaml"], { messageCallback: () => {} });

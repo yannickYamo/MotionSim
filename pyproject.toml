@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "motionsim"
-version = "0.3.1"
-description = "From any power-semiconductor datasheet to the losses and junction temperatures of a motor drive, on a local page"
+version = "0.3.2"
+description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Yannick Maurice" }]
@@ -54,7 +54,6 @@ ignore = [
     "RUF001",  # the degree sign, the micro sign and the multiplication dot are meant
     "RUF002",
     "RUF003",
-    "B905",    # lists zipped here are built side by side, of one length by construction
     "RUF005",  # [*a, b] against a + [b]: neither is a mistake
     "RUF007",  # zip(a, a[1:]) is read at a glance; pairwise is not yet
     "UP042",   # str and Enum together keep the values plain strings in the files written

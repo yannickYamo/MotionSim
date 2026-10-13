@@ -534,7 +534,7 @@ def heatsink(
             topic,
             {"rth_sink": rth, "t_sink": low, "loss": loss, "sink_limit": cap},
             [
-                f"the heatsink is kept at or below {written(cap, 3)} °C, for what is mounted on it: the board, the capacitors, "
+                f"the heatsink is kept at or below {written(cap, 3)} °C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, "
                 f"the connectors. The hottest junction is then at {hottest:.0f} °C, {device.ratings.tj_max - hottest:.0f} °C "
                 f"under its {written(device.ratings.tj_max, 3)} °C rating",
                 f"it then carries {written(loss, 3)} W into {written(t_ambient, 3)} °C air: {written(rth, 2)} K/W or lower, heatsink to ambient",

@@ -90,7 +90,7 @@ def differences(now, kept, where="") -> list[str]:
     if isinstance(kept, list) and isinstance(now, list):
         if len(now) != len(kept):
             return [f"{where}: {len(now)} entries, were {len(kept)}"]
-        return [d for k, (a, b) in enumerate(zip(now, kept)) for d in differences(a, b, f"{where}[{k}]")]
+        return [d for k, (a, b) in enumerate(zip(now, kept, strict=True)) for d in differences(a, b, f"{where}[{k}]")]
     if isinstance(kept, float) or isinstance(now, float):
         same = (
             isinstance(now, (int, float))

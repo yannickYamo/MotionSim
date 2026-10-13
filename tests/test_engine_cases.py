@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 
 import numpy as np
 import pytest
 from conftest import SRC, V_REF, energy, line
 
 from motionsim.device import (
+    Basis,
     ChargeModel,
     Chip,
     ConductionModel,
@@ -142,20 +144,39 @@ def test_a_switch_and_diode_in_a_package_of_their_own_are_not_heated_by_other_ch
 
 
 def test_a_moulded_module_is_heated_as_the_thermal_model_tabulates() -> None:
-    # docs/THERMAL_MODEL.md, moulded leadframe module of 15 A: 0.48 K/W between chips measured
-    # from the heatsink, of which the interface layer alone is 0.11 K/W.
-    between, interface = 0.48, 0.11
+    # docs/THERMAL_MODEL.md, moulded leadframe module of 15 A: 0.36 K/W between chips over the
+    # package's own face, and 0.36 K/W for the layer between that face and the heatsink.
+    between, interface = 0.364, 0.357
     device = igbt(topology=Topology.half_bridge, construction="leadframe", i_nominal=15)
     r = solve(device, point(t_sink=60.0))
     p_sw, p_d = position_loss(math.sqrt(2) * 20.0, 0.8, 0.9, 8000.0)
     package = 2 * (p_sw + p_d)
     assert r.t_case == pytest.approx(60.0 + interface * package, abs=0.15)
-    assert r.tj_switch == pytest.approx(60.0 + (0.8 + interface) * p_sw + between * (package - p_sw), abs=0.3)
-    assert r.tj_diode == pytest.approx(60.0 + (1.5 + interface) * p_d + between * (package - p_d), abs=0.3)
+    assert r.tj_switch == pytest.approx(r.t_case + 0.8 * p_sw + between * (package - p_sw), abs=0.3)
+    assert r.tj_diode == pytest.approx(r.t_case + 1.5 * p_d + between * (package - p_d), abs=0.3)
     assert any(
-        "heating between chips computed for a generic moulded leadframe module: 0.37 K/W" in a for a in r.assumptions
+        "heating between chips computed for a generic moulded leadframe module: 0.36 K/W" in a for a in r.assumptions
     )
-    assert any("on grease: 0.11" in a for a in r.assumptions)
+    assert any("on grease: 0.36" in a for a in r.assumptions)
+
+
+def test_how_a_module_is_mounted_moves_its_case_and_not_what_its_chips_do_to_each_other() -> None:
+    """The layer under a package belongs to the build. Whatever is given for it, each junction
+    stands as far above the case as before."""
+    device = igbt(topology=Topology.half_bridge, construction="leadframe", i_nominal=15)
+    p_sw, p_d = position_loss(math.sqrt(2) * 20.0, 0.8, 0.9, 8000.0)
+    package = 2 * (p_sw + p_d)
+    as_computed = solve(device, point(t_sink=60.0))
+    for given in (0.05, 0.4, 1.2):
+        r = solve(device, replace(point(t_sink=60.0), rth_case_sink=given))
+        assert r.t_case == pytest.approx(60.0 + given * package, abs=0.02)
+        assert r.tj_switch - r.t_case == pytest.approx(as_computed.tj_switch - as_computed.t_case, abs=0.02)
+        assert r.tj_diode - r.t_case == pytest.approx(as_computed.tj_diode - as_computed.t_case, abs=0.02)
+        assert not any("case-to-heatsink" in a for a in r.assumptions)  # given, so nothing was assumed
+    on_a_pad = solve(device, replace(point(t_sink=60.0), interface="pad"))
+    # 200 µm of a 1.5 W/(m·K) pad against 100 µm of 1 W/(m·K) grease, over the same copper.
+    assert (on_a_pad.t_case - 60.0) / (as_computed.t_case - 60.0) == pytest.approx((200 / 1.5) / (100 / 1.0), rel=1e-3)
+    assert on_a_pad.tj_switch - on_a_pad.t_case == pytest.approx(as_computed.tj_switch - as_computed.t_case, abs=0.02)
 
 
 def test_above_the_test_voltage_the_note_says_how_much_more_a_power_of_1_4_would_add() -> None:
@@ -442,3 +463,132 @@ def test_a_current_at_which_the_junction_runs_away_is_above_the_largest_current(
     i_max, r = max_current(device, point(t_sink=25.0), peak=False)
     assert i_max == pytest.approx(math.sqrt(g / (rth * k * r0)), rel=3e-3)
     assert r.tj_switch == pytest.approx(150.0, abs=0.5)
+
+
+# ---------- a result that rests on data beyond the datasheet's last point ----------
+
+
+def from_one_table_point(i_last: float = 10.0) -> Device:
+    """On-state voltages drawn from one table point each, as a part typed in from a table is."""
+    device = igbt(
+        sw=[Curve(tj=25.0, current=[0.0, i_last], value=[V0_SW, V0_SW + R_SW * i_last])],
+        d=[Curve(tj=25.0, current=[0.0, i_last], value=[V0_D, V0_D + R_D * i_last])],
+        rth_case_sink=0.0,
+    )
+    for chip in (device.switch, device.diode):
+        chip.conduction.basis = Basis.point
+        chip.conduction.assumption = "below the first table point the shape is assumed"
+    return device
+
+
+def test_above_its_last_table_point_a_voltage_is_said_to_be_off_by_what_the_two_ways_it_could_go_allow() -> None:
+    """Above the point the voltage lies between staying put and rising in proportion to the
+    current. The line drawn runs midway: at twice the point's current that is a third either way."""
+    i_last = 10.0
+    r = solve(from_one_table_point(i_last), point(i_rms=2 * i_last / math.sqrt(2)))
+    flat, in_proportion, drawn = 1.0, 2.0, 1.5  # of the point's voltage, at twice its current
+    assert (in_proportion - drawn) / drawn == pytest.approx(1 / 3) == pytest.approx((drawn - flat) / drawn)
+    assert any("switch conduction: peak current 20 A is above the last table point (10 A)" in n for n in r.notes)
+    assert any("could be 33% off either way" in n for n in r.notes)
+    assert r.validity is Validity.extrapolated
+    # A junction rises mostly with its own chip's loss, so the doubt is the largest share of
+    # any one chip's loss that is in doubt: here the diode's, which does little but conduct.
+    role = r.roles[0]
+    of_switch = role.switch.conduction / role.switch.total / 3
+    of_diode = role.diode.conduction / role.diode.total / 3
+    assert of_diode > of_switch
+    # The recovery energy, measured at 25 °C and used warmer, adds a little of its own.
+    assert of_diode < r.doubt < of_diode + 0.01
+    inside = solve(from_one_table_point(i_last), point(i_rms=0.9 * i_last / math.sqrt(2)))
+    assert inside.doubt == 0.0 and inside.validity is not Validity.extrapolated
+
+
+def test_a_pass_that_would_not_survive_the_doubt_in_its_losses_is_undecided() -> None:
+    from motionsim import guard
+
+    device = from_one_table_point()
+    op = point(i_rms=20 / math.sqrt(2), t_sink=60.0)
+    r = solve(device, op)
+    top = max(r.tj_switch_peak, r.tj_diode_peak)
+    rise = top - 60.0
+
+    def temperature(rating: float) -> guard.Check:
+        device.ratings.tj_max = rating
+        return next(c for c in guard.check(device, op, r, 20.0, junction_margin=0.0) if c.topic == "temperature")
+
+    # Were the doubted share of the loss that much higher, the junction would rise that much more.
+    edge = top + r.doubt * rise
+    assert temperature(edge + 1.0).level is guard.Level.ok
+    held = temperature(edge - 1.0)
+    assert held.level is guard.Level.undecided
+    assert "beyond the datasheet's data" in held.message and f"{r.doubt:.0%}" in held.message
+    assert temperature(top - 1.0).level is guard.Level.fail
+
+
+def test_the_largest_current_says_how_much_of_it_the_data_covers() -> None:
+    from motionsim.engine.limits import supported_current
+
+    i_last = 10.0
+    device = from_one_table_point(i_last)
+    op = point(t_sink=25.0)
+    i_max, _ = max_current(device, op)
+    assert i_max > i_last / math.sqrt(2)
+    covered = supported_current(device, op, i_max)
+    # The peak of the current reaches the last table point at that point's current over root two.
+    assert covered == pytest.approx(i_last / math.sqrt(2), rel=0.02)
+    assert supported_current(igbt(rth_case_sink=0.0), op, 20.0) is None  # curves that reach as far as asked
+
+
+def test_what_the_data_covers_is_judged_by_the_current_alone() -> None:
+    from motionsim.engine.limits import supported_current
+
+    # A supply above the test voltage is outside the data at every current: that is not a
+    # current the data stops at, and curves that reach as far as asked cover all of it.
+    assert supported_current(igbt(rth_case_sink=0.0), point(v_dc=1.3 * V_REF), 20.0) is None
+    # A table point at 10 A is reached by the crest of 10 / √2 A rms, on a warm heatsink as on a cold one.
+    warm = supported_current(from_one_table_point(10.0), point(t_sink=60.0), 20.0)
+    assert warm == pytest.approx(10.0 / math.sqrt(2), rel=0.01)
+
+
+def test_the_doubt_is_reckoned_on_the_range_and_from_the_air_where_the_heatsink_stands_in_it() -> None:
+    from motionsim import guard
+
+    device = from_one_table_point()
+    op = replace(point(i_rms=20 / math.sqrt(2), t_sink=40.0), rth_sink=0.5)  # 40 °C is the air
+    r = solve(device, op)
+    assert r.t_sink > 45.0  # the heatsink stands well above the air
+    top = max(r.tj_switch_peak, r.tj_diode_peak)
+    r = replace(r, tj_peak_range=(top - 5.0, top + 10.0), assumptions=["something assumed"])
+    edge = (top + 10.0) + r.doubt * (top + 10.0 - 40.0)  # from the top of the range, down to the air
+    device.ratings.tj_max = edge + 1.0
+    assert (
+        guard.verdict([c for c in guard.check(device, op, r, 20.0, junction_margin=0.0) if c.topic == "temperature"])
+        is guard.Level.ok
+    )
+    device.ratings.tj_max = edge - 1.0
+    found = next(c for c in guard.check(device, op, r, 20.0, junction_margin=0.0) if c.topic == "temperature")
+    assert found.level is guard.Level.undecided and "beyond the datasheet's data" in found.message
+
+
+def test_a_layer_named_for_the_build_is_computed_and_a_figure_given_for_it_is_not_called_missing() -> None:
+    # A TO-247 whose datasheet gives 0.24 K/W on grease: kept on grease, computed on a pad.
+    device = igbt(rth_case_sink=0.24, outline="TO-247")
+    p_sw, p_d = position_loss(math.sqrt(2) * 20.0, 0.8, 0.9, 8000.0)
+    as_given = solve(device, point(t_sink=60.0))
+    assert as_given.t_case == pytest.approx(60.0 + 0.24 * (p_sw + p_d), abs=0.02)
+    assert not any("case-to-heatsink" in a for a in as_given.assumptions)
+    on_a_pad = solve(device, replace(point(t_sink=60.0), interface="pad"))
+    # 200 µm of a 1.5 W/(m·K) pad under a tab of 15.9 mm by 17.0 mm.
+    computed = 200e-6 / (1.5 * 15.9e-3 * 17.0e-3)
+    assert on_a_pad.t_case == pytest.approx(60.0 + computed * (p_sw + p_d), abs=0.05)
+    assert any("on a pad" in a for a in on_a_pad.assumptions)
+    # With no outline there is nothing to compute a pad for: the figure stays, and that is said.
+    bare = solve(igbt(rth_case_sink=0.24), replace(point(t_sink=60.0), interface="pad"))
+    assert bare.t_case == pytest.approx(as_given.t_case, abs=0.02)
+    assert any("left as it was" in n for n in bare.notes)
+    # A part with neither, given a figure for the build: the case is not taken as the heatsink.
+    unknown = igbt()
+    assert any("sink temperature is used as the case temperature" in x for x in solve(unknown, point()).limits)
+    given = solve(unknown, replace(point(t_sink=60.0), rth_case_sink=0.5))
+    assert given.t_case == pytest.approx(60.0 + 0.5 * (p_sw + p_d), abs=0.02)
+    assert not any("sink temperature is used as the case temperature" in x for x in given.limits)

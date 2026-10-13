@@ -376,7 +376,8 @@ def test_a_device_file_with_a_figure_that_is_not_one_is_refused_by_name(workspac
 
 def test_a_few_lines_that_stand_for_millions_of_figures_are_refused_at_once(workspace) -> None:
     text = "a: &a [1,1,1,1,1,1,1,1,1]\n" + "".join(
-        f"{c}: &{c} [*{p},*{p},*{p},*{p},*{p},*{p},*{p},*{p},*{p}]\n" for p, c in zip("abcdefgh", "bcdefghi")
+        f"{c}: &{c} [*{p},*{p},*{p},*{p},*{p},*{p},*{p},*{p},*{p}]\n"
+        for p, c in zip("abcdefgh", "bcdefghi", strict=True)
     )
     began = time.perf_counter()
     with pytest.raises(page.Refused, match="far more figures"):
@@ -537,3 +538,76 @@ def test_each_kind_of_motor_is_offered_only_the_loads_it_is_used_for() -> None:
     # A series motor is offered only loads whose own torque stops them: it cannot brake.
     assert offered["dc_series"] == ["tool", "conveyor"]
     assert set(offered["bldc"]) == {"fan", "vehicle", "tool", "conveyor"} and offered["stepper"] == ["axis", "conveyor"]
+
+
+def between_estimate_and_top(workspace, name: str = "open") -> tuple[str, float]:
+    """A copy of the made-up module rated between its junction estimate and the top of its range."""
+    setup = page.setup(workspace)
+    motor = {"type": "pmsm", **setup["motors"]["pmsm"]["values"]}
+    body = {"motor": motor, "conditions": {"v_dc": 400, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "t_sink": 60}}
+    found = page.proposal({**body, "devices": ["example"]}, workspace)["candidates"][0]
+    estimate, top = found["result"]["tj_peak"], found["result"]["tj_range"][1]
+    assert top - estimate > 1.0
+    # Just above the estimate running and held still, and under the top of the range.
+    rating = max(estimate, found["stall_tj"]) + 0.3
+    assert rating < top
+    data = yaml.safe_load(EXAMPLE.read_text())
+    data["part_number"] = "OPEN-1"
+    data["ratings"]["tj_max"] = rating
+    page.add_device(f"{name}.yaml", yaml.dump(data), workspace)
+    return name, rating
+
+
+def test_a_range_that_crosses_the_rating_is_undecided_neither_a_pass_nor_a_fail(workspace) -> None:
+    name, rating = between_estimate_and_top(workspace)
+    setup = page.setup(workspace)
+    motor = {"type": "pmsm", **setup["motors"]["pmsm"]["values"]}
+    body = {"motor": motor, "conditions": {"v_dc": 400, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "t_sink": 60}}
+    found = page.proposal({**body, "devices": [name, "example"]}, workspace)
+    open_ = next(c for c in found["candidates"] if c["id"] == name)
+    assert open_["level"] == "undecided"
+    said = next(c for c in open_["checks"] if c["topic"] == "temperature")
+    assert said["level"] == "undecided" and "crosses" in said["message"] and f"{rating:g}"[:4] in said["message"]
+    # The part that is known to pass is ranked before the one the data cannot decide.
+    assert [c["id"] for c in found["candidates"]] == ["example", name]
+    assert any(
+        "not decided by this data" in line for line in page.proposal({**body, "devices": [name]}, workspace)["explain"]
+    )
+
+
+def test_a_design_the_data_cannot_decide_says_so_and_exits_with_its_own_status(tmp_path, capsys, workspace) -> None:
+    name, _ = between_estimate_and_top(workspace)
+    file = tmp_path / "design.yaml"
+    assert cli.main(["design", "init", "--device", "example", "-o", str(file)]) == 0
+    setup = yaml.safe_load(file.read_text())
+    setup["devices"] = [str(workspace.paths()[name])]
+    setup["conditions"] = {"v_dc": 400, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "t_sink": 60}
+    setup["motor"] = {"type": "pmsm", **page.setup(workspace)["motors"]["pmsm"]["values"]}
+    file.write_text(yaml.safe_dump(setup))
+    capsys.readouterr()
+    code = cli.main(["design", "run", str(file), "--json", "--skip", "drive", "--skip", "build", "--skip", "motion"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["outcome"] == "undecided" and code == 4
+    assert cli.main(["design", "run", str(file), "--skip", "drive", "--skip", "build", "--skip", "motion"]) == 4
+    report = capsys.readouterr().out
+    assert "**Outcome: undecided.**" in report and "**Undecided, temperature.**" in report
+
+
+def test_switching_faster_than_a_datasheet_model_follows_is_a_caution(workspace) -> None:
+    gate = dict(t_dead=120e-9, v_drive=10, rg_on=5, rg_off=3)
+    usual = proposal_at(workspace, f_sw=20e3, **gate)
+    fast = proposal_at(workspace, f_sw=1e6, **gate)
+    assert not [c for c in usual["checks"] if c["topic"] == "switching speed"]
+    said = next(c for c in fast["checks"] if c["topic"] == "switching speed")
+    # 2 x 120 ns of dead time in a 1 us period is 24%; the edges take less.
+    assert said["level"] == "caution" and "1000 kHz" in said["message"] and "24%" in said["message"]
+    assert fast["level"] != "ok"
+
+
+@pytest.mark.parametrize("part", ["example", "example-mosfet"])
+def test_every_kind_of_motor_opens_on_a_design_that_runs(workspace, part) -> None:
+    # The example of each kind, wound for the part's supply, at the point the page starts it on.
+    for kind, m in page.suggest({"device": part}, workspace)["motors"].items():
+        body = {"motor": {"type": kind, **m["values"]}, "conditions": {**m["start"], "t_sink": 60}, "devices": [part]}
+        found = page.proposal(body, workspace)["candidates"][0]
+        assert found["result"] is not None and found["level"] != "fail", (part, kind, found["problem"])

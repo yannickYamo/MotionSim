@@ -86,7 +86,9 @@ def test_onsemi_diode_forward_curves() -> None:
 
 def test_onsemi_thermal_impedance_plateaus() -> None:
     p = page(ONSEMI, 7)
-    for frame, y_axis, table in zip(find_frames(p), (Axis(0.01, 1, True), Axis(0.001, 2, True)), (0.63, 1.6)):
+    for frame, y_axis, table in zip(
+        find_frames(p), (Axis(0.01, 1, True), Axis(0.001, 2, True)), (0.63, 1.6), strict=True
+    ):
         curves = spanning(curves_in(p, frame), frame)
         single = max(curves, key=lambda c: c[np.argmin(c[:, 0]), 1])
         _, z = digitise(single, frame, Axis(1e-5, 10, True), y_axis)

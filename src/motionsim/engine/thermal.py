@@ -39,3 +39,24 @@ def periodic_rise(network: FosterNetwork, power: np.ndarray, period: float) -> n
     tau = np.asarray(network.tau)
     impedance = (r / (1 + 1j * omega[:, None] * tau)).sum(axis=1)
     return np.fft.irfft(spectrum * impedance, n=power.size)
+
+
+def repeating_rise(r, tau, power: np.ndarray, dt: float) -> np.ndarray:
+    """Rise at the end of each sample for a power held constant over each sample of dt, once
+    the samples have repeated for ever, in K. Exact stage by stage, so a step in the power
+    neither rings nor overshoots."""
+    from scipy.signal import lfilter
+
+    power = np.asarray(power, dtype=float)
+    ends = np.arange(1, power.size + 1)
+    out = np.zeros_like(power)
+    for stage_r, stage_tau in zip(r, tau, strict=True):
+        if stage_tau <= 0:
+            out += stage_r * power
+            continue
+        keep = float(np.exp(-dt / stage_tau))
+        from_rest = lfilter([stage_r * (1 - keep)], [1.0, -keep], power)
+        # Where it starts each time round is where the last round left it.
+        carried = from_rest[-1] / (1 - keep**power.size)
+        out += from_rest + carried * keep**ends
+    return out

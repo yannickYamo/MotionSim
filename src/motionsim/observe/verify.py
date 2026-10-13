@@ -252,7 +252,7 @@ def _check_temperature_order(observations: list[Observation]) -> None:
             groups.setdefault((o.quantity, o.current_a, o.voltage_v), []).append(o)
     for rows in groups.values():
         rows.sort(key=lambda o: o.tj_c)
-        for cold, hot in zip(rows, rows[1:]):
+        for cold, hot in zip(rows, rows[1:], strict=False):
             if hot.typ < cold.typ:
                 hot.flags.append(f"lower at {hot.tj_c:g} °C than at {cold.tj_c:g} °C; check the two are not swapped")
                 hot.status = ReviewStatus.flagged

@@ -8,7 +8,7 @@ import numpy as np
 from motionsim import __version__
 from motionsim.device import load_device, save_device
 from motionsim.engine import OperatingPoint, Pwm, ThermalRunaway, solve
-from motionsim.engine.limits import max_current
+from motionsim.engine.limits import max_current, supported_current
 from motionsim.text import written
 
 
@@ -40,12 +40,24 @@ def _cooling(args: argparse.Namespace) -> dict:
     for name in ("rth_heatsink", "rth_ja", "board_area", "copper", "copper_ref"):
         if get(name) is not None and not get(name) > 0:
             raise SystemExit(f"--{name.replace('_', '-')} has to be above zero")
+    under = {}
+    if get("rth_case_sink") is not None:
+        under["rth_case_sink"] = args.rth_case_sink
+    if get("interface") is not None and hasattr(args, "rth_case_sink"):
+        under["interface"] = args.interface
+    if under and free:
+        raise SystemExit(
+            "--rth-case-sink and --interface say what lies under a package on a heatsink, and --rth-ja, "
+            "--no-heatsink or --board-area says there is none: give one or the other"
+        )
+    if under.get("rth_case_sink", 0) > 50:
+        raise SystemExit("--rth-case-sink cannot be above 50 K/W: it is one package's case to its heatsink")
     if in_air:
         if get("tsink") is not None:
             raise SystemExit("give one cooling: --tsink is a heatsink at a known temperature, --tair is cooling to air")
         if args.tair is None:
             raise SystemExit("cooling to air needs the air's temperature: --tair")
-        return {"t_sink": args.tair, "rth_sink": args.rth_heatsink}
+        return {"t_sink": args.tair, "rth_sink": args.rth_heatsink, **under}
     if get("tair") is not None:
         raise SystemExit(
             "--tair needs the way to the air: --rth-heatsink (a heatsink's K/W), --rth-ja or "
@@ -56,7 +68,7 @@ def _cooling(args: argparse.Namespace) -> dict:
             "give the cooling: --tsink for a heatsink at a known temperature, or --tair with "
             "--rth-heatsink (a heatsink in air) or --rth-ja (no heatsink)"
         )
-    return {"t_sink": args.tsink}
+    return {"t_sink": args.tsink, **under}
 
 
 def _no_heatsink_asked(args: argparse.Namespace) -> bool:
@@ -168,6 +180,11 @@ def _max_current(args: argparse.Namespace) -> int:
     i_max, r = max_current(device, _operating_point(args, 0.0, device), tj_limit=args.tj, peak=not args.average)
     print(f"{device.vendor} {device.part_number} ({device.technology})")
     print(f"  maximum current     {i_max:8.2f} A rms")
+    op = _operating_point(args, 0.0, device)
+    covered = supported_current(device, op, i_max)
+    if covered is not None:
+        print(f"  the data covers     {covered:8.2f} A rms")
+        print("  above that the losses are drawn past the datasheet's last point: the maximum is an estimate")
     if r is not None:
         _print_result(device, r)
     return 0
@@ -207,7 +224,12 @@ def _motor(args: argparse.Namespace) -> int:
 def _print_checks(checks, indent: str = "  ") -> None:
     from motionsim import guard
 
-    word = {guard.Level.ok: "ok", guard.Level.caution: "CAUTION", guard.Level.fail: "FAIL"}
+    word = {
+        guard.Level.ok: "ok",
+        guard.Level.caution: "CAUTION",
+        guard.Level.undecided: "UNDECIDED",
+        guard.Level.fail: "FAIL",
+    }
     print(f"{indent}checks: {word[guard.verdict(checks)]}")
     for c in checks:
         print(f"{indent}  [{word[c.level]:>7}] {c.topic}: {c.message}")
@@ -241,7 +263,12 @@ def _propose(args: argparse.Namespace) -> int:
     except Unreachable as exc:
         print(f"the motor cannot run at this point: {exc}", file=sys.stderr)
         return 1
-    word = {guard.Level.ok: "ok", guard.Level.caution: "caution", guard.Level.fail: "FAIL"}
+    word = {
+        guard.Level.ok: "ok",
+        guard.Level.caution: "caution",
+        guard.Level.undecided: "undecided",
+        guard.Level.fail: "FAIL",
+    }
     print(f"{motor.name} ({motor.type}): {args.torque:g} N·m at {args.rpm:g} rpm from {args.vdc:g} V")
     print()
     print(f"{'device':<28}{'loss W':>9}{'Tj peak':>9}{'margin':>8}{'at stall':>10}{'margin':>8}  verdict")
@@ -324,7 +351,7 @@ def _trajectory(args: argparse.Namespace) -> int:
         with open(args.output, "w", newline="", encoding="utf-8") as f:
             w = csv.writer(f)
             w.writerow(["time_s", "tj_hottest_from_start_c"])
-            w.writerows(zip(outcome.time, outcome.tj_from_start))
+            w.writerows(zip(outcome.time, outcome.tj_from_start, strict=True))
         print(f"  temperature against time written to {args.output}")
     return 0
 
@@ -429,13 +456,19 @@ def _validate(args: argparse.Namespace) -> int:
         print(f"cannot simulate a reference point: {exc}", file=sys.stderr)
         return 1
     print(f"{device.vendor} {device.part_number} against {reference.name} ({reference.kind})")
-    print(f"{'point':>5} {'quantity':<10}{'model':>10}{'reference':>11}{'difference':>12}")
+    for k, p in enumerate(reference.points, start=1):
+        if p.on_time is not None:
+            print(
+                f"point {k}: on {p.on_time:g} s, off {p.off_time:g} s. Its losses and case temperature "
+                "are means over the whole pattern, the pause included"
+            )
+    print(f"{'point':>5} {'quantity':<19}{'model':>9}   {'reference':>8}   {'difference':>10}")
     numbers = {id(p): k for k, p in enumerate(reference.points, start=1)}
     for row in rows:
-        unit = "W" if row.quantity.startswith("p_") else "°C"
+        unit = "W" if row.quantity.startswith("p_") else "K" if row.quantity.endswith("swing") else "°C"
         shown = f"{row.relative:+.1%}" if unit == "W" else f"{row.difference:+.1f} K"
         print(
-            f"{numbers[id(row.point)]:>5} {row.quantity:<10}{row.model:>9.2f} {unit:<2}"
+            f"{numbers[id(row.point)]:>5} {row.quantity:<19}{row.model:>9.2f} {unit:<2}"
             f"{row.reference:>8.2f} {unit:<2}{shown:>10}"
         )
     losses = [abs(r.relative) for r in rows if r.quantity.startswith("p_")]
@@ -536,6 +569,8 @@ def _package(args: argparse.Namespace) -> int:
     from motionsim.package import build, summarise
 
     print(f"{args.template}, {args.irated:g} A switch, on {args.interface}")
+    if args.template.endswith("module"):
+        print("between chips is over the package's own face; interface is from that face to the heatsink")
     print("junction to heatsink surface, K/W; low and high span plausible constructions")
     print(f"{'':<10}{'switch alone':>14}{'diode alone':>13}{'between chips':>15}{'interface':>11}")
     for variant in ("low", "typical", "high"):
@@ -548,7 +583,7 @@ def _package(args: argparse.Namespace) -> int:
     names = model.chip_names
     if len(names) <= 4:
         print("typical matrix, rise of row chip per watt in column chip:")
-        for name, row in zip(names, np.round(model.matrix(), 3)):
+        for name, row in zip(names, np.round(model.matrix(), 3), strict=True):
             print(f"  {name:<10}" + "".join(f"{v:9.3f}" for v in row))
     return 0
 
@@ -959,7 +994,7 @@ def _design(args: argparse.Namespace) -> int:
     # A step that could not be run is a design that cannot be run as written, whatever the rest says.
     if result.get("refusals"):
         return 2
-    return {"refused": 2, "does not pass": 3}.get(result["outcome"], 0)
+    return {"refused": 2, "does not pass": 3, "undecided": 4}.get(result["outcome"], 0)
 
 
 def _agent(args: argparse.Namespace) -> int:
@@ -1082,6 +1117,17 @@ def main(argv: list[str] | None = None) -> int:
             "--rth-heatsink",
             type=_figure,
             help="a heatsink in air: its thermal resistance, K/W, with every device on it",
+        )
+        p.add_argument(
+            "--rth-case-sink",
+            type=_figure,
+            help="on a heatsink: one package's case-to-heatsink resistance as you mount it, K/W, where you know "
+            "it. Left out, the device's own figure or one worked out for its package is used",
+        )
+        p.add_argument(
+            "--interface",
+            choices=["grease", "pad"],
+            help="on a heatsink: the layer under the package (default: the device's, which is grease unless it says)",
         )
         p.add_argument(
             "--rth-ja",

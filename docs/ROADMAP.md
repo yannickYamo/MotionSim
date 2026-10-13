@@ -7,7 +7,7 @@
 - Seven kinds of motor, each from its catalogue figures, braking included where the machine can brake.
 - A load and its motion, or a mission profile from a file, with junction and heatsink temperature followed through time, the way the drive starts the motor, and braking energy turned into a DC-link voltage.
 - Cooling as a heatsink at a known temperature, a heatsink in air, or no heatsink: parts standing free, or soldered to one board and warming each other.
-- Losses, junction temperatures, plain-language checks, a speed-torque map, a life estimate under thermal cycling, and starting values for gate resistors, dead time, modulation and heatsink.
+- Losses, junction temperatures, plain-language checks, a speed-torque map, a rough indicator of life under thermal cycling, and starting values for gate resistors, dead time, modulation and heatsink.
 - What to build around the device: heatsink, link capacitor and its ripple current, gate drive, protection. And the question turned round: what a device can drive, and how much heavier the load could be.
 - Up to five devices, loads or motors side by side, or one setting at two to five values, with each one's margin, every loss and temperature of its hottest switch position, and the test conditions its switching loss rests on; a setup saved to a file; a report.
 - All of it from a local page and from the command line, where one file runs every step and a guide tells a coding agent how to drive it. The result as a report in Markdown or as a PDF.

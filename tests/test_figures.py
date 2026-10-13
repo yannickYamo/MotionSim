@@ -40,7 +40,7 @@ def y_pos(value):
 
 
 def path_for(t, z):
-    pts = list(zip(x_pos(t), y_pos(z)))
+    pts = list(zip(x_pos(t), y_pos(z), strict=True))
     return [("m", pts[0])] + [("l", p) for p in pts[1:]]
 
 
@@ -187,7 +187,7 @@ def test_a_curve_drawn_as_a_staircase_of_tiny_steps_in_pieces_is_joined() -> Non
     xs, ys = x_pos(t), y_pos(zth(t))
     stair_x = np.repeat(np.round(xs / 0.07) * 0.07, 2)[1:]
     stair_y = np.repeat(np.round(ys / 0.07) * 0.07, 2)[:-1]
-    points = list(zip(stair_x, stair_y))
+    points = list(zip(stair_x, stair_y, strict=True))
     pieces = [points[k : k + 701] for k in range(0, len(points) - 1, 700)]
     page = synthetic_page(duty_curve=False)
     page.curves = [
@@ -226,7 +226,7 @@ def _curve(points, width=0.96, **extra):
 
 def _single_pulse_points(t_lo=2e-5, t_hi=5.0, n=200):
     t = np.geomspace(t_lo, t_hi, n)
-    return t, list(zip(x_pos(t), y_pos(zth(t))))
+    return t, list(zip(x_pos(t), y_pos(zth(t)), strict=True))
 
 
 def test_a_curve_drawn_past_the_plot_area_is_read_up_to_its_edge() -> None:
@@ -274,7 +274,7 @@ def test_heavy_black_straight_segments_are_data_and_full_length_ones_are_furnitu
     _, points = _single_pulse_points(n=12)
     page.curves = []
     grid_width = max(ln["linewidth"] for ln in page.lines)
-    for a, b in zip(points, points[1:]):
+    for a, b in zip(points, points[1:], strict=False):
         page.lines.append(
             {
                 "linewidth": 4 * grid_width,

@@ -150,7 +150,7 @@ def _ordered(traces: list[_Trace], series: list[ReadSeries], energy: bool) -> bo
     hi = min(t.current[-1] for t in traces)
     probe = lo + 0.5 * (hi - lo) if energy else lo
     by_name: dict[str, list[tuple[float, float]]] = {}
-    for trace, s in zip(traces, series):
+    for trace, s in zip(traces, series, strict=True):
         if s.tj_c is not None:
             by_name.setdefault(s.name, []).append((s.tj_c, trace.at(probe)))
     for rows in by_name.values():
@@ -229,7 +229,7 @@ def digitise_family(
     for order in permutations(range(len(traces)), len(series)):
         if any([order[k] for k in members] != sorted(order[k] for k in members) for members in groups.values()):
             continue
-        costs = [_cost(traces[k], a) for k, a in zip(order, anchors)]
+        costs = [_cost(traces[k], a) for k, a in zip(order, anchors, strict=True)]
         known = [c for c in costs if c is not None]
         if known:
             scored.append((sum(known), order, costs))
@@ -398,7 +398,7 @@ def digitise_gate_resistance(
     best = None
     for order in permutations(range(len(curves)), len(series)):
         errors = []
-        for k, (rg, energy) in zip(order, anchors):
+        for k, (rg, energy) in zip(order, anchors, strict=True):
             r, e = curves[k]
             errors.append(float("inf") if not r[0] <= rg <= r[-1] else abs(float(np.interp(rg, r, e)) / energy - 1))
         if best is None or sum(errors) < sum(best[1]):
@@ -412,7 +412,7 @@ def digitise_gate_resistance(
             + ("" if worst == float("inf") else f" (off by {worst:.0%})")
         )
     out = []
-    for k, s, error, (rg, _) in zip(order, series, errors, anchors):
+    for k, s, error, (rg, _) in zip(order, series, errors, anchors, strict=True):
         r, e = curves[k]
         out.append(
             CurveObservation(

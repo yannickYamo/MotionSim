@@ -5,9 +5,9 @@ Modules A, B and C in this document are three 600 V, 15 A IGBT modules with buil
 Four levels, strongest claim last. Vendor tools and charts are cross-checks, not ground truth.
 
 - **A, mathematical**: closed-form solutions.
-- **B, numerical**: an independent integrator. Not built yet.
+- **B, numerical**: independent numerical integration, written apart from the engine. In the tests, and in a recomputation of the solver described at the end.
 - **C, external**: vendor charts, vendor tools, other simulators.
-- **D, physical**: measured inverter or double-pulse data. None available yet.
+- **D, physical**: measured inverter or double-pulse data. One published inverter loss measurement so far; no measured junction temperature.
 
 ## Level A (passing, in `tests/`)
 
@@ -233,6 +233,21 @@ Reading the curves moved total loss from 5 to 16% high to 5 to 13% high. Turn-on
 
 Run locally with `motionsim validate`; the reference file is not in the repository.
 
+## Level C: the same six points, from the case
+
+The simulator's temperatures start from the case. The comparisons above started ours from the same figure taken as the heatsink, so the layer between case and heatsink was counted on our side only. A reference point can now say how the stage was mounted; here it says there is nothing between the two.
+
+| Point | Total loss, ours against simulator | Hottest junction, ours against simulator | Ours, range | Inside |
+|---|---|---|---|---|
+| 50 Hz, 6 kHz, pf 0.8 | 24.1 against 22.8 W, +6% | 112.8 against 112.6 °C, +0.2 | 105 to 129 | yes |
+| 50 Hz, 16 kHz, pf 0.8 | 35.7 against 31.7 W, +12% | 144.8 against 141.4 °C, +3.4 | 133 to 169 | yes |
+| 50 Hz, 6 kHz, pf −0.8 | 24.9 against 23.8 W, +5% | 114.1 against 121.6 °C, −7.5 | 107 to 130 | yes |
+| 50 Hz, 16 kHz, pf 0.3 | 35.8 against 32.0 W, +12% | 142.3 against 140.6 °C, +1.7 | 130 to 167 | yes |
+| 5 Hz, 6 kHz, pf 0.8 | 24.1 against 22.8 W, +6% | 117.8 against 115.9 °C, +1.9 | 110 to 134 | yes |
+| 200 Hz, 6 kHz, pf 0.8 | 24.1 against 22.7 W, +7% | 111.9 against 111.3 °C, +0.6 | 104 to 128 | yes |
+
+Where the switch is the hottest chip the junction is 0.2 to 3.4 °C high, on a loss 6 to 12% high. Where the diode is, it is 7.5 °C low: the diode's junction is 8 to 11 °C low at every point, which a single coupling figure for switch and diode alike cannot mend (the simulator's own is half as large again for the diode). Heating between chips is reckoned over the package's own face, 0.36 K/W here against the simulator's 0.5.
+
 ## Level C: two transistor datasheets against their own tables
 
 - **Silicon MOSFET (Vishay IRF540).** On-resistance against temperature reads 1.0 at 25 °C as a normalised curve must. The single-pulse thermal curve, followed along the line the family merges into, reaches 0.94 K/W against a tabulated maximum of 1.0. The body-diode figure failed its axis check and is unused.
@@ -280,7 +295,9 @@ What it shows:
 
 What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same source's companion (TIDA-010056, TIDUEQ9, the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
 
-`motionsim validate` takes a file of measurements, for anyone with their own.
+Also checked against measurements that are not published, and so not offered as evidence at this level: on one moulded 600 V module on a heatsink, the case temperature computed with the default mounting is 1 to 2.5 °C below the measured one.
+
+`motionsim validate` takes a file of measurements, for anyone with their own. A point can give each loss term on its own, how the stage was mounted, and a load that comes and goes with the junction's lowest and highest temperature once it repeats.
 
 ## Level C: figures stored as images, against the same datasheet's tables
 
@@ -442,4 +459,12 @@ The page in its hosted form scores 100 for accessibility, best practices and sea
 What the page shows is held to what it would show afresh. A walk presses controls in an order nobody planned (tabs, steps, the device on the drawing, what is compared, values of a setting added and taken out), on two parts that differ so that one cannot pass for the other, and every fifth press it reloads the page from what it saved and compares every figure on show: a figure left over from before the last change, or one that belongs to another device, fails it. A second script chooses another device at four delays after one of the slow tabs is opened, in the local page and in the hosted one, and holds the page to the same test.
 
 The loss and temperature solver was set against a calculation written apart from it, by numerical integration over the output period: 421 operating points of an IGBT with its diode and 240 of a MOSFET, across six modulation schemes, modulation index 0.05 to 1.15, power factor -1 to 1, 2 to 40 kHz and 25 to 110 °C. Total loss agrees within 0.14%, each loss term within 0.4%, junction rise within 0.15%. The motors (currents, voltages, slip, field weakening found by a brute-force scan) agree within 0.01%; the link capacitor's current and the motor current's ripple, against a simulation of the switching itself, within 0.5%.
+
+The engine the hosted page runs inside the browser is the same Python as the installed one, and is held to it: 44 figures (every kind of motor at its starting point, a motion, a map) agree to better than one part in a thousand million, checked on every change (`web/scripts/engine-check.mjs`).
+
+## What these figures were produced with
+
+The engine's figures in this document were last produced with Python 3.12.3 (the tests also run on 3.11), NumPy 2.5.3, SciPy 1.18.1 and Pydantic 2.13.5. The package itself asks only for lower bounds; the product's figures are held to the last digit by `tests/test_golden.py`, so a version of a library that moves one fails there before it reaches a result.
+
+Reading a datasheet is different: it uses a language model, and two readings can differ. The model is named in `src/motionsim/observe/reader.py`; what was read is saved beside each device model, value by value with its page, and it is that saved reading, not a fresh one, that a result rests on.
 

@@ -18,7 +18,9 @@ from motionsim.text import written
 class Level(IntEnum):
     ok = 0
     caution = 1
-    fail = 2
+    # What is missing from the data could change the answer: neither a pass nor a fail.
+    undecided = 2
+    fail = 3
 
 
 @dataclass(frozen=True)
@@ -26,6 +28,11 @@ class Check:
     level: Level
     topic: str
     message: str
+
+
+def _coolest(op: OperatingPoint, result: Result) -> float:
+    """What the losses heat the junction from: the heatsink, or the air."""
+    return min(op.t_sink, result.t_sink if result.t_sink is not None else op.t_sink)
 
 
 def verdict(checks: list[Check]) -> Level:
@@ -64,6 +71,38 @@ def ripple_checks(point, op: OperatingPoint) -> list[Check]:
             )
         )
     return out
+
+
+FAST_SHARE = 0.2  # of a switching period, in edges or in dead time, past which the model is not to be believed
+
+
+def speed_checks(device: Device, op: OperatingPoint) -> list[Check]:
+    """Whether the stage is switched faster than a model built from a datasheet can follow.
+
+    The loss model takes each switching edge as short beside the period, and the dead time
+    and shortest pulse as a small share of it. Where they are not, what decides the losses
+    is the loop, the board and the gate driver, which no datasheet gives.
+    """
+    if op.f_sw <= 0:
+        return []
+    shares = {"the dead time and the shortest pulse": 2 * (op.t_dead + op.t_min_pulse) * op.f_sw}
+    c = device.switch.charge
+    if c is not None and op.v_drive and op.rg_on and op.rg_off and op.v_drive > c.v_plateau:
+        moved = c.q_gs - c.q_g_th + c.q_gd
+        edges = moved * op.rg_on / (op.v_drive - c.v_plateau) + moved * op.rg_off / c.v_plateau
+        shares["the two switching edges"] = edges * op.f_sw
+    what, share = max(shares.items(), key=lambda item: item[1])
+    if share < FAST_SHARE:
+        return []
+    return [
+        Check(
+            Level.caution,
+            "switching speed",
+            f"at {op.f_sw / 1e3:g} kHz {what} take {share:.0%} of each switching period: this is past what a model "
+            "built from a datasheet supports. The loop inductance, the board and the gate driver decide the "
+            "losses here, and none of them is in the datasheet: take the figures as an extrapolation",
+        )
+    ]
 
 
 def trip_check(motor, rpm: float, v_dc: float, v_rated: float) -> Check | None:
@@ -149,11 +188,29 @@ def check(
             )
         )
     elif high > r.tj_max:
+        # The estimate is under the rating and the top of the range is over it: what the
+        # datasheet leaves out decides, and the tool does not decide in its place.
         out.append(
             Check(
-                Level.caution,
+                Level.undecided,
                 "temperature",
-                f"junction peaks at {peak:.0f} °C{spread}; the upper end is above the {r.tj_max:g} °C rating",
+                f"junction peaks at {peak:.0f} °C{spread}: the range crosses the {r.tj_max:g} °C rating, so this "
+                "data cannot say whether it passes. A transient thermal curve, or how the chips of the package "
+                "heat each other, would narrow it; so would a measurement",
+            )
+        )
+    elif result.doubt > 0 and high + result.doubt * (high - _coolest(op, result)) > r.tj_max:
+        # It passes as drawn, and part of the loss behind it is beyond the datasheet's data:
+        # were that part as far off as it can be, it would not.
+        out.append(
+            Check(
+                Level.undecided,
+                "temperature",
+                f"junction peaks at {peak:.0f} °C{spread}, under the {r.tj_max:g} °C rating as drawn. The loss "
+                "behind it is drawn beyond the datasheet's data, and could be "
+                f"{result.doubt:.0%} higher in the hottest chip: that much more would take the junction over the "
+                "rating. The datasheet's own curve up to this current, or a measurement, would settle it"
+                + (f" ({result.outside[0]})" if result.outside else ""),
             )
         )
     elif r.tj_max - high < junction_margin:
@@ -173,6 +230,8 @@ def check(
                 f"junction peaks at {peak:.0f} °C{spread}, {r.tj_max - high:.0f} °C below its rating",
             )
         )
+
+    out += speed_checks(device, op)
 
     # A rating is one device's. With several in parallel each carries its share of the
     # position's current, which is what the solver gives it too.

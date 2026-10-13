@@ -197,7 +197,8 @@ def propose(
                         )
         needs = [] if design is None else requirements(device, sum(r.count for r in design.stage.roles), base)
         out.append(Candidate(device, design, stall, checks, problem, needs, base, switching_footing(device, base)))
-    return sorted(out, key=lambda c: (c.level is guard.Level.fail, c.loss))
+    # Those that pass first, then those the data cannot decide, then those that fail; by loss within each.
+    return sorted(out, key=lambda c: (c.level is guard.Level.fail, c.level is guard.Level.undecided, c.loss))
 
 
 def level_with_best(candidates: list[Candidate]) -> list[Candidate]:
@@ -258,6 +259,11 @@ def explain(candidates: list[Candidate]) -> list[str]:
             lines.append(f"{name} has the lowest power-stage loss among the devices that pass: {best.loss:.1f} W.")
         if best.level is guard.Level.caution:
             lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
+        if best.level is guard.Level.undecided:
+            lines.append(
+                f"{name} is not decided by this data: its temperature range crosses the rating. "
+                "The check below says what would settle it."
+            )
         if not best.device.package.integrated_driver:
             built_in = [c for c in usable[1:] if c.device.package.integrated_driver]
             if built_in:

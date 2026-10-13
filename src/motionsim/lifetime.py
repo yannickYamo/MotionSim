@@ -68,7 +68,7 @@ def rainflow(trace: np.ndarray) -> list[tuple[float, float, float]]:
                 break  # the first swing waits for the trace to close
             out.append((inner, (stack[-2] + stack[-3]) / 2, 1.0))
             del stack[-3:-1]
-    for a, b in zip(stack, stack[1:]):  # what is left pairs off as half swings
+    for a, b in zip(stack, stack[1:], strict=False):  # what is left pairs off as half swings
         out.append((abs(b - a), (a + b) / 2, 0.5))
     # Two halves of the same swing are one swing.
     merged: dict[tuple[float, float], float] = {}

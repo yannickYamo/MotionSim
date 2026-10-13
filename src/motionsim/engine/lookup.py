@@ -58,3 +58,8 @@ def current_range(curves: list[Curve]) -> tuple[float, float]:
 
 def temperature_range(curves: list[Curve]) -> tuple[float, float]:
     return curves[0].tj, curves[-1].tj
+
+
+def rows(curves) -> int:
+    """How many points above zero current the fullest curve holds."""
+    return max(sum(1 for i in c.current if i > 0) for c in curves)

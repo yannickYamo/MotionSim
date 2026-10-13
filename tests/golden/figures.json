@@ -46,7 +46,7 @@
    },
    {
     "lines": [
-     "the heatsink is kept at or below 100 \u00b0C, for what is mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 101 \u00b0C, 74 \u00b0C under its 175 \u00b0C rating",
+     "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 101 \u00b0C, 74 \u00b0C under its 175 \u00b0C rating",
      "it then carries 2.4 W into 40 \u00b0C air: 25 K/W or lower, heatsink to ambient",
      "With no heatsink at all, a package may have up to 112 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 \u00b0C under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
     ],
@@ -109,7 +109,7 @@
     },
     {
      "lines": [
-      "the heatsink is kept at or below 100 \u00b0C, for what is mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 101 \u00b0C, 74 \u00b0C under its 175 \u00b0C rating",
+      "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 101 \u00b0C, 74 \u00b0C under its 175 \u00b0C rating",
       "it then carries 2.4 W into 40 \u00b0C air: 25 K/W or lower, heatsink to ambient",
       "With no heatsink at all, a package may have up to 112 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 \u00b0C under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
      ],
@@ -377,7 +377,7 @@
     "hours": null,
     "repeats": null,
     "swing": 0.0,
-    "swing_mean": 60.120250962010836,
+    "swing_mean": 60.10945758342071,
     "swing_share": 0.0,
     "swings": 0,
     "within_turn": false
@@ -398,7 +398,7 @@
     "forever": 60.35662467841004,
     "loss_energy": 9.230145540008008,
     "mean_loss": 0.9199848119991506,
-    "peak": 60.2267848924571,
+    "peak": 60.213484181989266,
     "returned": 0.0,
     "returned_peak": 0.0,
     "ripple_pp_worst": 1.0265283763845277,
@@ -419,7 +419,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 71 \u00b0C (69 to 79 \u00b0C across the thermal assumptions), 71 \u00b0C below its rating",
+      "message": "junction peaks at 72 \u00b0C (69 to 78 \u00b0C across the thermal assumptions), 72 \u00b0C below its rating",
       "topic": "temperature"
      },
      {
@@ -450,12 +450,12 @@
     ],
     "life": {
      "chip": "phase leg, diode",
-     "hours": 3011120.8829037417,
-     "repeats": 3554109894.5749087,
-     "swing": 10.263,
-     "swing_mean": 66.218,
-     "swing_share": 0.997318111401026,
-     "swings": 26,
+     "hours": 1607461.2132466391,
+     "repeats": 1897331268.0943937,
+     "swing": 11.681,
+     "swing_mean": 65.848,
+     "swing_share": 0.9987601227898485,
+     "swings": 24,
      "within_turn": false
     },
     "sink_name": "heatsink",
@@ -471,10 +471,10 @@
      "capacitor_rms": 0.9855491575909954,
      "capacitor_rms_worst": 2.3671110716310055,
      "duration": 3.05,
-     "forever": 71.40291531372115,
-     "loss_energy": 44.67295693041694,
-     "mean_loss": 12.54057871049388,
-     "peak": 71.3492415342042,
+     "forever": 71.76511367177655,
+     "loss_energy": 44.673639530165794,
+     "mean_loss": 12.54080251369023,
+     "peak": 71.688753283133,
      "returned": 0.0,
      "returned_peak": 0.0,
      "ripple_pp_worst": 1.0265283763845277,
@@ -528,7 +528,7 @@
      "hours": null,
      "repeats": null,
      "swing": 0.0,
-     "swing_mean": 60.120250962010836,
+     "swing_mean": 60.10945758342071,
      "swing_share": 0.0,
      "swings": 0,
      "within_turn": false
@@ -549,7 +549,7 @@
      "forever": 60.35662467841004,
      "loss_energy": 9.230145540008008,
      "mean_loss": 0.9199848119991506,
-     "peak": 60.2267848924571,
+     "peak": 60.213484181989266,
      "returned": 0.0,
      "returned_peak": 0.0,
      "ripple_pp_worst": 1.0265283763845277,
@@ -848,7 +848,7 @@
       },
       {
        "level": "ok",
-       "message": "junction peaks at 74 \u00b0C (69 to 91 \u00b0C across the thermal assumptions), 59 \u00b0C below its rating",
+       "message": "junction peaks at 75 \u00b0C (69 to 88 \u00b0C across the thermal assumptions), 62 \u00b0C below its rating",
        "topic": "temperature"
       },
       {
@@ -877,7 +877,7 @@
        "topic": "trip"
       }
      ],
-     "efficiency": 0.8351984817336565,
+     "efficiency": 0.8351582175614902,
      "fix": "",
      "gate": {
       "kind": "datasheet",
@@ -897,7 +897,7 @@
       "capacitor_rms": 5.425158981062286,
       "ripple_pp": 1.575183477774341
      },
-     "margin": 58.70917221147404,
+     "margin": 61.82468476210566,
      "name": "synthetic LINEAR-600V-30A",
      "needs": [
       "1 package for the 6 switches",
@@ -907,32 +907,32 @@
      "pwm": {
       "current": 12.052256361657646,
       "duty": 0.7135742750699019,
-      "e_off": 3.635561865192234e-05,
-      "e_on": 4.599742374124844e-05,
+      "e_off": 3.6476992956962463e-05,
+      "e_on": 4.611879804628858e-05,
       "f_sw": 20000.0,
-      "p_on": 15.579887478732795,
+      "p_on": 15.586015655668366,
       "position": "phase leg"
      },
      "result": {
       "assumptions": [
-       "heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip"
+       "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
       ],
-      "conduction": 27.807690205371692,
-      "efficiency": 0.8745562829512136,
+      "conduction": 27.807232885315933,
+      "efficiency": 0.874514121374635,
       "hottest": {
-       "conduction": 3.2437040875469734,
+       "conduction": 3.2444506362403787,
        "dead_time": 0.0,
-       "diode_conduction": 1.3909109466816425,
-       "diode_recovery": 0.08663625530198657,
+       "diode_conduction": 1.3900881779789434,
+       "diode_recovery": 0.08717567218181814,
        "recovery": 0.0,
-       "total": 5.2428397233118185,
-       "turn_off": 0.250701391763973,
-       "turn_on": 0.27088704201724334
+       "total": 5.244854689128027,
+       "turn_off": 0.25153836575386096,
+       "turn_on": 0.2716018369730255
       },
       "limits": [
        "losses use each chip's average temperature over the output period"
       ],
-      "loss": 31.457038339870913,
+      "loss": 31.469128134768162,
       "notes": [
        "the stage gives 90.6% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that",
        "turn-on energy: scaled linearly from 300 V test voltage to 48 V",
@@ -941,37 +941,37 @@
       ],
       "positions": [
        {
-        "conduction": 3.2437040875469734,
+        "conduction": 3.2444506362403787,
         "count": 6,
         "dead_time": 0.0,
-        "diode_conduction": 1.3909109466816425,
-        "diode_recovery": 0.08663625530198657,
+        "diode_conduction": 1.3900881779789434,
+        "diode_recovery": 0.08717567218181814,
         "name": "phase leg",
         "recovery": 0.0,
-        "tj": 74.27535889146698,
-        "tj_diode": 72.69566555342485,
-        "tj_diode_mean": 71.94297528596832,
-        "tj_switch": 74.27535889146698,
-        "tj_switch_mean": 73.1639804159281,
-        "total": 5.2428397233118185,
-        "turn_off": 0.250701391763973,
-        "turn_on": 0.27088704201724334
+        "tj": 75.06288161568263,
+        "tj_diode": 73.5437849995378,
+        "tj_diode_mean": 72.79116585487228,
+        "tj_switch": 75.06288161568263,
+        "tj_switch_mean": 73.95075156455937,
+        "total": 5.244854689128027,
+        "turn_off": 0.25153836575386096,
+        "turn_on": 0.2716018369730255
        }
       ],
-      "switching": 3.649348134499218,
-      "t_case": 63.14570383398709,
+      "switching": 3.661895249452227,
+      "t_case": 63.14691281347682,
       "t_sink": 60.0,
       "tj_max": 150.0,
-      "tj_peak": 74.27535889146698,
+      "tj_peak": 75.06288161568263,
       "tj_range": [
-       69.11956831563775,
-       91.29082778852596
+       69.16918019880231,
+       88.17531523789434
       ],
       "validity": "interpolated",
       "warnings": []
      },
-     "stall_margin": 46.63648207383491,
-     "stall_tj": 85.70773132108943,
+     "stall_margin": 49.867145826480964,
+     "stall_tj": 86.52549693568044,
      "switching": {
       "kind": "measured",
       "text": "measured at 300 V; brought to 48 V in proportion"
@@ -981,7 +981,7 @@
    ],
    "explain": [
     "synthetic MOSFET-100V-100A has the lowest power-stage loss among the devices that pass: 2.1 W.",
-    "synthetic LINEAR-600V-30A loses 29.3 W more (1385%).",
+    "synthetic LINEAR-600V-30A loses 29.4 W more (1386%).",
     "The switching loss of synthetic LINEAR-600V-30A is measured and that of synthetic MOSFET-100V-100A is estimated from charge: the order between them rests on unlike data."
    ],
    "level": 0.05
@@ -1204,7 +1204,7 @@
     "hours": null,
     "repeats": null,
     "swing": 0.0,
-    "swing_mean": 60.008990558550224,
+    "swing_mean": 60.007253051321214,
     "swing_share": 0.0,
     "swings": 0,
     "within_turn": false
@@ -1214,10 +1214,10 @@
     "capacitor_rms": 0.03396487106162992,
     "capacitor_rms_worst": 0.08927387762045456,
     "duration": 3.05,
-    "forever": 60.043502827984476,
-    "loss_energy": 0.8353535024251705,
-    "mean_loss": 0.03383755591153634,
-    "peak": 60.024204123216585,
+    "forever": 60.044353436792534,
+    "loss_energy": 0.8353535921237665,
+    "mean_loss": 0.03383758532091213,
+    "peak": 60.022217067202746,
     "returned": 0.0,
     "returned_peak": 0.0,
     "ripple_pp_worst": 0.3832265918066251,
@@ -1276,7 +1276,7 @@
     "hours": null,
     "repeats": null,
     "swing": 0.0,
-    "swing_mean": 60.01755454787318,
+    "swing_mean": 60.01354733975526,
     "swing_share": 0.0,
     "swings": 0,
     "within_turn": false
@@ -1286,10 +1286,10 @@
     "capacitor_rms": 0.03395998812942201,
     "capacitor_rms_worst": 0.08925800735115326,
     "duration": 3.05,
-    "forever": 60.057765648389534,
-    "loss_energy": 0.9352584420586556,
-    "mean_loss": 0.06678111006943001,
-    "peak": 60.03269839476348,
+    "forever": 60.059617274073105,
+    "loss_energy": 0.935258730949661,
+    "mean_loss": 0.06678120478779248,
+    "peak": 60.02924197181022,
     "returned": 0.0,
     "returned_peak": 0.0,
     "ripple_pp_worst": 0.11975986708987611,
@@ -1312,7 +1312,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 75 \u00b0C (73 to 81 \u00b0C across the thermal assumptions), 94 \u00b0C below its rating",
+      "message": "junction peaks at 75 \u00b0C (73 to 80 \u00b0C across the thermal assumptions), 95 \u00b0C below its rating",
       "topic": "temperature"
      },
      {
@@ -1341,7 +1341,7 @@
       "topic": "trip"
      }
     ],
-    "efficiency": 0.9211812049416246,
+    "efficiency": 0.921178208607914,
     "fix": "",
     "gate": {
      "kind": "datasheet",
@@ -1360,7 +1360,7 @@
      "capacitor_rms": 3.0929918723808383,
      "ripple_pp": 0.38080219003071114
     },
-    "margin": 94.00223997813072,
+    "margin": 95.07308452167631,
     "name": "synthetic SIC-650V-30A",
     "needs": [
      "1 package for the 6 switches",
@@ -1370,32 +1370,32 @@
     "pwm": {
      "current": 9.992864569365937,
      "duty": 0.986014428012482,
-     "e_off": 1.5486421617858722e-05,
-     "e_on": 3.896461642655172e-05,
+     "e_off": 1.5489099109546267e-05,
+     "e_on": 3.897264890161435e-05,
      "f_sw": 16000.0,
-     "p_on": 5.787699185297182,
+     "p_on": 5.791980115188261,
      "position": "phase leg"
     },
     "result": {
      "assumptions": [
-      "heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip"
+      "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
      ],
-     "conduction": 9.512534309250386,
-     "efficiency": 0.9944864760665285,
+     "conduction": 9.518864974661096,
+     "efficiency": 0.9944832412921573,
      "hottest": {
-      "conduction": 1.4264808492622372,
+      "conduction": 1.427535960164022,
       "dead_time": 0.15894153561282723,
       "diode_conduction": 0.0,
       "diode_recovery": 0.0,
       "recovery": 0.01909969315753709,
-      "total": 1.880329971113917,
-      "turn_off": 0.08005433297226353,
-      "turn_on": 0.19575356010905196
+      "total": 1.8814392770295156,
+      "turn_off": 0.08006817379465454,
+      "turn_on": 0.19579391430047488
      },
      "limits": [
       "losses use each chip's average temperature over the output period"
      ],
-     "loss": 11.281979826683502,
+     "loss": 11.288635662177093,
      "notes": [
       "the stage gives 98.0% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that",
       "turn-on energy: scaled linearly from 400 V test voltage to 300 V",
@@ -1406,37 +1406,37 @@
      ],
      "positions": [
       {
-       "conduction": 1.4264808492622372,
+       "conduction": 1.427535960164022,
        "count": 6,
        "dead_time": 0.15894153561282723,
        "diode_conduction": 0.0,
        "diode_recovery": 0.0,
        "name": "phase leg",
        "recovery": 0.01909969315753709,
-       "tj": 75.17370763900118,
-       "tj_diode": 75.17370763900118,
-       "tj_diode_mean": 74.74797370253589,
-       "tj_switch": 75.17370763900118,
-       "tj_switch_mean": 74.74797370253589,
-       "total": 1.880329971113917,
-       "turn_off": 0.08005433297226353,
-       "turn_on": 0.19575356010905196
+       "tj": 75.44194801701796,
+       "tj_diode": 75.44194801701796,
+       "tj_diode_mean": 75.01591405827273,
+       "tj_switch": 75.44194801701796,
+       "tj_switch_mean": 75.01591405827273,
+       "total": 1.8814392770295156,
+       "turn_off": 0.08006817379465454,
+       "turn_on": 0.19579391430047488
       }
      ],
-     "switching": 1.7694455174331152,
-     "t_case": 71.12819798266835,
+     "switching": 1.7697706875159989,
+     "t_case": 71.1288635662177,
      "t_sink": 70.0,
      "tj_max": 175.0,
-     "tj_peak": 75.17370763900118,
+     "tj_peak": 75.44194801701796,
      "tj_range": [
-      73.42070505474385,
-      80.99776002186928
+      73.43754762484777,
+      79.92691547832369
      ],
      "validity": "interpolated",
      "warnings": []
     },
-    "stall_margin": 92.35686149658872,
-    "stall_tj": 76.78264265983921,
+    "stall_margin": 93.43440497181751,
+    "stall_tj": 77.0525620403285,
     "switching": {
      "kind": "measured",
      "text": "measured at 400 V; brought to 300 V in proportion"
@@ -1452,7 +1452,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 82 \u00b0C (80 to 88 \u00b0C across the thermal assumptions), 87 \u00b0C below its rating",
+      "message": "junction peaks at 83 \u00b0C (80 to 87 \u00b0C across the thermal assumptions), 88 \u00b0C below its rating",
       "topic": "temperature"
      },
      {
@@ -1481,7 +1481,7 @@
       "topic": "trip"
      }
     ],
-    "efficiency": 0.9211166515680184,
+    "efficiency": 0.9211135791195387,
     "fix": "",
     "gate": {
      "kind": "datasheet",
@@ -1500,7 +1500,7 @@
      "capacitor_rms": 3.0929918723808383,
      "ripple_pp": 0.38080219003071114
     },
-    "margin": 86.75632886561247,
+    "margin": 87.85856568318043,
     "name": "synthetic SIC-HOT",
     "needs": [
      "1 package for the 6 switches",
@@ -1510,32 +1510,32 @@
     "pwm": {
      "current": 9.992864569365937,
      "duty": 0.986014428012482,
-     "e_off": 1.5544109675558327e-05,
-     "e_on": 3.9137680599650526e-05,
+     "e_off": 1.554685556764803e-05,
+     "e_on": 3.914591827591964e-05,
      "f_sw": 16000.0,
-     "p_on": 5.879934216955085,
+     "p_on": 5.884324509399009,
      "position": "phase leg"
     },
     "result": {
      "assumptions": [
-      "heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip"
+      "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
      ],
-     "conduction": 9.648932040451067,
-     "efficiency": 0.994416785698671,
+     "conduction": 9.655424431876481,
+     "efficiency": 0.9944134687525098,
      "hottest": {
-      "conduction": 1.4492138044623506,
+      "conduction": 1.4502958696999197,
       "dead_time": 0.15894153561282723,
       "diode_conduction": 0.0,
       "diode_recovery": 0.0,
       "recovery": 0.01909969315753709,
-      "total": 1.9042305882337565,
-      "turn_off": 0.08035254124100143,
-      "turn_on": 0.19662301376004016
+      "total": 1.9053682329752417,
+      "turn_off": 0.08036673564724192,
+      "turn_on": 0.19666439885771578
      },
      "limits": [
       "losses use each chip's average temperature over the output period"
      ],
-     "loss": 11.425383529402538,
+     "loss": 11.43220939785145,
      "notes": [
       "the stage gives 98.0% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that",
       "turn-on energy: scaled linearly from 400 V test voltage to 300 V",
@@ -1546,37 +1546,37 @@
      ],
      "positions": [
       {
-       "conduction": 1.4492138044623506,
+       "conduction": 1.4502958696999197,
        "count": 6,
        "dead_time": 0.15894153561282723,
        "diode_conduction": 0.0,
        "diode_recovery": 0.0,
        "name": "phase leg",
        "recovery": 0.01909969315753709,
-       "tj": 82.24968036657773,
-       "tj_diode": 82.24968036657773,
-       "tj_diode_mean": 80.52089870308578,
-       "tj_switch": 82.24968036657773,
-       "tj_switch_mean": 80.52089870308578,
-       "total": 1.9042305882337565,
-       "turn_off": 0.08035254124100143,
-       "turn_on": 0.19662301376004016
+       "tj": 82.52570409313788,
+       "tj_diode": 82.52570409313788,
+       "tj_diode_mean": 80.79568398318692,
+       "tj_switch": 82.52570409313788,
+       "tj_switch_mean": 80.79568398318692,
+       "total": 1.9053682329752417,
+       "turn_off": 0.08036673564724192,
+       "turn_on": 0.19666439885771578
       }
      ],
-     "switching": 1.776451488951472,
-     "t_case": 71.14253835294025,
+     "switching": 1.7767849659749686,
+     "t_case": 71.14322093978514,
      "t_sink": 70.0,
      "tj_max": 175.0,
-     "tj_peak": 82.24968036657773,
+     "tj_peak": 82.52570409313788,
      "tj_range": [
-      80.44591319085303,
-      88.24367113438753
+      80.46324266374378,
+      87.14143431681957
      ],
      "validity": "interpolated",
      "warnings": []
     },
-    "stall_margin": 80.14925844527909,
-    "stall_tj": 88.75168104732354,
+    "stall_margin": 81.2708143779905,
+    "stall_tj": 89.03254351065758,
     "switching": {
      "kind": "measured",
      "text": "measured at 400 V; brought to 300 V in proportion"
@@ -1592,7 +1592,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 89 \u00b0C (83 to 110 \u00b0C across the thermal assumptions), 40 \u00b0C below its rating",
+      "message": "junction peaks at 90 \u00b0C (83 to 106 \u00b0C across the thermal assumptions), 44 \u00b0C below its rating",
       "topic": "temperature"
      },
      {
@@ -1621,7 +1621,7 @@
       "topic": "trip"
      }
     ],
-    "efficiency": 0.9092668166276607,
+    "efficiency": 0.9092385306731279,
     "fix": "",
     "gate": {
      "kind": "datasheet",
@@ -1640,7 +1640,7 @@
      "capacitor_rms": 3.0929918723808383,
      "ripple_pp": 0.38080219003071114
     },
-    "margin": 40.06914416145182,
+    "margin": 44.04177469424802,
     "name": "synthetic LINEAR-600V-30A",
     "needs": [
      "1 package for the 6 switches",
@@ -1650,68 +1650,68 @@
     "pwm": {
      "current": 9.992864569365937,
      "duty": 0.986014428012482,
-     "e_off": 0.00019938881646891743,
-     "e_on": 0.0002493531393157471,
+     "e_off": 0.00020014803823553007,
+     "e_on": 0.00025011236108235974,
      "f_sw": 16000.0,
-     "p_on": 12.236247859837807,
+     "p_on": 12.240035842609492,
      "position": "phase leg"
     },
     "result": {
      "assumptions": [
-      "heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip"
+      "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
      ],
-     "conduction": 21.914396328686266,
-     "efficiency": 0.9816239708555228,
+     "conduction": 21.914353540502248,
+     "efficiency": 0.9815934339762481,
      "hottest": {
-      "conduction": 3.148483709378245,
+      "conduction": 3.1489528160887392,
       "dead_time": 0.0,
-      "diode_conduction": 0.5039156787361324,
-      "diode_recovery": 0.4132461865570574,
+      "diode_conduction": 0.5034394406616353,
+      "diode_recovery": 0.4162630064300895,
       "recovery": 0.0,
-      "total": 6.349071263433287,
-      "turn_off": 1.0307054204272197,
-      "turn_on": 1.2527202683346326
+      "total": 6.359819854447316,
+      "turn_off": 1.034630083826162,
+      "turn_on": 1.2565345074406908
      },
      "limits": [
       "losses use each chip's average temperature over the output period"
      ],
-     "loss": 38.09442758059972,
+     "loss": 38.1589191266839,
      "notes": [
       "the stage gives 97.6% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that"
      ],
      "positions": [
       {
-       "conduction": 3.148483709378245,
+       "conduction": 3.1489528160887392,
        "count": 6,
        "dead_time": 0.0,
-       "diode_conduction": 0.5039156787361324,
-       "diode_recovery": 0.4132461865570574,
+       "diode_conduction": 0.5034394406616353,
+       "diode_recovery": 0.4162630064300895,
        "name": "phase leg",
        "recovery": 0.0,
-       "tj": 88.75733568747829,
-       "tj_diode": 83.39324890814362,
-       "tj_diode_mean": 82.70556246806333,
-       "tj_switch": 88.75733568747829,
-       "tj_switch_mean": 86.91398820734865,
-       "total": 6.349071263433287,
-       "turn_off": 1.0307054204272197,
-       "turn_on": 1.2527202683346326
+       "tj": 89.70967174027993,
+       "tj_diode": 84.46734113789485,
+       "tj_diode_mean": 83.77864243661118,
+       "tj_switch": 89.70967174027993,
+       "tj_switch_mean": 87.86369307093213,
+       "total": 6.359819854447316,
+       "turn_off": 1.034630083826162,
+       "turn_on": 1.2565345074406908
       }
      ],
-     "switching": 16.18003125191346,
-     "t_case": 73.80944275805997,
+     "switching": 16.244565586181654,
+     "t_case": 73.81589191266839,
      "t_sink": 70.0,
      "tj_max": 150.0,
-     "tj_peak": 88.75733568747829,
+     "tj_peak": 89.70967174027993,
      "tj_range": [
-      82.58629466495672,
-      109.93085583854818
+      82.64515399161057,
+      105.95822530575198
      ],
      "validity": "interpolated",
      "warnings": []
     },
-    "stall_margin": 30.04219686428202,
-    "stall_tj": 97.69647165668843,
+    "stall_margin": 34.20182034129705,
+    "stall_tj": 98.70259439528304,
     "switching": {
      "kind": "measured",
      "text": "measured at 300 V"
@@ -1721,78 +1721,78 @@
   ],
   "explain": [
    "synthetic SIC-650V-30A and synthetic SIC-HOT lose within 5% of each other (11.3 to 11.4 W): on loss they are level, and something else has to decide.",
-   "synthetic LINEAR-600V-30A loses 26.8 W more (238%)."
+   "synthetic LINEAR-600V-30A loses 26.9 W more (238%)."
   ],
   "level": 0.05
  },
  "solve": {
   "assumptions": [
-   "heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip"
+   "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
   ],
-  "conduction": 34.04228609338756,
-  "efficiency": 0.9817734447497721,
+  "conduction": 34.05078745175099,
+  "efficiency": 0.9817485939505785,
   "hottest": {
-   "conduction": 4.592940087174312,
+   "conduction": 4.595272286291389,
    "dead_time": 0.0,
-   "diode_conduction": 1.0807742617236147,
-   "diode_recovery": 0.2821621080811295,
+   "diode_conduction": 1.0798589556671092,
+   "diode_recovery": 0.28469946462512025,
    "recovery": 0.0,
-   "total": 7.531838793574778,
-   "turn_off": 0.6979495121821202,
-   "turn_on": 0.878012824413601
+   "total": 7.542298909358906,
+   "turn_off": 0.7012024452719035,
+   "turn_on": 0.8812657575033842
   },
   "limits": [
    "losses use each chip's average temperature over the output period"
   ],
-  "loss": 45.19103276144867,
+  "loss": 45.25379345615344,
   "notes": [],
   "positions": [
    {
-    "conduction": 4.592940087174312,
+    "conduction": 4.595272286291389,
     "count": 6,
     "dead_time": 0.0,
-    "diode_conduction": 1.0807742617236147,
-    "diode_recovery": 0.2821621080811295,
+    "diode_conduction": 1.0798589556671092,
+    "diode_recovery": 0.28469946462512025,
     "name": "phase leg",
     "recovery": 0.0,
-    "tj": 84.18026554455174,
-    "tj_diode": 77.75496203770615,
-    "tj_diode_mean": 75.6264369025277,
-    "tj_switch": 84.18026554455174,
-    "tj_switch_mean": 79.7583699632513,
-    "total": 7.531838793574778,
-    "turn_off": 0.6979495121821202,
-    "turn_on": 0.878012824413601
+    "tj": 85.31586474523303,
+    "tj_diode": 79.01404400351278,
+    "tj_diode_mean": 76.88460375850832,
+    "tj_switch": 85.31586474523303,
+    "tj_switch_mean": 80.88746347814836,
+    "total": 7.542298909358906,
+    "turn_off": 0.7012024452719035,
+    "turn_on": 0.8812657575033842
    }
   ],
-  "switching": 11.148746668061104,
-  "t_case": 64.51910327614486,
+  "switching": 11.203006004402447,
+  "t_case": 64.52537934561535,
   "t_sink": 60.0,
   "tj_max": 150.0,
-  "tj_peak": 84.18026554455174,
+  "tj_peak": 85.31586474523303,
   "tj_range": [
-   76.80290089791491,
-   109.24744230093283
+   76.8734204719685,
+   104.57292524009313
   ],
   "validity": "interpolated",
   "warnings": []
  },
  "sweep": {
   "20000": {
-   "example": 42.299483260697194,
-   "sic": 11.899656094036652
+   "example": 42.38976146884054,
+   "sic": 11.906741990894215
   },
   "4000": {
-   "example": 25.847756041987033,
-   "sic": 9.327939484242368
+   "example": 25.85829020020634,
+   "sic": 9.33330515037624
   },
   "40000": {
-   "example": 64.35331752665907,
-   "sic": 15.047495977608492
+   "example": 64.63982860249578,
+   "sic": 15.056883813082564
   },
   "8000": {
-   "example": 29.8641099426619,
-   "sic": 9.981512381901721
+   "example": 29.88888824013999,
+   "sic": 9.987299457804736
   }
  }
 }

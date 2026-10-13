@@ -46,7 +46,7 @@ def _bands(flags: np.ndarray) -> list[tuple[int, int]]:
     """Runs of consecutive True values, as (first, last) indices."""
     padded = np.concatenate([[False], flags, [False]]).astype(np.int8)
     change = np.diff(padded)
-    return list(zip(np.flatnonzero(change == 1), np.flatnonzero(change == -1) - 1))
+    return list(zip(np.flatnonzero(change == 1), np.flatnonzero(change == -1) - 1, strict=True))
 
 
 def find_plot(dark: np.ndarray, x0: float, top: float, scale: float) -> Raster | None:
@@ -213,7 +213,7 @@ def trace(raster: Raster) -> list[np.ndarray]:
             strands = sorted([k] + nearest[: len(group) - 1]) if free else []
             if len(strands) == len(group):
                 del chosen[k]
-                for j, track in zip(strands, sorted(group, key=lambda t: t.predicted())):
+                for j, track in zip(strands, sorted(group, key=lambda t: t.predicted()), strict=True):
                     chosen.setdefault(j, []).append(track)
         # Changes are applied after the whole column is decided, so a branch sees its parent
         # as it was in the column before.
@@ -296,10 +296,10 @@ def trace(raster: Raster) -> list[np.ndarray]:
     for track in sorted(done, key=lambda t: -len(t.xs)):
         if track.alone < MIN_OWN * width:
             continue
-        mine = dict(zip(track.xs, track.ys))
+        mine = dict(zip(track.xs, track.ys, strict=True))
         twin = False
         for other in kept:
-            shared = [abs(mine[x] - y) for x, y in zip(other.xs, other.ys) if x in mine]
+            shared = [abs(mine[x] - y) for x, y in zip(other.xs, other.ys, strict=True) if x in mine]
             same = sum(d < usual / 2 for d in shared)
             if same >= SAME_CURVE * min(len(track.xs), len(other.xs)):
                 twin = True

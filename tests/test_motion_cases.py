@@ -133,19 +133,63 @@ def test_from_cold_a_constant_diode_loss_heats_its_junction_by_power_times_trans
     assert outcome.tj_from_start - BASE.t_sink == pytest.approx(loss * RTH * (1 - np.exp(-ends / TAU)), rel=1e-9)
 
 
-def test_from_cold_the_case_to_heatsink_layer_adds_its_rise_at_once() -> None:
+# What a chip shares with its package follows the package's loss as fast as the copper under
+# the chips can: the copper's heat capacity for each unit of area, charged through the layer
+# beneath it. For the tab of a TO-247 on grease, the package taken where none is named:
+# 3.45 MJ/(m³·K) of copper 2 mm thick over 50 µm of 1 W/(m·K) grease.
+TAU_SHARED = 3.45e6 * 2.0e-3 * 50e-6 / 1.0
+
+
+def test_from_cold_the_case_to_heatsink_layer_adds_its_rise_as_fast_as_the_copper_follows() -> None:
     step, amps, layer = 0.002, 10.0, 0.5
     trajectory = Trajectory(time=np.arange(4) * step, current={"a": np.full(4, amps)}, duty={"a": np.ones(4)})
     outcome = run(conducting(rth_cs=layer), trajectory, BASE)
     loss = (0.9 + 0.03 * amps) * amps
     ends = step * np.arange(1, 5)
-    expected = loss * (layer + RTH * (1 - np.exp(-ends / TAU)))
+    assert pytest.approx(0.345) == TAU_SHARED
+    expected = loss * (layer * (1 - np.exp(-ends / TAU_SHARED)) + RTH * (1 - np.exp(-ends / TAU)))
     assert outcome.tj_from_start - BASE.t_sink == pytest.approx(expected, rel=1e-9)
 
 
+def test_a_burst_heats_the_case_while_it_lasts_and_the_settled_peak_counts_it() -> None:
+    """On for a tenth of a long period: the layer under the package carries the burst's loss
+    while it lasts, not the mean over the period, and both chip and layer have long settled
+    by the end of the burst."""
+    n, amps, layer, whole = 8000, 10.0, 0.5, 20.0
+    on = np.arange(n) < n // 10
+    trajectory = Trajectory(
+        time=np.arange(n) * whole / n, current={"a": np.where(on, amps, 0.0)}, duty={"a": on.astype(float)}
+    )
+    outcome = run(conducting(rth_cs=layer), trajectory, BASE)
+    loss = (0.9 + 0.03 * amps) * amps
+    reached = 1 - math.exp(-(whole / 10) / TAU_SHARED)  # of the layer's rise, by the end of the burst
+    assert reached > 0.99
+    assert outcome.result.tj_switch_peak - BASE.t_sink == pytest.approx(loss * (layer * reached + RTH), rel=1e-6)
+    assert outcome.result.t_case - BASE.t_sink == pytest.approx(layer * loss / 10, rel=1e-6)  # the mean
+    low, high = outcome.switch_span
+    assert high == pytest.approx(outcome.result.tj_switch_peak)
+    assert (
+        0.0 <= low - BASE.t_sink < 1e-6
+    )  # never under the heatsink, however sharp the burst's edge  # 18 s off against a third of a second
+
+
+def test_through_a_motion_the_case_follows_the_loss_as_fast_as_the_copper_does() -> None:
+    """A brushed motor held at one torque for a fifth of a second: the switch that carries
+    the armature current heats along its own network, and its case along the copper's."""
+    held, layer = 0.2, 0.5
+    profile = Profile(segments=[Segment(duration=held, speed_start=600, speed_end=600)])
+    _, trace = follow(device(rth_cs=layer), DC, Load(constant_torque=5.0), profile, BASE, per_segment=1)
+    amps = 5.0 / DC.kt
+    loss = (0.9 + 0.03 * amps) * amps
+    r, tau = np.array(NETWORK.r), np.array(NETWORK.tau)
+    own = float((loss * r * (1 - np.exp(-held / tau))).sum())
+    assert trace.tj[0] - BASE.t_sink == pytest.approx(own + layer * loss * (1 - math.exp(-held / TAU_SHARED)), rel=1e-6)
+
+
 def test_a_repeating_trajectory_swings_at_the_frequency_of_its_whole_length() -> None:
-    """A loss P0 + P1 cos(wt) through R and tau settles at P0 R + P1 |Z(w)| cos(wt - atan(w tau))."""
-    n, length, amps, drop = 8, 0.02, 10.0, 1.0
+    """A loss P0 + P1 cos(wt) through R and tau settles at P0 R + P1 |Z(w)| cos(wt - atan(w tau)).
+    Each sample's loss is held through the sample, so the samples are many."""
+    n, length, amps, drop = 400, 0.02, 10.0, 1.0
     k = np.arange(n)
     flat = linear_device(sw_curves=[line(25.0, drop, 0.0)], d_curves=[line(25.0, drop, 0.0)])
     duty = 0.5 + 0.4 * np.cos(2 * np.pi * k / n)
@@ -154,7 +198,7 @@ def test_a_repeating_trajectory_swings_at_the_frequency_of_its_whole_length() ->
     w = 2 * math.pi / length
     swing = drop * amps * 0.4 * RTH / math.sqrt(1 + (w * TAU) ** 2)
     rise = drop * amps * 0.5 * RTH + swing * np.cos(2 * np.pi * k / n - math.atan(w * TAU))
-    assert high_side.tj_switch_peak - BASE.t_sink == pytest.approx(float(rise.max()), rel=1e-6)
+    assert high_side.tj_switch_peak - BASE.t_sink == pytest.approx(float(rise.max()), rel=1e-4)
 
 
 def test_a_time_stamp_given_twice_is_refused(tmp_path) -> None:
@@ -453,3 +497,55 @@ def test_a_drive_that_knows_where_the_rotor_is_applies_only_what_the_torque_need
     start = Start(method=method, current=8.0, handover_rpm=500.0)
     assert start.floor(0.0) is None
     assert start.floor(499.0) is None
+
+
+def test_at_speed_the_case_follows_the_mean_loss_and_cools_when_the_stage_cannot_be_driven() -> None:
+    """A motor turning fast for a fifth of a second, then asked for a speed it cannot reach
+    for one time constant of the copper: the case has risen 1 - e^(-0.2/0.345) of the way,
+    and falls to 1/e of that."""
+    held, layer = 0.2, 0.5
+    profile = Profile(
+        segments=[
+            Segment(duration=held, speed_start=1500, speed_end=1500),
+            Segment(duration=TAU_SHARED, speed_start=600000, speed_end=600000),
+        ]
+    )
+    with_layer = follow(device(rth_cs=layer), PMSM, Load(constant_torque=4.0), profile, BASE, per_segment=1)[1]
+    without = follow(device(), PMSM, Load(constant_torque=4.0), profile, BASE, per_segment=1)[1]
+    at_speed = at_speed_and_torque(device(rth_cs=layer), PMSM, 1500, 4.0, BASE).result
+    package = at_speed.roles[0].switch.total + at_speed.roles[0].diode.total  # a package to each switch
+    risen = layer * package * (1 - math.exp(-held / TAU_SHARED))
+    assert with_layer.tj[0] - without.tj[0] == pytest.approx(risen, rel=1e-3)
+    assert with_layer.tj[1] - without.tj[1] == pytest.approx(risen / math.e, rel=1e-3)
+
+
+def test_with_no_heatsink_a_part_is_as_hot_whatever_share_of_its_way_to_the_air_is_called_the_case_layer() -> None:
+    to_air = 20.0
+    profile = Profile(segments=[Segment(duration=0.2, speed_start=600, speed_end=600)])
+    base = replace(BASE, rth_free=to_air)
+    peaks = [
+        follow(device(rth_cs=layer), DC, Load(constant_torque=5.0), profile, base, per_segment=1)[1].peak
+        for layer in (0.0, 2.0)
+    ]
+    assert peaks[1] == pytest.approx(peaks[0], abs=0.05)
+    amps = 5.0 / DC.kt
+    assert peaks[0] - BASE.t_sink > to_air * (0.9 + 0.03 * amps) * amps  # the whole way to the air, and its own path
+
+
+def test_on_modules_of_one_leg_each_a_trajectory_heats_each_case_with_its_own_leg_alone() -> None:
+    n, layer = 2000, 0.4
+    ones = np.ones(n)
+    trajectory = Trajectory(
+        time=np.arange(n) * 1e-3, current={"a": 10.0 * ones, "b": 4.0 * ones}, duty={"a": ones, "b": ones}
+    )
+    leg = lambda amps: (0.9 + 0.03 * amps) * amps  # the high side carries it all the time
+    halves = run(conducting(topology=Topology.half_bridge, rth_cs=layer), trajectory, BASE).result
+    cases = {r.name: r.t_case - BASE.t_sink for r in halves.roles}
+    assert cases["leg A high side"] == pytest.approx(layer * leg(10.0), rel=1e-6)
+    assert cases["leg B high side"] == pytest.approx(layer * leg(4.0), rel=1e-6)
+    assert halves.tj_switch_peak - BASE.t_sink == pytest.approx((layer + RTH) * leg(10.0), rel=1e-6)
+    together = run(conducting(topology=Topology.h_bridge, rth_cs=layer), trajectory, BASE).result
+    assert together.t_case - BASE.t_sink == pytest.approx(layer * (leg(10.0) + leg(4.0)), rel=1e-6)
+    assert together.tj_switch_peak - BASE.t_sink == pytest.approx(
+        layer * (leg(10.0) + leg(4.0)) + RTH * leg(10.0), rel=1e-6
+    )

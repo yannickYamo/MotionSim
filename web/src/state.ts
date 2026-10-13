@@ -22,6 +22,7 @@ export interface State {
     parallel: number; t_motor: string; t_min_ns: string;
     cooling: "held" | "heatsink" | "none" | "board"; t_ambient: number; rth_sink: string; rth_ja: string;
     board_area: string; copper: string; copper_ref: string;
+    interface: "" | "pad"; rth_case_sink: string; // what lies between a package and its heatsink
   };
   typed: Record<string, string>; // a part being typed in from its datasheet, kept until added
   mission: Mission | null; // a mission profile brought as a file, in place of the load and motion
@@ -72,6 +73,7 @@ export function initial(setup: Setup): State {
       v_drive: "", rg_on: "", rg_off: "", t_dead_ns: "", l_loop_nh: "",
       parallel: 1, t_motor: "", t_min_ns: "",
       cooling: "held", t_ambient: 40, rth_sink: "", rth_ja: "", board_area: "", copper: "", copper_ref: "",
+      interface: "", rth_case_sink: "",
     },
     typed: {},
     mission: null,
@@ -164,6 +166,7 @@ export function request(state: State) {
       parallel: String(c.parallel ?? "").trim() === "" || Number.isNaN(Number(c.parallel)) ? 1 : Number(c.parallel),
       cooling: c.cooling, t_ambient: c.t_ambient, rth_sink: number(c.rth_sink), rth_ja: number(c.rth_ja),
       board_area: number(c.board_area), copper: number(c.copper), copper_ref: number(c.copper_ref),
+      interface: c.interface || null, rth_case_sink: number(c.rth_case_sink),
     },
     supply: state.supply,
   };

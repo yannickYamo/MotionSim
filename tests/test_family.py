@@ -36,7 +36,7 @@ def curve_object(voltage_of_current):
     i = np.linspace(0.5, 130.0, 120)
     xs = X0 + voltage_of_current(i) / V_MAX * (X1 - X0)
     ys = BOTTOM + i / I_MAX * (TOP - BOTTOM)
-    pts = list(zip(xs, ys))
+    pts = list(zip(xs, ys, strict=True))
     return {
         "linewidth": 0.96,
         "path": [("m", pts[0])] + [("l", p) for p in pts[1:]],

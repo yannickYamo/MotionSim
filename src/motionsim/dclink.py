@@ -48,7 +48,7 @@ def returned(
     # all of that from the capacitor, and none from the supply, is the cautious reading.
     total = burst = stored = longest = stretch = 0.0
     peak = 0.0
-    for step, power in zip(cycle.solved, cycle.dc_power):
+    for step, power in zip(cycle.solved, cycle.dc_power, strict=True):
         dt = step.sample.duration
         if power < 0:
             total += -power * dt

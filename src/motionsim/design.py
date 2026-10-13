@@ -46,7 +46,7 @@ KNOWN = {
 }
 CONDITIONS = {
     "v_dc", "rpm", "torque", "f_sw", "parallel", "pwm", "cooling", "t_sink", "t_ambient", "rth_sink", "rth_ja", "board_area",
-    "copper", "copper_ref", "t_sink_max", "v_drive", "rg_on", "rg_off", "t_dead", "l_loop", "t_min_pulse", "t_motor",
+    "copper", "copper_ref", "rth_case_sink", "interface", "t_sink_max", "v_drive", "rg_on", "rg_off", "t_dead", "l_loop", "t_min_pulse", "t_motor",
 }  # fmt: skip
 
 STEPS = ("fit", "verdict", "motion", "build", "drive")
@@ -58,6 +58,8 @@ SETUP_HEAD = """\
 #   conditions  SI units: V, rpm, N·m, Hz, s, ohm, °C, K/W. cooling is one of
 #               held (t_sink), heatsink (rth_sink, t_ambient), none (rth_ja, t_ambient),
 #               board (rth_ja, board_area, copper, t_ambient). Gate drive left out is chosen.
+#               On a heatsink, interface (grease or pad) is the layer under each package and
+#               rth_case_sink its resistance where you know it; left out, they are worked out.
 #   load, profile   what the motor moves and how: leave out to judge the design point alone
 """
 
@@ -234,14 +236,21 @@ def run(
         out["outcome"] = "refused"
         return _refusals(out)
     ran = [x for x in verdict["candidates"] if x["result"] is not None]
-    passing = [x for x in ran if x["level"] != "fail"]
-    chosen = (passing or ran or verdict["candidates"])[0]["id"]
+    passing = [x for x in ran if x["level"] in ("ok", "caution")]
+    open_ = [x for x in ran if x["level"] == "undecided"]  # the data cannot say whether these pass
+    chosen = (passing or open_ or ran or verdict["candidates"])[0]["id"]
     # The page asks for the device on its drawing, passing or not; a design follows the first that passes.
     if setup.get("follow") in [x["id"] for x in ran]:
         chosen = setup["follow"]
     out["followed"] = chosen
     out["outcome"] = (
-        "passes" if passing and passing[0]["level"] == "ok" else "passes with cautions" if passing else "does not pass"
+        "passes"
+        if passing and passing[0]["level"] == "ok"
+        else "passes with cautions"
+        if passing
+        else "undecided"
+        if open_
+        else "does not pass"
     )
     one = {**base, "device": chosen}
     brief = ("summary", "checks", "start", "life", "sink_name", "refused", "fix", "field")
@@ -270,6 +279,8 @@ def run(
         levels = {c.get("level") for c in out["motion"].get("checks", [])}
         if "fail" in levels:
             out["outcome"] = "does not pass"
+        elif "undecided" in levels and out["outcome"] != "does not pass":
+            out["outcome"] = "undecided"
         elif "caution" in levels and out["outcome"] == "passes":
             out["outcome"] = "passes with cautions"
         # Every device that ran is taken through the same motion, so that they can be set
@@ -347,7 +358,13 @@ def _one_motor(motor: dict, index: int, device: str, setup: dict, workspace: pag
     }
 
 
-WORD = {"ok": "passes", "caution": "passes, with cautions", "fail": "does not pass"}
+WORD = {
+    "ok": "passes",
+    "caution": "passes, with cautions",
+    "undecided": "undecided on this data",
+    "fail": "does not pass",
+}
+TAG = {"ok": "Passes", "caution": "**Caution**", "undecided": "**Undecided**", "fail": "**Fails**"}
 
 
 def rows(result: dict) -> list[dict]:
@@ -452,15 +469,20 @@ def _f(value, default: float = 0.0) -> float:
 def _cooling(c: dict) -> str:
     kind = c.get("cooling") or "held"
     air = f"{_n(c.get('t_ambient', 40))} °C air"
+    under = ""
+    if c.get("rth_case_sink") not in ("", None):
+        under = f", {_n(c['rth_case_sink'])} K/W from each case to it"
+    elif c.get("interface") == "pad":
+        under = ", each package on a thermal pad"
     if kind == "heatsink":
-        return f"a {_n(c.get('rth_sink'))} K/W heatsink in {air}"
+        return f"a {_n(c.get('rth_sink'))} K/W heatsink in {air}{under}"
     if kind == "none":
         return f"no heatsink, each part in {air}" + (
             f", {_n(c['rth_ja'])} K/W junction to air" if c.get("rth_ja") else ""
         )
     if kind == "board":
         return f"no heatsink, parts on a {_n(c.get('board_area'))} cm² board in {air}"
-    return f"a heatsink held at {_n(c.get('t_sink', 60))} °C"
+    return f"a heatsink held at {_n(c.get('t_sink', 60))} °C{under}"
 
 
 def _said(text: str) -> str:
@@ -562,6 +584,8 @@ def markdown(result: dict) -> str:
                 {
                     "ok": f"{alone['name']} suits this motor and these conditions.",
                     "caution": f"{alone['name']} can do this, with cautions to read below.",
+                    "undecided": f"{alone['name']} is not decided by this data: what the datasheet leaves out "
+                    "could change the answer. The check below says what would settle it.",
                     "fail": f"{alone['name']} does not pass at this point: see the checks below.",
                 }[alone["level"]]
             )
@@ -594,7 +618,7 @@ def markdown(result: dict) -> str:
             raised = [k for k in x["checks"] if k["level"] != "ok"]
             passed = [k for k in x["checks"] if k["level"] == "ok"]
             for k in raised:
-                add(f"- **{'Fails' if k['level'] == 'fail' else 'Caution'}, {k['topic']}.** {_said(k['message'])}")
+                add(f"- {TAG[k['level']].rstrip('*')}, {k['topic']}.** {_said(k['message'])}")
             for k in passed:
                 add(f"- Passes, {k['topic']}. {_said(k['message'])}")
             gate = x.get("gate") or {}
@@ -644,7 +668,7 @@ def markdown(result: dict) -> str:
             for line in (motion.get("start") or {}).get("lines", []):
                 add(f"- Starting: {_said(line)}")
             for k in motion["checks"]:
-                tag = "Passes" if k["level"] == "ok" else "**Fails**" if k["level"] == "fail" else "**Caution**"
+                tag = TAG[k["level"]]
                 add(f"- {tag}, {k['topic']}. {_said(k['message'])}")
             add("")
 
@@ -714,7 +738,7 @@ def markdown(result: dict) -> str:
             add("")
             add("| Speed, rpm | Torque it can hold, N·m | What stops it |")
             add("|---|---|---|")
-            for rpm, row in zip(drive["rpm"], drive["edge"]):
+            for rpm, row in zip(drive["rpm"], drive["edge"], strict=True):
                 add(f"| {_n(rpm)} | {_n(row['torque'])} | {row['why']} |")
             add("")
 

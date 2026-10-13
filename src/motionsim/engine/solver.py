@@ -112,25 +112,30 @@ def _mutual(device: Device, variant: str) -> float:
         return package.rth_mutual
     if package.topology.positions == 1:
         return 0.0
-    coupling = assumed.module_coupling(package.construction, device.ratings.i_nominal, variant, package.interface)
-    # The computed coupling is measured from the heatsink, so it holds the interface layer
-    # that every chip's heat crosses. That shared part is carried by the case-to-sink
-    # resistance, given or computed, which applies to the whole package's loss.
-    return max(coupling - case_sink(device, variant), 0.0)
+    # Over the package's own face. The layer between that face and the heatsink, which
+    # every chip's heat crosses, is the case-to-sink resistance and is kept apart: it
+    # belongs to how the package is mounted, and changing it leaves this where it is.
+    return assumed.module_coupling(package.construction, device.ratings.i_nominal, variant)
 
 
-def case_sink(device: Device, variant: str) -> float:
-    """Case-to-heatsink resistance: the user's, or computed for a discrete package's outline."""
+def case_sink(device: Device, variant: str, op: OperatingPoint | None = None) -> float:
+    """Case-to-heatsink resistance of one package: the figure given for this build, else
+    the device's own, else computed for the layer under its package."""
     package = device.package
-    if package.rth_case_sink is not None:
+    if op is not None and op.rth_case_sink is not None:
+        return op.rth_case_sink
+    layer = (op.interface if op is not None else None) or package.interface
+    # A device's own figure is for the layer its datasheet had in mind. Named another for
+    # this build, the layer is computed.
+    if package.rth_case_sink is not None and layer == package.interface:
         return package.rth_case_sink
     if package.outline is not None:
-        return assumed.interface_resistance(package.outline, device.ratings.i_nominal, variant, package.interface)
+        return assumed.interface_resistance(package.outline, device.ratings.i_nominal, variant, layer)
     if package.topology.positions > 1:
         # A module's datasheet gives junction to case. The layer between case and heatsink
         # is still there, and a chip's own heat crosses it like its neighbours' does.
-        return assumed.module_interface(package.construction, device.ratings.i_nominal, variant, package.interface)
-    return 0.0
+        return assumed.module_interface(package.construction, device.ratings.i_nominal, variant, layer)
+    return package.rth_case_sink or 0.0
 
 
 def _neighbour_rise(device: Device, own: float, package: float, variant: str) -> float:
@@ -164,7 +169,9 @@ def _peak(
     return t_case + float(periodic_rise(network, power, period).max()), basis
 
 
-def _assumptions(device: Device, peak_basis: PeakBasis, in_air: bool = False) -> list[str]:
+def _assumptions(
+    device: Device, peak_basis: PeakBasis, in_air: bool = False, op: OperatingPoint | None = None
+) -> list[str]:
     """Thermal values that were computed, not given. With no heatsink there is no layer
     between case and heatsink to assume: the path to the air is the user's figure."""
     out = []
@@ -180,16 +187,18 @@ def _assumptions(device: Device, peak_basis: PeakBasis, in_air: bool = False) ->
             f"heating between chips computed for {kind}: {typical:.2f} K/W "
             f"({low:.2f} to {high:.2f}) per watt in each other chip"
         )
-    if not in_air and package.rth_case_sink is None and package.outline is None and package.topology.positions > 1:
-        low, typical, high = (case_sink(device, v) for v in assumed.VARIANTS)
+    low, typical, high = (case_sink(device, v, op) for v in assumed.VARIANTS)
+    layer = (op.interface if op is not None else None) or package.interface
+    computed = not in_air and high > low  # a figure that was given is the same whichever is asked
+    if computed and package.outline is None and package.topology.positions > 1:
         out.append(
-            f"case-to-heatsink resistance computed for the interface layer under a generic module on "
-            f"{package.interface}: {typical:.3f} K/W ({low:.3f} to {high:.3f})"
+            f"case-to-heatsink resistance computed for the layer under a generic module on "
+            f"{LAYER[layer]}: {typical:.2f} K/W ({low:.2f} to {high:.2f}); it depends on how the module "
+            "is mounted, so give your own where you know it"
         )
-    if not in_air and package.rth_case_sink is None and package.outline is not None:
-        low, typical, high = (case_sink(device, v) for v in assumed.VARIANTS)
+    if computed and package.outline is not None:
         out.append(
-            f"case-to-heatsink resistance computed for a {package.outline} on {package.interface}: "
+            f"case-to-heatsink resistance computed for a {package.outline} on {LAYER[layer]}: "
             f"{typical:.2f} K/W ({low:.2f} to {high:.2f})"
         )
     if peak_basis is PeakBasis.assumed:
@@ -201,6 +210,7 @@ def _assumptions(device: Device, peak_basis: PeakBasis, in_air: bool = False) ->
     return out
 
 
+LAYER = {"grease": "grease", "pad": "a pad"}
 MINOR_SHARE = 0.05  # a share of the stage's loss below which nothing changes a verdict
 DRIFT = 0.005  # per K: the most a loss term measured at one temperature moves away from it
 
@@ -208,15 +218,18 @@ DRIFT = 0.005  # per K: the most a loss term measured at one temperature moves a
 class _Notes(list):
     """Notes on the data behind a result. Those that say the operating point is outside the
     data of a loss term are also kept in outside, with the name of that term and how much of
-    the term is in doubt (1 where it cannot be said)."""
+    the term is in doubt (1 where it cannot be said). Where the most the term could be off
+    by can be said, off keeps it: what a verdict may rest on is judged by that."""
 
     def __init__(self) -> None:
         super().__init__()
         self.outside: list[tuple[str, str, float]] = []
+        self.off: dict[str, float] = {}
 
-    def leaves(self, term: str, text: str, doubt: float = 1.0) -> None:
+    def leaves(self, term: str, text: str, doubt: float = 1.0, off: float | None = None) -> None:
         self.append(text)
         self.outside.append((term, text, min(doubt, 1.0)))
+        self.off[term] = max(self.off.get(term, 0.0), min(doubt if off is None else off, 1.0))
 
 
 def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: float, tj_diode: float) -> _Notes:
@@ -262,10 +275,30 @@ def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: 
             )
         if table.basis is Basis.point:
             notes.append(f"{name}: built from table points up to {written(i_max, 3)} A; {table.assumption}")
-            if i_pk > i_max:
+            if i_pk > i_max and "conduction" in name:
+                # Above its last point a voltage lies between staying where the point is
+                # and rising in proportion to the current. The line drawn runs midway, so
+                # that is how far off it can be, either way.
+                off = (i_pk - i_max) / (i_pk + i_max)
+                if lookup.rows(curves) > 1:
+                    # Drawn on from the last two points, the line may lie at either edge.
+                    off = min(2 * off, 1.0)
+                notes.leaves(
+                    name,
+                    f"{name}: peak current {written(i_pk, 3)} A is above the last table point "
+                    f"({written(i_max, 3)} A); the voltage there is assumed and could be {off:.0%} off either way",
+                    off=off,
+                )
+            elif i_pk > i_max:
                 notes.leaves(name, f"{name}: peak current {written(i_pk, 3)} A is above the last table point")
         elif i_pk > i_max:
-            notes.leaves(name, f"{name}: peak current {written(i_pk, 3)} A is above the data ({written(i_max, 3)} A)")
+            # A curve drawn on in a straight line from its last two points: the same two
+            # ways it could go bound it, and the line may lie at either edge of them.
+            notes.leaves(
+                name,
+                f"{name}: peak current {written(i_pk, 3)} A is above the data ({written(i_max, 3)} A)",
+                off=min(2 * (i_pk - i_max) / (i_pk + i_max), 1.0),
+            )
         t_min, t_max = lookup.temperature_range(curves)
         if len(curves) == 1:
             if abs(tj - t_min) > 1.0:
@@ -275,7 +308,14 @@ def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: 
                     DRIFT * abs(tj - t_min),
                 )
         elif not t_min <= tj <= t_max:
-            notes.leaves(name, f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)")
+            # Drawn on from the curves it has: off by no more than a table with one
+            # temperature would be over the same distance.
+            beyond = max(t_min - tj, tj - t_max)
+            notes.leaves(
+                name,
+                f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)",
+                off=DRIFT * beyond,
+            )
         if v_ref is not None and abs(op.v_dc - v_ref) > 0.01 * v_ref:
             followed = table is not None and table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]
             if followed:
@@ -291,6 +331,7 @@ def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: 
                     name,
                     f"{name}: scaled linearly from {v_ref:.0f} V test voltage to {op.v_dc:.0f} V; above "
                     f"the test voltage real devices rise faster, by up to {more:.0%} more here",
+                    off=more,
                 )
             else:
                 notes.append(f"{name}: scaled linearly from {v_ref:.0f} V test voltage to {op.v_dc:.0f} V")
@@ -322,6 +363,30 @@ def _shares(roles: list[RoleResult]) -> dict[str, float]:
     if total <= 0:
         return dict.fromkeys(terms, 0.0)
     return {name: sum(r.count * pick(r) for r in roles) / total for name, pick in terms.items()}
+
+
+def _doubt(marks: _Notes, roles: list[RoleResult]) -> float:
+    """The share of a loss that rests on data the datasheet does not hold: of the stage's, or
+    of one chip's where that is larger. A junction rises mostly with its own chip's loss, so
+    a term in doubt in the hot chip counts for its share of that chip, not of the stage."""
+    share = _shares(roles)
+    off = marks.off.get
+    worst = sum(share.get(term, 1.0) * far for term, far in marks.off.items())
+    for r in roles:
+        sw, d = r.switch, r.diode
+        if sw.total > 0:
+            in_doubt = (
+                sw.conduction * off("switch conduction", 0.0)
+                + sw.turn_on * off("turn-on energy", 0.0)
+                + sw.turn_off * off("turn-off energy", 0.0)
+                + sw.dead_time * off("reverse conduction", 0.0)
+                + sw.recovery * off("recovery energy", 0.0)
+            )
+            worst = max(worst, in_doubt / sw.total)
+        if d.total > 0:
+            in_doubt = d.conduction * off("diode conduction", 0.0) + d.recovery * off("recovery energy", 0.0)
+            worst = max(worst, in_doubt / d.total)
+    return min(worst, 1.0)
 
 
 def _outside(marks: _Notes, roles: list[RoleResult]) -> list[str]:
@@ -402,11 +467,12 @@ def _rating_warnings(device: Device, op: OperatingPoint, i_pk: float) -> list[st
     return warnings
 
 
-def _model_limits(device: Device, peak_basis: PeakBasis) -> list[str]:
+def _model_limits(device: Device, peak_basis: PeakBasis, op: OperatingPoint | None = None) -> list[str]:
     """Physics this result leaves out."""
     limits = ["losses use each chip's average temperature over the output period"]
     package = device.package
-    if package.rth_case_sink is None and package.outline is None and package.topology.positions == 1:
+    given = package.rth_case_sink is not None or (op is not None and op.rth_case_sink is not None)
+    if not given and package.outline is None and package.topology.positions == 1:
         limits.append(
             "case-to-heatsink resistance is not given and no package outline is set, so the "
             "sink temperature is used as the case temperature"
@@ -449,7 +515,7 @@ def _package_losses(roles: list[Role], each: list[float], together: int) -> list
     """
     named: dict[str, float] = {}
     plain = 0.0
-    for role, loss in zip(roles, each):
+    for role, loss in zip(roles, each, strict=True):
         if role.leg is None:
             plain += role.count * loss
         else:
@@ -461,6 +527,34 @@ def _package_losses(roles: list[Role], each: list[float], together: int) -> list
         own = next(k for k, (name, _) in enumerate(legs) if name == role.leg)
         others = sorted((loss for k, (_, loss) in enumerate(legs) if k != own), reverse=True)
         out.append(legs[own][1] + sum(others[: together - 1]))
+    return out
+
+
+def package_waves(device: Device, roles: list[Role], result: Result, op: OperatingPoint) -> list[dict]:
+    """For each role's switch and diode: against position in the period, the rise over the
+    heatsink that the rest of its package would settle it at, K. It is the loss of the
+    whole package through the layer under it, and of the other chips through the package."""
+    waves = [r.p_switch + r.p_diode for r in result.roles]
+    if any(role.leg is None for role in roles):
+        raise ValueError("the legs of this stage are not told apart, so its packages cannot be followed through time")
+    if device.package.topology.positions == 1:
+        packages = waves
+    else:
+        together = _legs_together(sum(r.count for r in roles), device.package.topology.positions)
+        legs: dict[str | None, np.ndarray] = {}
+        for role, wave in zip(roles, waves, strict=True):
+            legs[role.leg] = legs.get(role.leg, 0.0) + role.count * wave
+        packages = []
+        for role in roles:
+            others = sorted((w for leg, w in legs.items() if leg != role.leg), key=lambda w: -float(w.mean()))
+            packages.append(legs[role.leg] + sum(others[: together - 1]))
+    # With no heatsink the way from the case to the air is slow, and stays at its mean.
+    under = 0.0 if op.rth_free is not None else case_sink(device, "typical", op)
+    mutual = _mutual(device, "typical")
+    out = []
+    for role, package in zip(result.roles, packages, strict=True):
+        own = {"switch": role.p_switch, "diode": role.p_diode}
+        out.append({name: under * package + mutual * np.maximum(package - p, 0.0) for name, p in own.items()})
     return out
 
 
@@ -538,8 +632,8 @@ def solve_roles(
     runaway_limit = device.ratings.tj_max + 500.0
 
     def evaluate(tj_now):
-        losses = [_position_losses(device, r, op, *t) for r, t in zip(roles, tj_now)]
-        total = sum(r.count * (sw.total + d.total) for r, (sw, d, _, _) in zip(roles, losses))
+        losses = [_position_losses(device, r, op, *t) for r, t in zip(roles, tj_now, strict=True)]
+        total = sum(r.count * (sw.total + d.total) for r, (sw, d, _, _) in zip(roles, losses, strict=True))
         # Loss dissipated in the package each role sits in. A switch in a package of its own
         # that is held at one rotor position heats its case with what it loses there, and
         # the worst position is the one to design for.
@@ -553,7 +647,7 @@ def solve_roles(
 
     # Under the case: the user's own figure to the air where there is no heatsink, else the
     # layer between the case and the heatsink.
-    under = op.rth_free if op.rth_free is not None else case_sink(device, variant)
+    under = op.rth_free if op.rth_free is not None else case_sink(device, variant, op)
 
     def sink_at(total: float) -> float:
         # A heatsink in air warms with all the stage loses. The devices in parallel are
@@ -572,7 +666,7 @@ def solve_roles(
         losses, total, packages = evaluate(tj)
         sink = sink_at(total)
         new = []
-        for (sw, d, _, _), package in zip(losses, packages):
+        for (sw, d, _, _), package in zip(losses, packages, strict=True):
             t_case = case_at(sink, package, total)
             t_sw = t_case + steady_state_rise(device.switch.thermal, sw.total)
             t_sw += _neighbour_rise(device, sw.total, package, variant)
@@ -584,7 +678,7 @@ def solve_roles(
             new.append((t_sw, t_d))
         if max(max(t) for t in new) > runaway_limit:
             raise ThermalRunaway(f"junction temperature passed {runaway_limit:.0f} °C without settling")
-        step = max(abs(a - b) for n, o in zip(new, tj) for a, b in zip(n, o))
+        step = max(abs(a - b) for n, o in zip(new, tj, strict=True) for a, b in zip(n, o, strict=True))
         tj = new
         if step < tolerance:
             converged = True
@@ -594,7 +688,7 @@ def solve_roles(
     sink = sink_at(total)
     role_results = []
     bases = []
-    for role, (sw, d, p_sw, p_d), package, (t_sw, t_d) in zip(roles, losses, packages, tj):
+    for role, (sw, d, p_sw, p_d), package, (t_sw, t_d) in zip(roles, losses, packages, tj, strict=True):
         t_case = case_at(sink, package, total)
         peak_sw, basis = _peak(device, device.switch, p_sw, period, t_case, variant)
         peak_sw += _neighbour_rise(device, sw.total, package, variant)
@@ -629,7 +723,7 @@ def solve_roles(
         # Its neighbours' share, and never cooler in all than the board as a whole.
         everything, own = total * n, max(packages)
         held = sink + max(op.rth_board * max(everything - own, 0.0), op.rth_board * everything - under * own)
-    assumptions = _assumptions(device, peak_basis, in_air=op.rth_free is not None)
+    assumptions = _assumptions(device, peak_basis, in_air=op.rth_free is not None, op=op)
     tj_range = None
     # The range across the thermal assumptions takes two more solves. A search that only
     # needs the typical value asks for it to be left out.
@@ -656,6 +750,17 @@ def solve_roles(
     envelope = _envelope_notes(device, op, i_pk, worst.tj_switch, worst.tj_diode)
     outside = list(extra_outside or []) + _outside(envelope, role_results)
     notes = list(extra_outside or []) + list(extra_notes or []) + list(envelope)
+    pkg = device.package
+    if (
+        op.interface not in (None, pkg.interface)
+        and op.rth_case_sink is None
+        and pkg.outline is None
+        and pkg.topology.positions == 1
+    ):
+        notes.append(
+            f"the layer under the package was given as a {op.interface}, and this part's package outline "
+            "is not known: its case-to-heatsink figure is left as it was. Give the figure for your mounting"
+        )
     if not converged:
         notes.append(f"temperature iteration did not settle in {max_iterations} steps")
     stage_loss = total * n
@@ -701,12 +806,13 @@ def solve_roles(
         validity=_validity(device, outside),
         notes=notes,
         outside=outside,
-        limits=_model_limits(device, peak_basis),
+        limits=_model_limits(device, peak_basis, op),
         rating_warnings=_rating_warnings(device, op, i_pk),
         roles=role_results,
         assumptions=assumptions,
         tj_peak_range=tj_range,
         t_sink=sink,
+        doubt=_doubt(envelope, role_results) if outside else 0.0,
     )
 
 

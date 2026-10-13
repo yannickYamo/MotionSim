@@ -232,10 +232,11 @@ function fold(id: string, glyph: string, title: string, face: string, body: stri
 /** The cooling as the user set it, in a few words. */
 function coolingWords(): string {
   const k = state.conditions;
-  if (k.cooling === "heatsink") return `a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air`;
+  const under = String(k.rth_case_sink ?? "").trim() !== "" ? `, ${k.rth_case_sink} K/W from each case to it` : k.interface === "pad" ? ", each package on a thermal pad" : "";
+  if (k.cooling === "heatsink") return `a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air${under}`;
   if (k.cooling === "none") return `no heatsink, in ${sig(k.t_ambient)} °C air`;
   if (k.cooling === "board") return `no heatsink, on a ${k.board_area || "?"} cm² board in ${sig(k.t_ambient)} °C air`;
-  return `a ${sig(k.t_sink)} °C heatsink`;
+  return `a ${sig(k.t_sink)} °C heatsink${under}`;
 }
 
 /** A figure typed in a base unit, said the way it is spoken: 0.00833 H is "8.33 mH". Only
@@ -270,10 +271,10 @@ function select(path: string, label: string, value: string, options: [string, st
 }
 
 const verdict = (level: string) =>
-  `<span class="verdict ${level}">${icon(level === "ok" ? "circle-check" : level === "fail" ? "circle-x" : "alert-triangle")}${level === "ok" ? "Passes" : level === "fail" ? "Ruled out" : "Cautions"}</span>`;
+  `<span class="verdict ${level}">${icon(level === "ok" ? "circle-check" : level === "fail" ? "circle-x" : level === "undecided" ? "help-circle" : "alert-triangle")}${level === "ok" ? "Passes" : level === "fail" ? "Ruled out" : level === "undecided" ? "Undecided on this data" : "Cautions"}</span>`;
 
 const checkList = (checks: Check[]) =>
-  `<ul class="checks">${checks.map((c) => `<li class="${c.level}">${icon(c.level === "ok" ? "check" : c.level === "fail" ? "x" : "alert-triangle")}<span><b>${escape(sentence(c.topic))}.</b> ${escape(sentence(c.message))}</span></li>`).join("")}</ul>`;
+  `<ul class="checks">${checks.map((c) => `<li class="${c.level}">${icon(c.level === "ok" ? "check" : c.level === "fail" ? "x" : c.level === "undecided" ? "help-circle" : "alert-triangle")}<span><b>${escape(sentence(c.topic))}.</b> ${escape(sentence(c.message))}</span></li>`).join("")}</ul>`;
 
 function refusal(r: Refused): string {
   return `<div class="refusal" role="alert">${icon("ban")}<div><p><b>This cannot work.</b> ${escape(sentence(r.reason))}.</p>${r.fix ? `<p class="fix">${escape(sentence(r.fix))}.</p>` : ""}</div></div>`;
@@ -434,7 +435,7 @@ function motorPanel(): string {
   const unusual = (k: string) => fits?.[k]?.fit === "unusual";
   const option = ([k, x]: (typeof kinds)[number]) => {
     const fit = fits?.[k];
-    const tag = fit?.fit === "recommended" ? '<span class="tag recommended">The usual choice for your device</span>' : "";
+    const tag = fit?.fit === "recommended" ? '<span class="tag recommended">Starting point for your device</span>' : "";
     const why = fit && fit.fit !== "suits" ? `<span class="kind-why">${escape(sentence(fit.why))}.</span>` : "";
     return `<label class="kind${k === state.kind ? " is-on" : ""}${fit?.fit === "recommended" ? " is-rec" : ""}"><input type="radio" name="kind" value="${k}" data-kind ${k === state.kind ? "checked" : ""}/><span class="kind-name">${escape(x.label)}${tag}</span><span class="kind-about">${escape(x.about)}</span>${why}</label>`;
   };
@@ -537,7 +538,14 @@ ${c.cooling === "held" ? field("conditions.t_sink", "Heatsink temperature", c.t_
     : field("conditions.rth_ja", "Junction to air, one package", c.rth_ja, "K/W", "RthJA on the datasheet, with the copper area its footnote gives.") + field("conditions.t_ambient", "Air temperature", c.t_ambient, "°C", "Around the board, inside the enclosure if there is one.")
       + field("conditions.board_area", "Board area", c.board_area, "cm²", "Of the board the power stage is on. Everything the stage loses warms it, and it warms every part.")
       + field("conditions.copper", "Copper for each part", c.copper, "cm²", "The pad each part is soldered to. Empty: what the datasheet's figure was taken on.")
-      + field("conditions.copper_ref", "Copper in the datasheet's figure", c.copper_ref, "cm²", "Empty: 6.45, one square inch, the usual footnote.")}</div>
+      + field("conditions.copper_ref", "Copper in the datasheet's figure", c.copper_ref, "cm²", "Empty: 6.45, one square inch, the usual footnote.")}
+</div>
+${c.cooling === "held" || c.cooling === "heatsink"
+    ? fold("mounting", "adjustments", "How the packages sit on the heatsink",
+        String(c.rth_case_sink ?? "").trim() !== "" ? `${c.rth_case_sink} K/W from each case to it` : c.interface === "pad" ? "on a thermal pad" : "on thermal grease",
+        `<div class="fields">${select("conditions.interface", "Under each package", c.interface, [["", "Thermal grease"], ["pad", "A thermal pad"]], "What lies between a package and the heatsink. A pad is thicker than grease, so the package runs warmer on it.") + field("conditions.rth_case_sink", "Case to heatsink", c.rth_case_sink, "K/W", "Of one package. Empty: the device's own figure where its datasheet gives one for this layer, else worked out. A figure given here stands, whatever the layer.")}</div>`,
+        ["interface", "rth_case_sink"])
+    : ""}
 ${fold("more-settings", "adjustments", "Supply kind and motor temperature", supplyFace(),
     `<div class="fields">${select("supply", "Supply", state.supply, [["one-way", "Power supply"], ["battery", "Battery"]], "A battery takes braking energy back. A power supply does not.")}${field("conditions.t_motor", "Motor temperature", c.t_motor, "°C", "Empty: the motor's figures as given, at 25 °C. A warm motor (80 to 120) needs more current for the same torque.")}</div>`,
     ["t_motor"])}
@@ -618,7 +626,7 @@ async function printReport(): Promise<void> {
     : "";
   const page = `<article class="report"><header><h1>${escape(c.name)}: power-stage estimate</h1><p>${new Date().toISOString().slice(0, 10)} · MotionSim, an exploratory tool. Results are estimates from datasheet values, stated assumptions and simplified models. Verify by measurement before building anything.</p></header>
 <h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", String(k.parallel || 1)], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`.trim()).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Cooling", sentence(coolingWords())], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
-<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["Shaft over DC power", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
+<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", undecided: "Undecided on this data", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["Shaft over DC power", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
 <h3>Checks</h3>${list(c.checks.map((x) => `${x.topic}: ${x.message}`))}
 <h3>What it needs around it</h3>${list(c.needs)}
 ${compared}${motion}
@@ -670,7 +678,8 @@ function lifeBlock(c: Cycle): string {
   const body = l.repeats === null
     ? `<li>The junction temperature swings by less than 1 °C through this motion: thermal cycling wears nothing out here.</li>`
     : `<li>About <b>${big(l.repeats)}</b> repeats of this motion${l.hours !== null ? `, which back to back is about ${big(l.hours)} hours` : ""}.</li><li>${l.chip ? `The chip that wears out first is the ${escape(l.chip)}. ` : ""}${percent(l.swing_share, 0)} of its wear comes from ${l.within_turn ? `the swing of ${sig(l.swing, 2)} °C it goes through on every turn of the motor` : `one swing of ${sig(l.swing, 2)} °C`}, about ${Math.round(l.swing_mean)} °C. A smaller swing lasts far longer: halving it gives about thirty times the life.${l.within_turn ? " Turning faster, or a larger chip, makes that swing smaller." : ""}</li>`;
-  return `<h4>Life under thermal cycling</h4><ul class="plain small">${body}<li>A generic model for modules with aluminium bond wires (LESIT). A real part may last several times longer or shorter; use the maker's power-cycling curve where there is one.</li></ul>`;
+  // Shown, since it is what the swings on the chart above cost; named for what it is, a generic model.
+  return `<h4>Life under thermal cycling <span class="quiet">a rough indicator</span></h4><ul class="plain small">${body}<li>A generic model for modules with aluminium bond wires (LESIT), applied to discrete parts too. A real part may last several times longer or shorter; use the maker's power-cycling curve where there is one.</li></ul>`;
 }
 
 /** How the drive gets this motor going. What can be chosen depends on the kind of motor. */
@@ -730,7 +739,7 @@ function loadPanel(): string {
   const kinds = list.length
     ? `<fieldset class="kinds loads"><legend>Kind of load</legend><div class="family">${list.map((p, k) => `<label class="kind${p.id === state.loadKind ? " is-on" : ""}"><input type="radio" name="load-kind" value="${p.id}" data-load ${p.id === state.loadKind ? "checked" : ""}/><span class="kind-name">${escape(p.label)}${k === 0 ? '<span class="tag">usual for this motor</span>' : ""}</span><span class="kind-about">${escape(p.about)}</span></label>`).join("")}</div></fieldset>`
     : "";
-  return `<h2 tabindex="-1">What the motor moves</h2><p class="lead">Pick what the motor drives. It starts sized to your motor, so it runs as it is.</p>
+  return `<h2 tabindex="-1">What the motor moves</h2><p class="lead">Pick what the motor drives. It starts sized to your motor, so it runs as it is. These are the loads this kind of motor commonly drives; any other can be entered by its figures.</p>
 ${missionBlock()}${state.mission ? "" : kinds}
 <div id="load-note">${!state.mission && (chosen || state.loadTouched) ? loadNote(chosen?.link ?? "") : ""}</div>
 ${fold("load-figures", "adjustments", "Change the load's figures", state.loadTouched ? "yours" : "sized to your motor: put in your own",
@@ -941,6 +950,7 @@ function proposalTab(): string {
   const headline = single
     ? only.level === "ok" ? `${only.name} suits this motor and these conditions.`
       : only.level === "caution" ? `${only.name} can do this, with cautions to read below.`
+      : only.level === "undecided" ? `${only.name} is not decided by this data: what the datasheet leaves out could change the answer. The check below says what would settle it.`
       : `${only.name} does not suit this motor and these conditions.`
     : null;
   const lead = headline ? `<p>${escape(headline)}</p>` : proposal.explain.map((l) => `<p>${escape(l)}</p>`).join("");
@@ -1044,7 +1054,7 @@ function buildSpec(): string {
   const sinkRec = advised.find((x) => x.topic === "heatsink");
   const dead = advised.find((x) => x.topic === "dead time");
   const motion = cycle && !(cycle instanceof Refused) ? cycle : null;
-  const trip = [...c.checks, ...(motion?.checks ?? [])].filter((x) => x.topic === "trip").sort((a, b) => ["ok", "caution", "fail"].indexOf(b.level) - ["ok", "caution", "fail"].indexOf(a.level))[0];
+  const trip = [...c.checks, ...(motion?.checks ?? [])].filter((x) => x.topic === "trip").sort((a, b) => ["ok", "caution", "undecided", "fail"].indexOf(b.level) - ["ok", "caution", "undecided", "fail"].indexOf(a.level))[0];
   const cap: string[] = [];
   const rms = Math.max(c.link?.capacitor_rms ?? 0, motion?.summary.capacitor_rms_worst ?? 0);
   if (rms > 0) cap.push(`Ripple-current rating of at least ${sig(rms, 2)} A rms at ${sig(k.f_khz)} kHz${motion?.summary.capacitor_rms ? ` (${sig(motion.summary.capacitor_rms, 2)} A rms averaged over the motion, which is what heats it)` : ""}. The supply's own ripple comes on top.`);
@@ -1060,12 +1070,12 @@ function buildSpec(): string {
     ...(c.stall_tj !== null ? [`Held still at this torque the hottest junction reaches ${degrees(c.stall_tj)}: a stalled motor needs a current limit that holds it there, or a time limit.`] : []),
   ];
   const section = (title: string, glyph: string, head: string, lines: string[]) => `<section class="rec"><h4>${icon(glyph)}${title}<span class="rec-value">${escape(head)}</span></h4><ul class="plain small">${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></section>`;
-  return `<h3>What to build</h3><p class="quiet">The inverter this motor and load ask for, with ${escape(c.name)} as the switch.</p>
-${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It suits this design.", caution: "It can do this, with the cautions on the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
+  return `<h3>What to build</h3><p class="quiet">What this motor and load require of the power stage, with ${escape(c.name)} as the switch: requirements to start a design from, not a finished design.</p>
+${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It suits this design.", caution: "It can do this, with the cautions on the Verdict tab.", undecided: "Whether it can do this is not decided by the data: see the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
 ${section("Heatsink", "temperature", sinkRec?.value.rth_sink ? `${sig(sinkRec.value.rth_sink, 2)} K/W or lower` : "See below", [`${watts(r.loss)} to remove at the design point${motion ? `, ${watts(motion.summary.mean_loss!)} averaged over the motion` : ""}.`, ...(sinkRec ? [...sinkRec.lines.slice(0, 2), ...sinkRec.lines.filter((l) => l.startsWith("With no heatsink"))].map((l) => `${sentence(l)}.`) : [])])}
 ${section("DC-link capacitor", "bolt", rms > 0 ? `${sig(rms, 2)} A rms ripple` : "See below", cap)}
 ${section("Gate drive", "adjustments", c.gate.kind === "built in" ? "Built in" : `${state.conditions.parallel > 1 ? `${state.conditions.parallel} gates a channel` : "One gate a channel"}`, gate)}
-${section("Protection", "alert-triangle", trip ? { ok: "A trip is harmless", caution: "A trip charges the link", fail: "A trip exceeds the rating" }[trip.level] : "Overcurrent and stall", protect.length ? protect : ["Set an overcurrent trip above the peak current and below the device's limit."])}`;
+${section("Protection", "alert-triangle", trip ? { ok: "A trip is harmless", caution: "A trip charges the link", undecided: "A trip may exceed the rating", fail: "A trip exceeds the rating" }[trip.level] : "Overcurrent and stall", protect.length ? protect : ["Set an overcurrent trip above the peak current and below the device's limit."])}`;
 }
 
 /** The question turned round: with this device, this motor and this cooling, what can be
@@ -1217,12 +1227,12 @@ function compareTable(): string {
     // What a candidate carries beside its result: its verdict, its margins, its data.
     const whole = (pick: (c: Candidate) => string) => got.map((g, k) => { const c = resultOf(list[k]); return g === "refused" ? "cannot run" : g === null || !c ? "…" : pick(c); });
     // A part that does not pass is not the one with the lowest loss, whatever it would lose.
-    const losses = got.map((g, k) => (g && g !== "refused" && resultOf(list[k])?.level !== "fail" ? g.loss : Infinity));
+    const losses = got.map((g, k) => (g && g !== "refused" && !["fail", "undecided"].includes(resultOf(list[k])?.level ?? "") ? g.loss : Infinity));
     // Losses closer than the engine can tell apart are marked together, not one as the winner.
     const least = Math.min(...losses);
     const level = Number.isFinite(least) ? losses.flatMap((v, k) => (v <= least * (1 + (proposal?.level ?? 0.05)) ? [k] : [])) : [];
     const room = (m: number | null) => (m == null ? "" : ` <span class="room ${m < 0 ? "fail" : ""}">${m < 0 ? `${sig(-m, 2)} °C over the limit` : `${sig(m, 2)} °C to the limit`}</span>`);
-    const said = { ok: "Passes", caution: "Passes, with cautions", fail: "Does not pass" };
+    const said = { ok: "Passes", caution: "Passes, with cautions", undecided: "Undecided on this data", fail: "Does not pass" };
     const foot = state.compare === "devices" ? "At your design point." : state.compare === "motors" ? `Each motor at its own design point, on ${escape(focused()?.name ?? "the device under test")}.` : `At your design point, on ${escape(focused()?.name ?? "the device under test")}, with one setting changed.`;
     const marked = level.length > 1 ? `These losses are within ${percent(proposal?.level ?? 0.05, 0)} of each other, closer than the model tells apart: they are marked together.` : "The lowest loss is marked.";
     return `<table class="data wide" style="--cols:${list.length}">${head}<tbody>

@@ -32,7 +32,7 @@ def canvas(log_grid: bool = False):
 
 def stroke(draw, function, width: int = 6) -> None:
     xs = np.linspace(LEFT, RIGHT, 400)
-    draw.line(list(zip(xs, function((xs - LEFT) / (RIGHT - LEFT)))), fill=0, width=width)
+    draw.line(list(zip(xs, function((xs - LEFT) / (RIGHT - LEFT)), strict=True)), fill=0, width=width)
 
 
 def read(image) -> tuple[raster.Raster, list[np.ndarray]]:

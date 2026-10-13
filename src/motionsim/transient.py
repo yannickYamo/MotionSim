@@ -8,10 +8,13 @@ What moves in time:
 
 - each chip's junction-to-case path, through the stages of its thermal
   network, with the loss the chip has at each instant;
-- the heatsink, when its resistance to ambient and heat capacity are given.
-
-What is taken to respond at once, which is the cautious side: the heating of a
-chip by its neighbours in a module, and the package-to-heatsink interface.
+- the heatsink, when its resistance to ambient and heat capacity are given;
+- what a chip shares with the rest of its package, the heating by its
+  neighbours and the layer between the package and the heatsink: it follows the
+  package's loss as fast as the copper under the chips can. Only the copper's
+  heat capacity is counted. The body around it and the heatsink's surface under
+  the package slow a real one further, so over a burst of seconds this is the
+  warm side.
 
 Losses at each instant are those of the steady solution there, evaluated at
 the temperatures that instant would settle at. While a junction is still
@@ -96,6 +99,36 @@ class ChipState:
         self.state = self.state * decay + power * self.r * (1 - decay)
 
 
+class Lag:
+    """A rise that follows where it is headed with one time constant."""
+
+    def __init__(self, tau: float, settled: bool = False) -> None:
+        self.tau = tau
+        self.value = 0.0
+        self.settled = settled  # it begins where it is first headed, not from nothing
+
+    def advance(self, target: float, dt: float) -> None:
+        """Exact for a constant target over dt."""
+        keep = float(np.exp(-dt / self.tau)) if self.tau > 0 else 0.0
+        if self.settled:
+            self.settled, keep = False, 0.0
+        self.value = target + (self.value - target) * keep
+
+
+def shared_time(device: Device, op: OperatingPoint) -> float:
+    """Seconds in which what a chip shares with its package follows the package's loss."""
+    from motionsim.engine import assumed
+
+    package = device.package
+    return assumed.shared_time(
+        package.construction,
+        package.outline,
+        package.topology.positions,
+        device.ratings.i_nominal,
+        op.interface or package.interface,
+    )
+
+
 def _static(result: Result, role, chip: str, rth: float, t_sink: float) -> float:
     """Rise of a junction over the heatsink that is not its own junction-to-case path."""
     if chip == "switch":
@@ -157,7 +190,7 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
             return base.t_sink + base.rth_sink * stage
         # The steady solution holds the case to the heatsink through its own layer; here
         # that layer is the package's path to the air, less what the solves below add back.
-        under = max(base.rth_free - case_sink(device, "typical"), 0.0)
+        under = max(base.rth_free - case_sink(device, "typical", base), 0.0)
         board = base.rth_board or 0.0
         return base.t_sink + max(max(under * p + board * max(stage - p, 0.0), board * stage) for p in own)
 
@@ -165,7 +198,15 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
     t_sink, before, out = base.t_sink, None, None
     for _ in range(40):
         out = follow(
-            device, motor, None, None, replace(held, t_sink=t_sink), repeats=repeats, start=start, samples=samples
+            device,
+            motor,
+            None,
+            None,
+            replace(held, t_sink=t_sink),
+            repeats=repeats,
+            start=start,
+            samples=samples,
+            warm=True,
         )
         if not out[0].solved:
             return out
@@ -200,12 +241,14 @@ def follow(
     per_segment: int = 12,
     start=None,
     samples=None,
+    warm: bool = False,
 ) -> tuple[Cycle, Trace]:
     """A motion solved instant by instant, with temperatures followed through time.
 
     base.t_sink is the heatsink temperature at the start; without a heatsink
     model it stays there. The motion is run `repeats` times back to back, and
-    the returned cycle holds the last run.
+    the returned cycle holds the last run. warm says the stage has been running: what the
+    packages sit on is already where the motion's loss puts it, and so is each case.
     """
     # A mission profile brings its own speed and torque at each instant, measured or planned;
     # otherwise they come from the load and the motion.
@@ -220,6 +263,7 @@ def follow(
     if device.diode is not None:
         chips["diode"] = device.diode
     networks = {name: thermal_network(device, chip)[0] for name, chip in chips.items()}
+    tau_shared = shared_time(device, base)
     cache: dict[tuple, tuple] = {}
     ripple: dict[tuple, float] = {}  # the swing within one output period, worked out once a step
     seen = [1]  # how many places the rotor could stand that load one chip or another most
@@ -228,6 +272,7 @@ def follow(
         """The motion followed with the rotor, wherever it turns slowly, starting from the
         pick-th of the places that load a chip most."""
         states: list[dict[str, ChipState]] = []
+        shared: list[dict[str, Lag]] = []  # each chip's rise that is not its own path
         t_sink = base.t_sink
         position = None  # place in the output period, as a fraction of it
         fast_before = False
@@ -273,16 +318,18 @@ def follow(
                 hottest_now = t_sink
                 total = 0.0
                 if step.point is None:
-                    for role_states in states:
-                        for chip in role_states.values():
+                    for role_states, role_shared in zip(states, shared, strict=True):
+                        for name, chip in role_states.items():
                             chip.advance(0.0, dt)
-                        hottest_now = max(hottest_now, t_sink + max(c.rise for c in role_states.values()))
+                            role_shared[name].advance(0.0, dt)
+                            hottest_now = max(hottest_now, t_sink + role_shared[name].value + chip.rise)
                     steady.append(float("nan"))
                 else:
                     result, stage = step.point.result, step.point.stage
                     total = result.p_inverter
                     if len(states) != len(result.roles):
                         states = [{name: ChipState(net) for name, net in networks.items()} for _ in result.roles]
+                        shared = [{name: Lag(tau_shared, warm) for name in networks} for _ in result.roles]
                     waves = [{"switch": r.p_switch, "diode": r.p_diode} for r in result.roles]
                     turns = dt / stage.period if s.motor_rpm != 0 else 0.0
                     if position is None or (turns < FAST and fast_before):
@@ -292,19 +339,23 @@ def follow(
                         seen[0] = max(seen[0], len(places))
                         position = places[pick % len(places)]
                     fast_before = turns >= FAST
-                    for number, (role, role_states, wave) in enumerate(zip(result.roles, states, waves)):
+                    for number, (role, role_states, wave) in enumerate(zip(result.roles, states, waves, strict=True)):
                         for name, chip in role_states.items():
                             power = wave[name]
-                            offset = _static(result, role, name, networks[name].rth, sink_then)
+                            # Where the rest of the package's loss would settle this chip.
+                            target = _static(result, role, name, networks[name].rth, sink_then)
+                            rest = shared[number][name]
                             label = f"{role.name}, {name}"
                             own = chip_trace.setdefault(label, [])
                             if turns >= FAST:
                                 before = chip.rise
+                                rest_before = rest.value
                                 chip.advance(float(power.mean()), dt)
+                                rest.advance(target, dt)
                                 mean = role.tj_switch if name == "switch" else role.tj_diode
                                 top = role.tj_switch_peak if name == "switch" else role.tj_diode_peak
-                                reached = max(before, chip.rise) + (top - mean)
-                                own.append(t_sink + offset + chip.rise)
+                                reached = max(before, chip.rise) + max(rest_before, rest.value) + (top - mean)
+                                own.append(t_sink + rest.value + chip.rise)
                                 # The chip also heats and cools once a turn, too fast for the
                                 # trace: those swings are counted here, as many as there are turns.
                                 at_step = (key, number, name)
@@ -314,13 +365,14 @@ def follow(
                                     chip_swings.setdefault(label, []).append((ripple[at_step], own[-1], turns))
                             else:
                                 n = int(np.clip(np.ceil(turns * STEPS_PER_PERIOD), 8, MAX_SUBSTEPS))
-                                reached = chip.rise
+                                reached = rest.value + chip.rise
                                 for j in range(n):
                                     at = (position + turns * (j + 0.5) / n) % 1.0
                                     chip.advance(float(power[int(at * power.size) % power.size]), dt / n)
-                                    reached = max(reached, chip.rise)
-                                    own.append(t_sink + offset + chip.rise)
-                            hottest_now = max(hottest_now, t_sink + offset + reached)
+                                    rest.advance(target, dt / n)
+                                    reached = max(reached, rest.value + chip.rise)
+                                    own.append(t_sink + rest.value + chip.rise)
+                            hottest_now = max(hottest_now, t_sink + reached)
                     position = (position + turns) % 1.0
                     steady.append(hottest(result) + (t_sink - sink_then))
                 if heatsink is not None:

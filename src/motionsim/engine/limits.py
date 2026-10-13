@@ -60,3 +60,26 @@ def max_current(
         else:
             low = mid
     return low, solve(device, replace(op, i_rms=low))
+
+
+def supported_current(device: Device, op: OperatingPoint, i_max: float, tolerance: float = 1e-3) -> float | None:
+    """The largest current (A rms) up to i_max that the datasheet's data covers, or None
+    where it covers all of it. Above this the losses are drawn past the data's last point,
+    and a largest current found there is an estimate. Only the current is judged here: a
+    supply above the test voltage, or a table used away from its temperature, is the same
+    at every current and is said on its own."""
+
+    def covered(i_rms: float) -> bool:
+        try:
+            outside = solve(device, replace(op, i_rms=i_rms), spread=False).outside
+        except ThermalRunaway:
+            return False
+        return not any("peak current" in text and " above " in text for text in outside)
+
+    if i_max <= 0 or covered(i_max):
+        return None
+    low, high = 0.0, i_max
+    while high - low > tolerance * i_max:
+        mid = 0.5 * (low + high)
+        low, high = (mid, high) if covered(mid) else (low, mid)
+    return low

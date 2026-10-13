@@ -368,7 +368,7 @@ X0, X1, TOP, BOTTOM = 100.0, 300.0, 50.0, 250.0  # plot area in page points
 
 
 def stroke(xs, ys) -> dict:
-    points = list(zip(xs, ys))
+    points = list(zip(xs, ys, strict=True))
     return {
         "linewidth": 0.96,
         "path": [("m", points[0])] + [("l", p) for p in points[1:]],

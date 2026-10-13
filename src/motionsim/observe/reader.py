@@ -198,8 +198,8 @@ def read_document(path) -> tuple[Document, list[str]]:
         images = [render_page(path, n) for n in missing]  # the renderer is not thread-safe
         with ThreadPoolExecutor(max_workers=4) as pool:
             texts = list(pool.map(transcribe, images))
-        document = document.model_copy(update={"transcribed": dict(zip(missing, texts))})
-        for n, text in zip(missing, texts):
+        document = document.model_copy(update={"transcribed": dict(zip(missing, texts, strict=True))})
+        for n, text in zip(missing, texts, strict=True):
             pages[n - 1] = text
     return document, pages
 

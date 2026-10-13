@@ -1,6 +1,7 @@
 // The page's only door to the engine. Every number on screen comes through here.
 
-export type Level = "ok" | "caution" | "fail";
+/** undecided: what the data leaves out could change the answer; neither a pass nor a fail. */
+export type Level = "ok" | "caution" | "undecided" | "fail";
 export interface Check { level: Level; topic: string; message: string }
 export interface Field { key: string; label: string; unit: string; help: string; options: string[] | null; required?: boolean }
 export interface MotorKind {

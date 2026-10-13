@@ -31,7 +31,10 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 - The usable voltage loses dead time, the shortest pulse you give, and the devices' drop at the peak current, taken at the heatsink temperature. Every kind of motor is held to it, a block-commutated or brushed one included, though such a drive can sometimes go to full duty and lose only the drop.
 - A motor's working temperature is used only if you give it. The magnet coefficient is that of neodymium.
 - The trip check assumes nothing shorts the motor or burns the energy. Short-circuit behaviour itself is not modelled: the withstand time is passed on where the datasheet gives it.
-- Through time, heating between neighbouring chips and through the package-to-heatsink interface responds at once.
+- Through time, heating between neighbouring chips and across the layer under the package follows the loss as fast as the copper under the chips can. The package body and the heatsink's surface slow a real one further, so a burst of a few seconds comes out warm, by up to the whole rise across that layer.
+- The layer between a package and its heatsink is worked out for a generic mounting unless you give it. For a moulded module the range is wide (0.07 to 0.87 K/W at 15 A), and it is the largest single unknown in such a module's temperature: measure it, or give the range its due.
+- An imported trajectory, and a load that comes and goes in a reference file, have their losses worked at each chip's mean temperature over the whole pattern. With long pauses between bursts the junction is far hotter than that while it works, and the loss reads low: about a tenth on a silicon IGBT whose junction swings 100 °C.
+- Above the last current a datasheet's table gives, an on-state voltage is drawn midway between staying where it is and rising in proportion. The result says how far off that can be, and a pass that would not survive it is reported as undecided.
 
 ## 5. Life under thermal cycling is generic
 
@@ -43,7 +46,7 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - On a phone the drawing is wider than the screen and slides sideways.
 - The report is laid out by your browser's print function.
 - The Markdown report covers the devices, the motion, what to build and what the device can drive. What is set beside them on screen (loads, motors, the values of a setting) is in the printed report only.
-- The motor marked as the usual choice for a device is a default by voltage and by how many switches the package holds. Nothing in a transistor's datasheet ranks motors.
+- The motor opened as the starting point for a device is a template, picked by voltage and by how many switches the package holds. It is not a recommendation: the application decides the kind of motor, and nothing in a transistor's datasheet ranks motors. The loads listed for a kind of motor are the common ones, not the only ones it can drive.
 - Trying a setting holds two to five values. Once a value is added, the starting ones no longer follow the design point.
 - What the page holds is kept in your browser. Open in two tabs, the one you return to takes up what the other changed.
 
@@ -52,7 +55,7 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - A typed part is a transistor only (silicon, SiC or GaN), one to a package. Its switching loss is estimated from its charges, never measured energy; its output charge is one figure carried to other voltages as a junction's charge goes; its thermal path is one resistance with no response in time. An IGBT or a module still needs its datasheet read, or a device file.
 - The figures are checked for slips, not for truth: nothing compares them with the datasheet.
 - An IGBT's dead time left open is worked out from its datasheet's turn-off times where it gives them, and is 1 µs where it does not; for an IGBT it costs voltage, not loss. A module with its own gate drivers sets its own, and none is assumed for it.
-- A heatsink is sized to stay at or below 100 °C, for what is mounted on it, unless another limit is given; the junctions would often stand more.
+- A heatsink is sized to stay at or below 100 °C unless another limit is given. That is a default design target, not a rating: what a heatsink may reach depends on the board, the capacitors, the insulation and the life wanted, and the junctions would often stand more.
 - A dead time left open is what a drive with that gate drive would be set to at the least: the turn-off time from the charges, a tenth longer for a hot part, 50 ns for the two gate-driver channels not answering together (10 ns for GaN), a margin of 1.2, and no shorter than 100 ns (20 ns for GaN). Firmware is often left at 300 to 800 ns; the advice says what 500 ns would cost, and the result uses yours when you give it. How much of the dead time the body diode really conducts for is not modelled: all of it is counted.
 - A heatsink in air is one thermal resistance carrying the whole stage's loss. With devices in parallel the loss is counted as if each lost what the hardest-worked one does, which errs warm.
 - With no heatsink and each part standing in the air, each package has one figure from junction to air and feels nothing of its neighbours. Where no figure is given, 62 K/W is used for a TO-220, 40 for a TO-247 and 43 for a TO-263 on a square inch of copper.

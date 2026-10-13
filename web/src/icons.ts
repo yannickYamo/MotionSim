@@ -1,5 +1,6 @@
 // Icons from the Tabler set (MIT), fetched through Iconify (icones.js.org). One stroke weight throughout.
 const BODY: Record<string, string> = {
+  "help-circle": "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.6\"><path d=\"M3 12a9 9 0 1 0 18 0a9 9 0 1 0-18 0m9 5v.01\"/><path d=\"M12 13.5a1.5 1.5 0 0 1 1-1.5a2.6 2.6 0 1 0-3-4\"/></g>",
   "engine": "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.6\" d=\"M3 10v6m9-11v3m-2-3h4m-9 8H3m3-3h2l2-2h3.382a1 1 0 0 1 .894.553l1.448 2.894a1 1 0 0 0 .894.553H18v-2h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2v-2h-3v2a1 1 0 0 1-1 1h-3.465a1 1 0 0 1-.832-.445L8 16H6z\"/>",
   "bolt": "<path fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.6\" d=\"M13 3v7h6l-8 11v-7H5z\"/>",
   "weight": "<g fill=\"none\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" stroke-width=\"1.6\"><path d=\"M9 6a3 3 0 1 0 6 0a3 3 0 1 0-6 0\"/><path d=\"M6.835 9h10.33a1 1 0 0 1 .984.821l1.637 9A1 1 0 0 1 18.802 20H5.198a1 1 0 0 1-.984-1.179l1.637-9A1 1 0 0 1 6.835 9\"/></g>",

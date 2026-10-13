@@ -19,6 +19,8 @@ So the engine computes each junction as
 
 The datasheet supplies Rth(j-c). The case-to-heatsink resistance and the coupling are usually not on a datasheet. A user who knows them enters them. Otherwise they are computed as described below, and the result says so and gives a range.
 
+The two belong to different things. The coupling belongs to the package: it is reckoned over the package's own face, so nothing done to the mounting moves it. The case-to-heatsink resistance belongs to the build: the same module on grease and on a pad has two values. It can therefore be given with the cooling (`--rth-case-sink`, or `--interface pad`), and a figure given there replaces the device's own.
+
 This is the ordinary thermal-resistance-matrix view of a multi-chip package, reduced to the three numbers a datasheet-driven tool can support.
 
 ## Filling the gap from first principles
@@ -43,16 +45,23 @@ The solver is checked against two exact results: a chip covering its whole plate
 
 Chip size follows from the rated current through a current density. The interface is grease or an insulating pad.
 
+The interface layer is where the constructions differ most:
+
+- Under a discrete package's tab, and under a ceramic substrate, it is about 50 µm of grease. The substrate's back copper spreads the heat over a face wider than the copper the chips sit on.
+- Under a moulded module it is about 100 µm. The body is held by a screw at each end and its face is not flat; module makers' mounting notes ask for a layer of that order. Nothing below the leadframe spreads the heat, so it crosses the layer under the copper and nowhere else.
+
 Every one of those inputs has a low, typical and high value, because real packages differ and a datasheet does not say. The three cases are run together, low being the least heating and high the most.
 
 **What comes out** (`motionsim package <template> --irated <amps>` prints it):
 
-| Template, typical case | Heat spreads | Between chips | Interface alone |
+| Template, typical case | Heat spreads | Between chips, over the package face | Case to heatsink |
 |---|---|---|---|
-| Moulded leadframe module, 15 A | 6.1 mm | 0.48 K/W (0.17 to 1.43) | 0.11 K/W |
-| Ceramic-substrate module, 15 A | 2.8 mm | 0.08 K/W | 0.11 K/W |
+| Moulded leadframe module, 15 A | 6.6 mm | 0.36 K/W (0.14 to 1.10) | 0.36 K/W (0.07 to 0.87) |
+| Ceramic-substrate module, 15 A | 2.8 mm | 0.01 K/W | 0.11 K/W (0.04 to 0.29) |
 | TO-247, 40 A, grease | 6.2 mm | 0.17 K/W | 0.19 K/W |
 | TO-220, 20 A, grease | 5.0 mm | 0.35 K/W | 0.40 K/W |
+
+For a module, "between chips" is found with the package's face held at one temperature. For a discrete package it is found from the heatsink, and is not used: a package with one switch has its own case.
 
 Two things the physics explains without being told:
 
@@ -62,7 +71,7 @@ Two things the physics explains without being told:
 ## How the engine uses it
 
 - **Multi-chip package, no coupling given:** coupling is computed for the stated construction (leadframe, substrate, or unknown, which spans both and takes the leadframe case as typical).
-- **Discrete package with its outline given, no case-to-heatsink resistance given:** it is computed for that outline and interface.
+- **No case-to-heatsink resistance given, for the build or by the device:** it is computed for the module's construction or the discrete package's outline, and for the layer named (grease unless a pad is). The range is wide for a moulded module, because how it is mounted decides it: a measured figure narrows the result more than anything else on this page.
 - **No transient thermal data on the datasheet:** the shape of the chip's thermal response is computed for the same generic package, by adding the heat capacity of the copper and the die to the plate equation and stepping it through time. That shape is applied to the datasheet's thermal resistance to get the temperature swing within an output period. The time-stepping is checked against the exact single-time-constant response of a fully covered plate.
 
 A result that uses any of these lists them and reports the hottest junction as a range across the low, typical and high cases. A value the user enters always replaces a computed one.
@@ -76,7 +85,8 @@ A motion is not a steady state. `motionsim cycle` follows temperature through it
 - Each chip's junction-to-case network, the datasheet's or the computed one, is driven by the chip's loss at each instant, with the exact response to a constant power over each step.
 - When the motor turns fast, many output periods fit in one instant of the motion: the slow state follows the mean loss, and the swing within the period, found as before, is added on top.
 - When it turns slowly or stands still, the loss waveform is followed through the output period itself. Each time the motor slows to that point it is taken to arrive at a rotor position that loads a chip most. The motion is followed from each such position, one per chip, and the one that leaves a junction hottest is kept.
-- Heating from neighbouring chips and the package-to-heatsink interface are taken to respond at once. That is the cautious side: in reality they lag.
+- What a chip shares with the rest of its package, the heating from its neighbours and the rise across the layer under the package, follows the package's loss with one time constant: that of the copper under the chips, charged through the layers beneath it (about half a second for a moulded module, a third for a TO-247 on grease). Only the copper's heat capacity is counted. The body around it and the heatsink's surface under the package slow a real one further, so over a burst of a few seconds this is the warm side.
+- An imported trajectory (`motionsim trajectory`) is treated the same way: through a burst the case and the neighbours heat with the burst's loss, not with the mean over the whole trajectory.
 - A heatsink given as a resistance to ambient and a heat capacity warms up as one thermal mass fed by the whole power stage's loss.
 
 Losses at each instant are those the steady solution finds there, at the temperature that instant would settle at. While the junction is still cooler its real loss is slightly lower.
@@ -85,9 +95,9 @@ The spread across the thermal assumptions is not recomputed in time. The range f
 
 ## How it compares with a vendor's simulator
 
-A cross-check, not a source. One vendor's public simulator was run for eight of its modules (kept locally, outside the repository). Its junction temperatures fit the same form as above, with coupling of 0.67 to 1.09 K/W for five fully moulded modules and zero for three ceramic-substrate ones. The first-principles figures are 0.48 K/W (0.17 to 1.43) and 0.08 K/W. Same order, same contrast between constructions, from independent reasoning.
+A cross-check, not a source. One vendor's public simulator was run for eight of its modules (kept locally, outside the repository). Its junction temperatures fit the same form as above, with coupling of 0.67 to 1.09 K/W for five fully moulded modules and zero for three ceramic-substrate ones. The first-principles figures are 0.36 K/W (0.14 to 1.10) and 0.01 K/W. Same order, same contrast between constructions, from independent reasoning.
 
-For the one module whose datasheet has been read (module C), with construction left unknown and the transient response assumed, the hottest junction was within −5 to +4 °C of the simulator's at six operating points. With the datasheet's own transient curve and its energy curves now read, it is within −4 to +7 °C. The simulator's value lies inside the reported range at all six either way. The temperature swing within an output period comes out about a third smaller than the simulator's (2.2 against 3.5 °C at 50 Hz, 5.6 against 6.7 °C at 5 Hz).
+For the one module whose datasheet has been read (module C), with construction left unknown and the transient response assumed, the hottest junction was within −5 to +4 °C of the simulator's at six operating points. With the datasheet's own transient curve and its energy curves now read, it is within −4 to +7 °C. The simulator works from the case temperature; with the case-to-heatsink layer taken out of our side as well, the figure is −8 to +3 °C, the low end being the one point where the diode is the hottest chip. The simulator's value lies inside the reported range at all six in every one of these. The temperature swing within an output period comes out about a third smaller than the simulator's (2.2 against 3.5 °C at 50 Hz, 5.6 against 6.7 °C at 5 Hz).
 
 ## Limits
 
@@ -96,5 +106,5 @@ For the one module whose datasheet has been read (module C), with construction l
 - Baseplate power modules, press-fit and double-sided cooled packages have no template.
 - Surface-mount packages cooled through a circuit board are represented only by the tab-to-interface model, which is wrong for them.
 - The transient response is that of the generic package, junction to heatsink, applied to a datasheet resistance defined junction to case. The two are not the same thing; the comparison above suggests the swing is somewhat underestimated.
-- Through time, neighbour heating and the interface have no delay, and the heatsink has no gradient across it.
+- Through time, neighbour heating and the interface follow the loss as fast as the copper alone allows, and the heatsink has no gradient across it. A burst of seconds on a moulded module comes out warm.
 - One vendor's simulator is the only external check.

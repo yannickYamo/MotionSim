@@ -60,7 +60,7 @@ class Curve(_Model):
             raise ValueError("current and value must have the same length")
         if len(self.current) < 2:
             raise ValueError("a curve needs at least two points")
-        if any(b <= a for a, b in zip(self.current, self.current[1:])):
+        if any(b <= a for a, b in zip(self.current, self.current[1:], strict=False)):
             raise ValueError("current must be strictly increasing")
         if self.current[0] < 0:
             raise ValueError("current must be non-negative")
@@ -71,7 +71,7 @@ def _check_curves(curves: list[Curve]) -> None:
     if not curves:
         raise ValueError("at least one curve is required")
     temps = [c.tj for c in curves]
-    if any(b <= a for a, b in zip(temps, temps[1:])):
+    if any(b <= a for a, b in zip(temps, temps[1:], strict=False)):
         raise ValueError("curves must be ordered by strictly increasing tj")
 
 
