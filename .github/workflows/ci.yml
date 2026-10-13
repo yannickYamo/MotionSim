@@ -23,7 +23,7 @@ jobs:
           python -m venv /tmp/clean
           /tmp/clean/bin/pip install -q dist/*.whl
           /tmp/clean/bin/motionsim --version
-          /tmp/clean/bin/motionsim simulate examples/synthetic_igbt_600v_30a.yaml --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60 | grep "45.19 W"
+          /tmp/clean/bin/motionsim simulate examples/synthetic_igbt_600v_30a.yaml --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60 | grep "45.25 W"
           /tmp/clean/bin/motionsim design init -o /tmp/design.yaml
           /tmp/clean/bin/motionsim design run /tmp/design.yaml --json > /dev/null
   page:

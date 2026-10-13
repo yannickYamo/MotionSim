@@ -119,3 +119,15 @@ def test_the_comparer_notices_a_figure_a_word_and_a_missing_entry() -> None:
     assert len(differences({**kept, "c": {"d": "fails"}}, kept)) == 1
     assert len(differences({**kept, "b": ["x"]}, kept)) == 1
     assert len(differences({"a": 1.0, "b": ["x", 2.5]}, kept)) == 1
+
+
+def test_the_readme_shows_what_its_own_command_prints(capsys, monkeypatch) -> None:
+    import shlex
+
+    from motionsim import cli
+
+    blocks = (ROOT / "README.md").read_text().split("```")[1::2]
+    at = next(i for i, b in enumerate(blocks) if b.strip().startswith("motionsim simulate examples/"))
+    monkeypatch.chdir(ROOT)
+    assert cli.main(shlex.split(blocks[at].strip())[1:]) == 0
+    assert capsys.readouterr().out.strip() == blocks[at + 1].strip()

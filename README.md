@@ -90,19 +90,19 @@ motionsim simulate examples/synthetic_igbt_600v_30a.yaml --vdc 300 --irms 10 --m
 
 ```
 synthetic LINEAR-600V-30A (Si IGBT)
-  switch   conduction    4.593 W
-           turn-on       0.878 W
-           turn-off      0.698 W
-  diode    conduction    1.081 W
-           recovery      0.282 W
-  power-stage loss       45.19 W
-  efficiency             98.18 %
-  Tj switch  average      79.8 °C   peak   84.2 °C
-  Tj diode   average      75.6 °C   peak   77.8 °C
+  switch   conduction    4.595 W
+           turn-on       0.881 W
+           turn-off      0.701 W
+  diode    conduction    1.080 W
+           recovery      0.285 W
+  power-stage loss       45.25 W
+  efficiency             98.17 %
+  Tj switch  average      80.9 °C   peak   85.3 °C
+  Tj diode   average      76.9 °C   peak   79.0 °C
   T case                  64.5 °C
-  margin to Tj max        40.8 °C
-  hottest junction        76.8 to 109.2 °C across the thermal assumptions
-    - heating between chips computed for a generic module, construction not given: 0.19 K/W (0.00 to 0.79) per watt in each other chip
+  margin to Tj max        45.4 °C
+  hottest junction        76.9 to 104.6 °C across the thermal assumptions
+    - heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip
   data support        interpolated
   not modelled
     - losses use each chip's average temperature over the output period

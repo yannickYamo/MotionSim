@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "motionsim"
-version = "0.3.2"
+version = "0.3.3"
 description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
 readme = "README.md"
 license = "Apache-2.0"
