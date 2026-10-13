@@ -187,7 +187,7 @@ def test_the_same_inputs_carry_the_same_marks_and_a_changed_one_does_not(tmp_pat
 
 
 def test_a_design_with_a_slip_in_it_is_refused_in_words_never_a_fault(tmp_path, capsys) -> None:
-    """Each of these used to pass over the slip, or end in a traceback."""
+    """A slip is said in words, at its figure: none is passed over, and none ends in a traceback."""
     good = yaml.safe_load(started(tmp_path).read_text())
 
     def status(change, name="d.yaml") -> tuple[int, dict]:

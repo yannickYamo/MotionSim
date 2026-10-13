@@ -54,3 +54,9 @@ jobs:
         working-directory: web
         env:
           PYTHON: python
+      # The page as it is hosted, walked in a browser: a first visit, a made-up part, every
+      # step to a verdict, a setting changed, a reload, at a desk's width and a phone's.
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npm run journey
+        working-directory: web

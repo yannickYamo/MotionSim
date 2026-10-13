@@ -490,7 +490,7 @@ def test_a_buried_magnet_motor_reaches_further_into_field_weakening_than_full_op
     motor = pmsm.Motor(pole_pairs=4, flux_linkage=0.05, ld=0.001, lq=0.004, rs=0.02)
     v_max, torque = 100.0, 4.0
     w_at = lambda rpm: 4 * 2 * math.pi * rpm / 60
-    # The voltage at full opposition, the old stopping point, and whether a point beyond is found.
+    # The voltage at full opposition of the magnet, and whether a point beyond it is found.
     reached = None
     for rpm in range(2000, 40000, 500):
         i_q = pmsm._iq_for(motor, torque, -0.999 * motor.flux_linkage / motor.ld)

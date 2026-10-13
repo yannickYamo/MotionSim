@@ -1,15 +1,19 @@
 # Validation
 
-Modules A, B and C in this document are three 600 V, 15 A IGBT modules with built-in drivers from one vendor. They are not named.
-
-Four levels, strongest claim last. Vendor tools and charts are cross-checks, not ground truth.
+Every check the tool is held to, by how strong a claim it supports, strongest last. Vendor tools and charts are cross-checks, not ground truth.
 
 - **A, mathematical**: closed-form solutions.
-- **B, numerical**: independent numerical integration, written apart from the engine. In the tests, and in a recomputation of the solver described at the end.
-- **C, external**: vendor charts, vendor tools, other simulators.
-- **D, physical**: measured inverter or double-pulse data. One published inverter loss measurement so far; no measured junction temperature.
+- **B, numerical**: independent numerical integration, written apart from the engine.
+- **C, external**: a datasheet against itself, vendor charts, a vendor's public simulator.
+- **D, physical**: measured inverter or double-pulse data. One published inverter loss measurement so far; no published measurement of junction temperature.
 
-## Level A (passing, in `tests/`)
+Modules A, B and C in this document are three 600 V, 15 A IGBT modules with built-in drivers from one vendor. They are not named.
+
+## Level A: closed forms
+
+All of these are in `tests/` and pass.
+
+### Loss and temperature
 
 For a device with on-state voltage `V0 + r·I` and switching energy `k·I`, under sinusoidal PWM with peak current `Ipk`, modulation index `m` and power factor `cos φ`:
 
@@ -23,11 +27,199 @@ The engine matches all three within 1% over 15 combinations of `m` (0.1, 0.6, 1.
 
 Also checked: steady-state temperatures, the self-consistent temperature for an on-state voltage that rises with temperature, detection of thermal runaway, the Foster step response, and the maximum-current solver.
 
-## Level B (passing, in `tests/`)
+### Modulation
 
-The periodic thermal response is compared with a separate step-by-step integration of a three-stage network driven by half-sine power pulses. Peak temperature agrees within 0.5%.
+- Every PWM scheme delivers the same fundamental voltage.
+- Continuous schemes give the same switching loss as sine.
+- The 60° discontinuous scheme halves switching loss at unity power factor.
 
-## Level C: module A against its own datasheet chart
+### Field-effect transistors
+
+- A resistive channel conducting in both directions loses `R·Irms²/2` per switch, independent of modulation index and power factor.
+- Dead-time loss equals `2·t_dead·fsw·Vreverse·Ipk/π`, and channel conduction falls by the matching amount.
+- Charge-based switching loss matches its closed form.
+
+### The motor model
+
+- Surface-magnet machine: torque current, voltages and frequency match the dq equations.
+- Electrical power into the motor equals shaft power plus copper loss, for surface-magnet and salient machines.
+- Salient machine: the chosen current is smaller than at neighbouring d-axis currents giving the same torque.
+- Field weakening: voltage sits at the limit and torque is unchanged.
+
+### Motor types
+
+- Brushed DC on an H-bridge: conduction and switching loss of the chopping switch, the freewheeling position and the steering switch each match their formulas; a MOSFET bridge loses exactly `2·I²·R`.
+- Brushless DC with block commutation: high-side and low-side positions match their formulas over the 120° windows.
+- Induction motor: electrical input equals shaft power plus stator and rotor copper loss; slip matches its formula; at the voltage limit the flux falls and the voltage sits on the limit.
+- Stepper: equals eight sinusoidal positions of the three-phase engine at the same leg modulation.
+
+### Loads and motions
+
+- Each load term (inertia, friction, fan law, gravity arm, vehicle on a slope) matches its formula.
+- A gearbox multiplies speed and divides torque, and its loss is taken from whichever side is driving.
+- A steady motion gives the single-point result.
+- Spinning an inertia up and back down returns net zero shaft energy.
+- A robot arm raised a quarter turn ends horizontal, holding its full gravity torque.
+
+### The package model
+
+- A chip covering its whole plate gives pure one-dimensional conduction through the insulation.
+- Far from a small source on a large plate, the rise matches the Bessel-function solution within 5%.
+- The thermal matrix is symmetric and falls with distance.
+
+### Curves, transistors, time, braking
+
+- A curve drawn as a staircase of 0.07 pt steps with repeated points, cut into pieces, comes back as one curve and reads the right value.
+- Two curves per label are read as their upper envelope; a legend stroke in the plot is ignored.
+- Transistor with tabulated energy: turn-on loss equals switching frequency times energy times peak current over pi. Output charge estimated from capacitance equals twice capacitance times voltage. Plateau from transconductance equals threshold plus rated current over gain.
+- Through time, a short pulse on a constant-loss switch heats it by power times the transient impedance at that time, to six figures. Cooling after a pulse follows each stage's exponential.
+- A long steady motion settles at the steady solution within 0.2 °C.
+- A heatsink warms as ambient plus loss times resistance times (1 − exp(−t/RC)).
+- Brushed DC braking: each position's conduction and switching loss against its formula; backwards running is the mirror image; braking near standstill draws from the supply. Brushless DC braking likewise. Electrical power equals shaft power plus winding loss in every quadrant.
+- Stopping a flywheel returns the integral of back-EMF power less winding loss, and the capacitor voltage satisfies half C times the difference of the squared voltages.
+
+### Pictures, charge, recommendations
+
+- Pictures drawn in the tests: a plot area and its eleven grid lines found to 0.3 pt; one curve followed through the grid to within its stroke; two crossing curves each ending where they should; a branch that inherits the shared rise; a label with a leader line ignored; a dense log grid that neither breaks nor multiplies the curve.
+- Plateau of a piecewise gate-charge curve found to 0.05 V and 1.5 nC.
+- Output charge of a capacitance falling as one over root voltage equals twice capacitance times voltage, within 2%.
+- Dead time from gate charge: the three intervals of turn-off written out by hand, a tenth longer, plus the mismatch between driver channels, times 1.2. For an IGBT, twice the tabulated delay plus fall time.
+- Gate resistors land on the slew-rate, overshoot or driver-current limit, whichever is largest, rounded up.
+- Heatsink resistance equals the temperature room over the loss for a device whose loss does not depend on temperature.
+
+### Trajectories
+
+- A three-phase sine drive written out as a trajectory file reproduces the engine's direct result: loss and output power within 0.5%, peak junction temperatures within 0.3 °C, all six positions alike.
+- Current out of a leg loads the high-side switch and low-side reverse path; current in loads the other two.
+- A constant load from a cold start heats the switch by power times the transient impedance at the elapsed time, within 1%.
+
+### Symmetry, balance and the page's interface
+
+- Clamping every leg to the positive rail and clamping to the negative rail give the same total loss, with the high side of one equal to the low side of the other, at power factors 1, 0.6 and −0.9. Both sit below space-vector PWM.
+- A stepper's electrical power equals winding loss plus shaft power at six points covering all four quadrants, standstill and zero torque.
+- The output period of a permanent-magnet and an induction motor is the same forwards and backwards.
+- The busiest package carries one third, two thirds or all of a three-leg stage's loss for one-leg, two-leg and three-leg packages.
+- Recovery charge is zero at no current and follows the current below its test point.
+- Output power stops at the stage's linear range.
+- 3,400 calls through the page's interface, with speeds, torques, voltages and frequencies from negative to fifty times nominal, bad motor values, and impossible loads and motions, each returned a finite result or a stated refusal.
+
+Checked term by term against hand calculation: IGBT and diode loss terms; FET conduction, overlap, output-charge and dead-time terms, to four digits; switching events in every symmetric scheme and in block and H-bridge drive in all quadrants; the temperature loop and the periodic peak against time stepping; permanent-magnet control against a brute-force search; induction, brushless DC and brushed DC power balance; the load model; the DC-link energy balance; the heat-spreading plate against its closed-form limit; and unit handling throughout.
+
+### Ripple at the switching frequency, and the link capacitor
+
+- The DC-link capacitor's ripple current, found from the switching sequence, against the closed form for three sinusoidal currents: within 2% at 32 combinations of modulation index (0.2 to 1.0), power factor (−0.9 to 1.0) and scheme (sine and space-vector). The mean link current equals the power balance.
+- One leg chopping into a winding: capacitor current I·√(D(1−D)) and current ripple V·D(1−D)/(L·f), both exact, at three duty cycles.
+- Three-phase ripple stays under one leg's bound V/(4·L·f) for three schemes and three modulation depths, and scales inversely with inductance.
+
+### Life, per chip
+
+- A single swing gives the model's own number of cycles; a swing twice as large lasts 2^5.039 times fewer.
+- A motion held at 2 Hz electrical for a minute counts between 100 and 140 swings of the size of the swing within one turn, and lasts less than a tenth as long as the same current at high speed.
+
+### What a device can drive
+
+- At the torque limit the hottest junction is at its rating within 0.5 °C, and 2% more torque is over it.
+- The limit falls with switching frequency and with heatsink temperature; past the motor's reach, the motor is what stops it.
+
+### Parallel devices, the link, a hot motor
+
+- Devices in parallel: two at 30 A are two stages of one at 15 A.
+- A module with and without a stated case-to-heatsink resistance of the same value gives the same junction temperature.
+- The DC link as a bucket: a short stretch of motoring between two brakings takes out only what it uses.
+- A hot motor: current up by the inverse of the magnet factor, winding loss by the copper factor over its square.
+- A magnet motor's back-EMF at speed against the supply and the rating.
+
+### The motor and the stage, further
+
+- Iron loss: the shaft gives the same, the motor loses the stated watts more plus the copper loss of the current that supplies them.
+- Saturation: far below the saturation current nothing changes; at it, a reluctance motor needs over 5% more current for the same torque.
+- A buried-magnet motor is found past the speed where full opposition of the magnet is not enough, with id beyond that point and the voltage within its limit.
+- Ripple at the switching instants: turn-on loss falls and turn-off loss rises.
+- Devices in parallel with a spread of 1.5: the hardest-worked of a pair has the temperature of 60% of the current, and the stage loses what 60% and 40% lose.
+- A chosen gate resistor is never below the transistor's own.
+
+### Ranking
+
+A comparison has to put parts in the right order, not only give each a plausible loss. Level A, in `tests/test_ranking.py`:
+
+- Two made-up parts alike but for this: one drops 0.9 V more when conducting and switches with a quarter of the energy. The frequency at which their losses are equal follows from the closed forms for conduction and switching loss. The comparison puts the slower part first at 0.8 of that frequency and the faster one first at 1.2, and the crossing found by sweeping the frequency is within 1% of the closed form.
+- Parts whose losses are within 5% are returned as level, and the part beyond that is not.
+- The margin to the junction limit is the rating less the top of the temperature range, at the design point and holding the torque at standstill; when the part that loses least is not the one with the most margin, the explanation says so with the figures.
+- A part with measured switching energy beside one estimated from charge, and a part brought in proportion to a higher voltage than tested beside one that is not, are each said to be compared on unlike data.
+
+In `tests/test_limits.py`: what the motor and the stage note about their own model does not make a data caution; a loss term outside its data does, once it could move the stage's loss by 5%; table points and an estimate from charge are a stated footing.
+
+No ranking has been checked against measured parts.
+
+### A part typed in, a dead time left open, cooling by air
+
+Level A, in `tests/test_entry.py`:
+
+- A transistor typed in holds each figure as typed, in SI units, and loses in conduction what its typed resistance gives in closed form, within 2%.
+- Eight slips are each refused at the figure they sit in: an on-resistance a thousand times too large, a plateau below the threshold, a hot resistance below the cold one, a junction-to-ambient figure given as junction-to-case, a figure missing or not a number, an output charge with no voltage, a part with no name.
+- A dead time left open is the one the dead-time rule gives for the gate drive in use, its loss is counted, and the caution for a missing dead time is gone; a dead time the user gave is left alone.
+- The dead-time rule itself, in `tests/test_recommend.py`: the three intervals of turn-off from the gate charges, a tenth longer, plus the mismatch between driver channels, times 1.2, and never under the floor. The figures behind it are published ones: gate-driver delay matching from 4 to 60 ns across six common half-bridge drivers, a tenth longer switching for 100 K, and defaults of 100 to 800 ns in open motor-control firmware and driver chips.
+- Copper and a shared board: the pad relation reproduces the figure printed for a TO-263 and agrees with the one printed for a DPAK within 3% as a ratio from 0.5 to 25 cm²; a 100 cm² board is 5 K/W to still air; on a shared board the hottest case sits at the air plus its own loss through its own path plus the others' loss through the board, and never under the board's own rise; past 120 °C the checks say so. Against a published rule of thumb (15.3 cm² of two-sided board a watt for a 40 K rise), the board term alone gives 33 K for the same area: the same order, a little cooler, with each part's own rise on top.
+- A request superseded after its status arrived and before its body did is a superseded request, not an answer (`web/tests/api.test.ts`).
+- A heatsink in air settles at the air's temperature plus its resistance times the stage's loss, and the junction is the same as with a heatsink held at that temperature. Two devices in parallel load it with both.
+- With no heatsink the case of each package sits at the air's temperature plus its own resistance to air times its own loss.
+- Through the page: each kind of cooling asks for the figure it needs and refuses without it, and the motion follows the same cooling.
+
+One real 100 V transistor, typed in with the same table figures its read model holds, set beside that read model on a 48 V motor at 20 kHz: 1.98 W typed against 2.00 W read at 1 N·m, and 19.7 W against 19.8 W at 4 N·m. The read model has the body diode's curve and the output charge against voltage; the typed one has one figure for each, and at this voltage that costs under 1%. It says nothing about how well either matches the part.
+
+## Level B: independent numerical integration
+
+- The periodic thermal response is compared with a separate step-by-step integration of a three-stage network driven by half-sine power pulses. Peak temperature agrees within 0.5%.
+- A motor turning at 1.5 rpm, followed through three ten-second output periods in time, reaches the peak that the frequency-domain periodic solution gives, within 0.5 °C. The two share the loss waveform and nothing else.
+- The loss and temperature solver was set against a calculation written apart from it, by numerical integration over the output period: 421 operating points of an IGBT with its diode and 240 of a MOSFET, across six modulation schemes, modulation index 0.05 to 1.15, power factor -1 to 1, 2 to 40 kHz and 25 to 110 °C. Total loss agrees within 0.14%, each loss term within 0.4%, junction rise within 0.15%. The motors (currents, voltages, slip, field weakening found by a brute-force scan) agree within 0.01%; the link capacitor's current and the motor current's ripple, against a simulation of the switching itself, within 0.5%.
+
+## Level C: external references
+
+### Datasheets against their own tables
+
+A curve and a table are two statements of the same quantity in one document. Agreement confirms the axis reading, the digitising and the curve matching. It does not confirm the device data itself, and the table values were used to choose which curve is which, so these are consistency checks, not independent ones.
+
+**onsemi FGHL40T65MQD (discrete IGBT with diode), vector figures.**
+
+| Check | Digitised | Tabulated | Difference |
+|---|---|---|---|
+| IGBT thermal impedance plateau | 0.621 K/W | 0.63 K/W (maximum) | −1.5% |
+| Diode thermal impedance plateau | 1.641 K/W | 1.6 K/W (maximum) | +2.5% |
+| On-state voltage at 40 A, 25 °C | 1.444 V | 1.45 V | −0.4% |
+| On-state voltage at 40 A, 175 °C | 1.738 V | 1.77 V | −1.8% |
+| Turn-on energy, 25 °C, worst of 20 A and 40 A | | | 1.2% |
+| Turn-on energy, 175 °C, worst of 20 A and 40 A | | | 2.5% |
+| Turn-off energy, 25 °C, worst of 20 A and 40 A | | | 1.7% |
+| Turn-off energy, 175 °C, worst of 20 A and 40 A | | | 2.6% |
+| Diode forward voltage at 40 A, 25 °C | 2.501 V | 2.55 V | −1.9% |
+| Diode forward voltage at 40 A, 175 °C | 2.384 V | 2.3 V | +3.6% |
+
+**EPC2302 (GaN transistor).**
+
+| Check | Result |
+|---|---|
+| Normalised on-resistance curve at 25 °C | 1.00 |
+| Thermal impedance plateau after scaling | 0.196 K/W against 0.2 K/W tabulated |
+
+The charge-based switching loss for this part has no reference of any kind.
+
+**Vishay IRF540 (silicon MOSFET), vector figures.** On-resistance against temperature reads 1.0 at 25 °C as a normalised curve must. The single-pulse thermal curve, followed along the line the family merges into, reaches 0.94 K/W against a tabulated maximum of 1.0. The body-diode curve at 25 °C stays under the tabulated maximum. The gate-charge plateau starts at the tabulated gate-source charge. Output capacitance at 25 V is within 1.6% of the table.
+
+**onsemi NVXK2TR80WDT (SiC module), figures stored as images.** Every table value was found on the page it was cited from. Every figure is a picture. Eleven plot areas found; curve counts are right on all eleven (7, 6, 1, 2, 3, 3, 3, 3, 2, 1, 1).
+
+| Figure | Read | Datasheet says | Difference |
+|---|---|---|---|
+| On-resistance against temperature | 1.00 at 25 °C | 1 by definition | under 1% |
+| Body-diode voltage, 25 °C curve at 10 A | 4.03 V | 3.9 V | 3.3% |
+| Gate charge: start of the plateau | 18.0 nC | 18 nC gate-source charge | 0.1% |
+| Output capacitance at 800 V | 79.9 pF | 79 pF | 1.1% |
+| Thermal impedance plateau | 1.85 K/W | 1.84 K/W maximum | under 1% |
+
+The datasheet prints its own six-stage thermal network beside the curve. The fit to the traced curve is five stages with a worst error of 2.2%.
+
+One datasheet, one drawing style. Synthetic pictures cover the cases in `tests/test_raster.py`.
+
+### Module A against its own datasheet chart
 
 The datasheet's Figure 15 gives maximum RMS current against case temperature at 300 V, modulation index 0.8, power factor 0.8, sinusoidal PWM, junction temperature at most 150 °C. The model was built only from the table values in the same datasheet. Chart values were read by eye, to about ±0.3 A. Output frequency is taken as 50 Hz; the chart does not state it.
 
@@ -46,11 +238,12 @@ The datasheet has no transient thermal data, so the model cannot place the peak 
 | 110 °C | 16 kHz | 3.0 A | 5.1 A | 7.8 A |
 | 120 °C | 16 kHz | 2.3 A | 4.0 A | 6.2 A |
 
-**The vendor chart lies inside the bracket at all ten points.** The first version of this comparison limited the average only and allowed 42 to 55% more current than the chart.
+
+**The vendor chart lies inside the bracket at all ten points.** Limiting the average alone would allow 42 to 55% more current than the chart.
 
 The bracket is wide, roughly 0.6 to 1.5 times the chart value. That is what this datasheet can support: without transient thermal data the tool cannot say more.
 
-### Diagnostic, not part of the model
+#### Diagnostic, not part of the model
 
 As a test of the explanation, a single thermal time constant was tried in place of the missing transient data:
 
@@ -66,176 +259,9 @@ One value near 7 to 8 ms brings all ten points within the chart-reading error. T
 
 Still unverified: the assumed curve shapes away from the 7.5 A test point, and any margin the vendor applied.
 
-## Level C: onsemi FGHL40T65MQD, digitised curves against its own tables
+### Module C against its vendor's public simulator
 
-| Check | Digitised | Tabulated | Difference |
-|---|---|---|---|
-| IGBT thermal impedance plateau | 0.621 K/W | 0.63 K/W (maximum) | −1.5% |
-| Diode thermal impedance plateau | 1.641 K/W | 1.6 K/W (maximum) | +2.5% |
-| On-state voltage at 40 A, 25 °C | 1.444 V | 1.45 V | −0.4% |
-| On-state voltage at 40 A, 175 °C | 1.738 V | 1.77 V | −1.8% |
-| Turn-on energy, 25 °C, worst of 20 A and 40 A | | | 1.2% |
-| Turn-on energy, 175 °C, worst of 20 A and 40 A | | | 2.5% |
-| Turn-off energy, 25 °C, worst of 20 A and 40 A | | | 1.7% |
-| Turn-off energy, 175 °C, worst of 20 A and 40 A | | | 2.6% |
-| Diode forward voltage at 40 A, 25 °C | 2.501 V | 2.55 V | −1.9% |
-| Diode forward voltage at 40 A, 175 °C | 2.384 V | 2.3 V | +3.6% |
-
-The curve and the table are two statements of the same quantity in one document. Agreement confirms the axis reading, the digitising and the curve matching. It does not confirm the device data itself, and the same table values were used to choose which curve is which, so this is a consistency check, not an independent one.
-
-There is no external reference yet for this part's losses or temperatures.
-
-## Level A additions
-
-- Every PWM scheme delivers the same fundamental voltage.
-- Continuous schemes give the same switching loss as sine.
-- The 60° discontinuous scheme halves switching loss at unity power factor.
-
-## Level A additions for field-effect transistors
-
-- A resistive channel conducting in both directions loses `R·Irms²/2` per switch, independent of modulation index and power factor.
-- Dead-time loss equals `2·t_dead·fsw·Vreverse·Ipk/π`, and channel conduction falls by the matching amount.
-- Charge-based switching loss matches its closed form.
-
-## Level C: EPC2302 self-checks
-
-| Check | Result |
-|---|---|
-| Normalised on-resistance curve at 25 °C | 1.00 |
-| Thermal impedance plateau after scaling | 0.196 K/W against 0.2 K/W tabulated |
-
-Both are self-consistency checks. The charge-based switching loss for this part has no reference of any kind.
-
-## Level A additions for the motor model
-
-- Surface-magnet machine: torque current, voltages and frequency match the dq equations.
-- Electrical power into the motor equals shaft power plus copper loss, for surface-magnet and salient machines.
-- Salient machine: the chosen current is smaller than at neighbouring d-axis currents giving the same torque.
-- Field weakening: voltage sits at the limit and torque is unchanged.
-
-## Level C, attempted: vendor web simulator
-
-Two of the modules read here (module A, module B) fail inside the one vendor simulator with a missing-model error. module C runs; its comparison is below.
-
-## Level A additions for motor types
-
-- Brushed DC on an H-bridge: conduction and switching loss of the chopping switch, the freewheeling position and the steering switch each match their formulas; a MOSFET bridge loses exactly `2·I²·R`.
-- Brushless DC with block commutation: high-side and low-side positions match their formulas over the 120° windows.
-- Induction motor: electrical input equals shaft power plus stator and rotor copper loss; slip matches its formula; at the voltage limit the flux falls and the voltage sits on the limit.
-- Stepper: equals eight sinusoidal positions of the three-phase engine at the same leg modulation.
-- The engine change from one position to a set of roles left all earlier results unchanged.
-
-## Level A additions for loads and motions
-
-- Each load term (inertia, friction, fan law, gravity arm, vehicle on a slope) matches its formula.
-- A gearbox multiplies speed and divides torque, and its loss is taken from whichever side is driving.
-- A steady motion gives the single-point result.
-- Spinning an inertia up and back down returns net zero shaft energy.
-- A robot arm raised a quarter turn ends horizontal, holding its full gravity torque.
-
-## Level C: module C against the vendor's public simulator
-
-The first comparison with anything outside this project. Conditions: sine PWM, 50 Hz, 300 V, modulation index 0.8, power factor 0.8. Our model: table values only, case temperature set to the simulator's. Reference data: a local file kept out of the repository.
-
-Losses, ours against the simulator:
-
-| Point | Switch conduction | Turn-on | Turn-off | Diode conduction | Diode recovery | Inverter total |
-|---|---|---|---|---|---|---|
-| 6 kHz, 5 A | +4% | +47% | +13% | −2% | −12% | +8% |
-| 16 kHz, 5 A | +4% | +47% | +15% | −3% | −10% | +13% |
-| 6 kHz, 10 A | −4% | +12% | +23% | +8% | +15% | +2% |
-| 16 kHz, 8 A | 0% | +32% | +25% | +3% | +3% | +11% |
-
-The last two points put the junction above 200 °C in the simulator, far beyond the part's rating; they are useful for losses only.
-
-Average junction rise over case, in K:
-
-| Point | Switch, simulator | Switch, ours | Diode, simulator | Diode, ours |
-|---|---|---|---|---|
-| 6 kHz, 5 A | 24.0 | 15.1 | 21.2 | 4.6 |
-| 16 kHz, 5 A | 33.2 | 22.9 | 28.6 | 5.3 |
-| 6 kHz, 10 A | 70.8 | 42.1 | 60.1 | 12.1 |
-| 16 kHz, 8 A | 66.6 | 44.7 | 56.1 | 10.2 |
-
-The simulator's rises fit, at all four points, the chip's own tabulated thermal resistance plus a coupling term times the loss of every other chip in the package: 0.49 to 0.52 K/W for the switch and 0.74 to 0.76 K/W for the diode. With our single coupling input set to 0.5 K/W, the switch comes to 132.5 °C against 130.2 °C and 142.8 °C against 136.7 °C at the two in-rating points; the diode needs 0.75 K/W to match.
-
-Peak above average junction temperature: the simulator gives 3.6 to 12.3 K. Our upper bound, used because the transient thermal figure was not digitised, gives 39 to 115 K.
-
-Limits of this comparison: one part, one vendor, and the reference is a model, not a measurement.
-
-## Survey of the vendor simulator's module thermal models
-
-Eight modules, five operating points each (a local file kept out of the repository, a local script). Average junction rise over case fits `R_self × own loss + R_mutual × other chips' loss` within 0.1 K for every part.
-
-| Part family | R_self switch | R_mutual switch | R_self diode | R_mutual diode |
-|---|---|---|---|---|
-| Moulded, 5 parts | 2.19 to 4.45 | 0.67 to 0.83 | 2.48 to 6.22 | 0.67 to 1.09 |
-| Ceramic substrate, 3 parts | 1.50 to 1.84 | 0.00 | 2.20 to 2.84 | 0.00 |
-
-All in K/W.
-
-## Level C: module C with surveyed thermal assumptions
-
-Model from the datasheet alone; package construction unknown; six operating points; case temperature set to the simulator's.
-
-| Point | Simulator, hottest junction | Ours, typical | Ours, range | Inside |
-|---|---|---|---|---|
-| 50 Hz, 6 kHz, pf 0.8 | 112.6 °C | 123.5 °C | 103 to 138 | yes |
-| 50 Hz, 16 kHz, pf 0.8 | 141.4 °C | 161.9 °C | 131 to 185 | yes |
-| 50 Hz, 6 kHz, pf −0.8 | 121.6 °C | 124.4 °C | 104 to 139 | yes |
-| 50 Hz, 16 kHz, pf 0.3 | 140.6 °C | 159.4 °C | 128 to 181 | yes |
-| 5 Hz, 6 kHz, pf 0.8 | 115.9 °C | 132.0 °C | 112 to 148 | yes |
-| 200 Hz, 6 kHz, pf 0.8 | 111.3 °C | 119.2 °C | 101 to 129 | yes |
-
-Typical is 3 to 20 °C high. Before the assumptions it was 9 to 25 °C low, with no range. With the higher temperatures, total loss is now 6 to 18% above the simulator's, where it was 2 to 13% above with the case temperature alone. The range is wide, 35 to 55 °C, because the construction is unknown and the transient response is assumed.
-
-The assumptions were derived from the same simulator this comparison uses, on a set that includes this part, so this shows the defaults are sensible for this vendor's moulded modules and nothing more.
-
-## Level A additions for the package model
-
-- A chip covering its whole plate gives pure one-dimensional conduction through the insulation.
-- Far from a small source on a large plate, the rise matches the Bessel-function solution within 5%.
-- The thermal matrix is symmetric and falls with distance.
-
-## Level C: module C with first-principles thermal defaults
-
-These replace the survey-based defaults of the previous section. Coupling between chips and the shape of the transient response are both computed for a generic package; package construction is left unknown. Nothing is fitted to the simulator.
-
-| Point | Simulator, hottest junction | Ours, typical | Difference | Ours, range | Inside |
-|---|---|---|---|---|---|
-| 50 Hz, 6 kHz, pf 0.8 | 112.6 °C | 112.9 °C | +0.3 | 103 to 134 | yes |
-| 50 Hz, 16 kHz, pf 0.8 | 141.4 °C | 145.5 °C | +4.1 | 131 to 178 | yes |
-| 50 Hz, 6 kHz, pf −0.8 | 121.6 °C | 116.6 °C | −5.0 | 107 to 137 | yes |
-| 50 Hz, 16 kHz, pf 0.3 | 140.6 °C | 143.5 °C | +2.9 | 129 to 177 | yes |
-| 5 Hz, 6 kHz, pf 0.8 | 115.9 °C | 116.3 °C | +0.4 | 108 to 137 | yes |
-| 200 Hz, 6 kHz, pf 0.8 | 111.3 °C | 112.3 °C | +1.0 | 103 to 133 | yes |
-
-Swing of the switch junction within an output period: 2.2 °C against the simulator's 3.5 at 50 Hz, 5.6 against 6.7 at 5 Hz, 1.8 against 2.3 at 200 Hz.
-
-The agreement is partly luck. Our loss is 5 to 16% above the simulator's, and the datasheet's maximum thermal resistance is above the simulator's typical one; both push temperature up, while a lower computed coupling (0.48 against the simulator's 0.79 K/W) pushes it down. At power factor −0.8, where the diode is the hottest chip, the result is 5 °C low. The range is wide, about 30 to 45 °C, because construction is unknown and every package input is varied together.
-
-One part, one vendor, and the reference is a model.
-
-## Level C: module C with its curves read
-
-The datasheet's on-state, diode, turn-on and recovery curves and its transient thermal curve are now used. Turn-off stays on the table (the hot curve disagrees with it by 17%). Thermal coupling between chips is still computed for a generic package, construction unknown.
-
-| Point | Total loss, ours against simulator | Hottest junction, ours against simulator | Ours, range | Inside |
-|---|---|---|---|---|
-| 50 Hz, 6 kHz, pf 0.8 | 24.2 against 22.8 W, +6% | 115.3 against 112.6 °C, +2.7 | 105 to 136 | yes |
-| 50 Hz, 16 kHz, pf 0.8 | 35.8 against 31.7 W, +13% | 148.6 against 141.4 °C, +7.2 | 134 to 181 | yes |
-| 50 Hz, 6 kHz, pf −0.8 | 24.9 against 23.8 W, +5% | 117.3 against 121.6 °C, −4.3 | 108 to 138 | yes |
-| 50 Hz, 16 kHz, pf 0.3 | 35.9 against 32.0 W, +12% | 146.2 against 140.6 °C, +5.6 | 131 to 179 | yes |
-| 5 Hz, 6 kHz, pf 0.8 | 24.2 against 22.8 W, +6% | 120.3 against 115.9 °C, +4.4 | 110 to 141 | yes |
-| 200 Hz, 6 kHz, pf 0.8 | 24.2 against 22.7 W, +7% | 114.4 against 111.3 °C, +3.1 | 104 to 135 | yes |
-
-Reading the curves moved total loss from 5 to 16% high to 5 to 13% high. Turn-on at 6 kHz is 0.55 W a switch against the simulator's 0.41 W, still a third high. The curve used is the higher of the high-side and low-side curves, which explains some of it and not all. Temperature moved from −5 to +4 °C to −4 to +7 °C: the earlier figure used an assumed transient response and was helped by errors that cancelled.
-
-Run locally with `motionsim validate`; the reference file is not in the repository.
-
-## Level C: the same six points, from the case
-
-The simulator's temperatures start from the case. The comparisons above started ours from the same figure taken as the heatsink, so the layer between case and heatsink was counted on our side only. A reference point can now say how the stage was mounted; here it says there is nothing between the two.
+Six operating points at 300 V and modulation index 0.8, sinusoidal PWM. The model is built from the datasheet alone: its tables, and its on-state, diode, turn-on, recovery and transient thermal curves. Turn-off stays on the table, because the hot curve disagrees with it by 17%. Heating between chips is computed for a generic package with the construction left unknown. Nothing is fitted to the simulator. The simulator's temperatures start from the case, so the reference says that nothing lies between case and heatsink.
 
 | Point | Total loss, ours against simulator | Hottest junction, ours against simulator | Ours, range | Inside |
 |---|---|---|---|---|
@@ -248,27 +274,9 @@ The simulator's temperatures start from the case. The comparisons above started 
 
 Where the switch is the hottest chip the junction is 0.2 to 3.4 °C high, on a loss 6 to 12% high. Where the diode is, it is 7.5 °C low: the diode's junction is 8 to 11 °C low at every point, which a single coupling figure for switch and diode alike cannot mend (the simulator's own is half as large again for the diode). Heating between chips is reckoned over the package's own face, 0.36 K/W here against the simulator's 0.5.
 
-## Level C: two transistor datasheets against their own tables
+Turn-on at 6 kHz is 0.55 W a switch against the simulator's 0.41 W, a third high. The curve used is the higher of the high-side and low-side curves, which explains some of it and not all. The range is wide because the construction is unknown and every package input is varied together.
 
-- **Silicon MOSFET (Vishay IRF540).** On-resistance against temperature reads 1.0 at 25 °C as a normalised curve must. The single-pulse thermal curve, followed along the line the family merges into, reaches 0.94 K/W against a tabulated maximum of 1.0. The body-diode figure failed its axis check and is unused.
-- **SiC module (onsemi NVXK2TR80WDT).** 17 table values, each found on the page it was cited from. No curve could be checked: the figures are images.
-
-Neither has an external reference.
-
-## Level A additions: curves, transistors, time, braking
-
-- A curve drawn as a staircase of 0.07 pt steps with repeated points, cut into pieces, comes back as one curve and reads the right value.
-- Two curves per label are read as their upper envelope; a legend stroke in the plot is ignored.
-- Transistor with tabulated energy: turn-on loss equals switching frequency times energy times peak current over pi. Output charge estimated from capacitance equals twice capacitance times voltage. Plateau from transconductance equals threshold plus rated current over gain.
-- Through time, a short pulse on a constant-loss switch heats it by power times the transient impedance at that time, to six figures. Cooling after a pulse follows each stage's exponential.
-- A long steady motion settles at the steady solution within 0.2 °C.
-- A heatsink warms as ambient plus loss times resistance times (1 − exp(−t/RC)).
-- Brushed DC braking: each position's conduction and switching loss against its formula; backwards running is the mirror image; braking near standstill draws from the supply. Brushless DC braking likewise. Electrical power equals shaft power plus winding loss in every quadrant.
-- Stopping a flywheel returns the integral of back-EMF power less winding loss, and the capacitor voltage satisfies half C times the difference of the squared voltages.
-
-## Level B addition
-
-- A motor turning at 1.5 rpm, followed through three ten-second output periods in time, reaches the peak that the frequency-domain periodic solution gives, within 0.5 °C. The two share the loss waveform and nothing else.
+Modules A and B could not be run in the same simulator. One part, one vendor, and the reference is a model, not a measurement. `motionsim validate` runs such a comparison from a file of reference points; the simulator's output is not redistributed here.
 
 ## Level D: one public measurement, and what it does and does not show
 
@@ -295,97 +303,11 @@ What it shows:
 
 What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same source's companion (TIDA-010056, TIDUEQ9, the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
 
-Also checked against measurements that are not published, and so not offered as evidence at this level: on one moulded 600 V module on a heatsink, the case temperature computed with the default mounting is 1 to 2.5 °C below the measured one.
-
 `motionsim validate` takes a file of measurements, for anyone with their own. A point can give each loss term on its own, how the stage was mounted, and a load that comes and goes with the junction's lowest and highest temperature once it repeats.
-
-## Level C: figures stored as images, against the same datasheet's tables
-
-onsemi NVXK2TR80WDT. Every figure is a picture. Eleven plot areas found; curve counts are right on all eleven (7, 6, 1, 2, 3, 3, 3, 3, 2, 1, 1).
-
-| Figure | Read | Datasheet says | Difference |
-|---|---|---|---|
-| On-resistance against temperature | 1.00 at 25 °C | 1 by definition | under 1% |
-| Body-diode voltage, 25 °C curve at 10 A | 4.03 V | 3.9 V | 3.3% |
-| Gate charge: start of the plateau | 18.0 nC | 18 nC gate-source charge | 0.1% |
-| Output capacitance at 800 V | 79.9 pF | 79 pF | 1.1% |
-| Thermal impedance plateau | 1.85 K/W | 1.84 K/W maximum | under 1% |
-
-The datasheet prints its own six-stage thermal network beside the curve. The fit to the traced curve is five stages with a worst error of 2.2%.
-
-One datasheet, one drawing style. Synthetic pictures cover the cases in `tests/test_raster.py`.
-
-## Level C: silicon MOSFET figures against its tables
-
-Vishay IRF540, vector figures. Body-diode curve at 25 °C stays under the tabulated maximum. Gate-charge plateau starts at the tabulated gate-source charge. Output capacitance at 25 V within 1.6% of the table.
-
-## Level A additions: pictures, charge, recommendations
-
-- Pictures drawn in the tests: a plot area and its eleven grid lines found to 0.3 pt; one curve followed through the grid to within its stroke; two crossing curves each ending where they should; a branch that inherits the shared rise; a label with a leader line ignored; a dense log grid that neither breaks nor multiplies the curve.
-- Plateau of a piecewise gate-charge curve found to 0.05 V and 1.5 nC.
-- Output charge of a capacitance falling as one over root voltage equals twice capacitance times voltage, within 2%.
-- Dead time from gate charge equals 1.5 times the sum of three intervals written out by hand, plus driver mismatch. For an IGBT, twice the tabulated delay plus fall time.
-- Gate resistors land on the slew-rate, overshoot or driver-current limit, whichever is largest, rounded up.
-- Heatsink resistance equals the temperature room over the loss for a device whose loss does not depend on temperature.
-
-## Level A and B additions for trajectories
-
-- A three-phase sine drive written out as a trajectory file reproduces the engine's direct result: loss and output power within 0.5%, peak junction temperatures within 0.3 °C, all six positions alike.
-- Current out of a leg loads the high-side switch and low-side reverse path; current in loads the other two.
-- A constant load from a cold start heats the switch by power times the transient impedance at the elapsed time, within 1%.
-
-## Level A and B additions from the full check
-
-- Clamping every leg to the positive rail and clamping to the negative rail give the same total loss, with the high side of one equal to the low side of the other, at power factors 1, 0.6 and −0.9. Both sit below space-vector PWM.
-- A stepper's electrical power equals winding loss plus shaft power at six points covering all four quadrants, standstill and zero torque.
-- The output period of a permanent-magnet and an induction motor is the same forwards and backwards.
-- The busiest package carries one third, two thirds or all of a three-leg stage's loss for one-leg, two-leg and three-leg packages.
-- Recovery charge is zero at no current and follows the current below its test point.
-- Output power stops at the stage's linear range.
-- 3,400 calls through the page's interface, with speeds, torques, voltages and frequencies from negative to fifty times nominal, bad motor values, and impossible loads and motions, each returned a finite result or a stated refusal.
-
-An independent line-by-line audit against first principles confirmed: IGBT and diode loss terms; FET conduction, overlap, output-charge and dead-time terms, to four digits against hand calculation; switching events in every symmetric scheme and in block and H-bridge drive in all quadrants; the temperature loop and the periodic peak against time stepping; permanent-magnet control against a brute-force search; induction, brushless DC and brushed DC power balance; the load model; the DC-link energy balance; the heat-spreading plate against its closed-form limit; and unit handling throughout.
-
-## Ripple at the switching frequency, and the link capacitor
-
-- The DC-link capacitor's ripple current, found from the switching sequence, against the closed form for three sinusoidal currents: within 2% at 32 combinations of modulation index (0.2 to 1.0), power factor (−0.9 to 1.0) and scheme (sine and space-vector). The mean link current equals the power balance.
-- One leg chopping into a winding: capacitor current I·√(D(1−D)) and current ripple V·D(1−D)/(L·f), both exact, at three duty cycles.
-- Three-phase ripple stays under one leg's bound V/(4·L·f) for three schemes and three modulation depths, and scales inversely with inductance.
-
-## Life, per chip
-
-- A single swing gives the model's own number of cycles; a swing twice as large lasts 2^5.039 times fewer.
-- A motion held at 2 Hz electrical for a minute counts between 100 and 140 swings of the size of the swing within one turn, and lasts less than a tenth as long as the same current at high speed.
-
-## What a device can drive
-
-- At the torque limit the hottest junction is at its rating within 0.5 °C, and 2% more torque is over it.
-- The limit falls with switching frequency and with heatsink temperature; past the motor's reach, the motor is what stops it.
-
-## Smaller checks added with them
-
-- Devices in parallel: two at 30 A are two stages of one at 15 A.
-- A module with and without a stated case-to-heatsink resistance of the same value gives the same junction temperature.
-- The DC link as a bucket: a short stretch of motoring between two brakings takes out only what it uses.
-- A hot motor: current up by the inverse of the magnet factor, winding loss by the copper factor over its square.
-- A magnet motor's back-EMF at speed against the supply and the rating.
-
-## The motor and the stage, further
-
-- Iron loss: the shaft gives the same, the motor loses the stated watts more plus the copper loss of the current that supplies them.
-- Saturation: far below the saturation current nothing changes; at it, a reluctance motor needs over 5% more current for the same torque.
-- A buried-magnet motor is found past the speed where full opposition of the magnet is not enough, with id beyond that point and the voltage within its limit.
-- Ripple at the switching instants: turn-on loss falls and turn-off loss rises.
-- Devices in parallel with a spread of 1.5: the hardest-worked of a pair has the temperature of 60% of the current, and the stage loses what 60% and 40% lose.
-- A chosen gate resistor is never below the transistor's own.
-
-## The page, walked at random
-
-Besides the fixed tour of every step and tab at three widths, the page is walked at random: a seeded sequence of whatever can be pressed, on a desk-width and a phone-width screen, with every placement check run after each press and nothing allowed to stay waiting. Two seeds, six walks each, about 130 surfaces a run.
 
 ## Datasheets the reader has been tried on
 
-No device data ships with this project and it favours no vendor. You bring the datasheets. This table says what the reader has been run on so far, so you can judge how far to trust it on yours.
+No vendor's device data ships with this project, only made-up parts, and it favours no vendor. You bring the datasheets. This table says what the reader has been run on so far, so you can judge how far to trust it on yours.
 
 | Kind of device | Datasheet tried | What was read | Outcome |
 |---|---|---|---|
@@ -404,36 +326,9 @@ No device data ships with this project and it favours no vendor. You bring the d
 
 Each row is one run checked by hand. The reader uses a language model and its output can differ between runs.
 
-## Ranking
+## The page and the tests
 
-A comparison has to put parts in the right order, not only give each a plausible loss. Level A, in `tests/test_ranking.py`:
-
-- Two made-up parts alike but for this: one drops 0.9 V more when conducting and switches with a quarter of the energy. The frequency at which their losses are equal follows from the closed forms for conduction and switching loss. The comparison puts the slower part first at 0.8 of that frequency and the faster one first at 1.2, and the crossing found by sweeping the frequency is within 1% of the closed form.
-- Parts whose losses are within 5% are returned as level, and the part beyond that is not.
-- The margin to the junction limit is the rating less the top of the temperature range, at the design point and holding the torque at standstill; when the part that loses least is not the one with the most margin, the explanation says so with the figures.
-- A part with measured switching energy beside one estimated from charge, and a part brought in proportion to a higher voltage than tested beside one that is not, are each said to be compared on unlike data.
-
-In `tests/test_limits.py`: what the motor and the stage note about their own model does not make a data caution; a loss term outside its data does, once it could move the stage's loss by 5%; table points and an estimate from charge are a stated footing.
-
-No ranking has been checked against measured parts.
-
-## A part typed in, a dead time left open, cooling by air
-
-Level A, in `tests/test_entry.py`:
-
-- A transistor typed in holds each figure as typed, in SI units, and loses in conduction what its typed resistance gives in closed form, within 2%.
-- Eight slips are each refused at the figure they sit in: an on-resistance a thousand times too large, a plateau below the threshold, a hot resistance below the cold one, a junction-to-ambient figure given as junction-to-case, a figure missing or not a number, an output charge with no voltage, a part with no name.
-- A dead time left open is the one the dead-time rule gives for the gate drive in use, its loss is counted, and the caution for a missing dead time is gone; a dead time the user gave is left alone.
-- The dead-time rule itself, in `tests/test_recommend.py`: the three intervals of turn-off from the gate charges, a tenth longer, plus the mismatch between driver channels, times 1.2, and never under the floor. The figures behind it are published ones: gate-driver delay matching from 4 to 60 ns across six common half-bridge drivers, a tenth longer switching for 100 K, and defaults of 100 to 800 ns in open motor-control firmware and driver chips.
-- Copper and a shared board: the pad relation reproduces the figure printed for a TO-263 and agrees with the one printed for a DPAK within 3% as a ratio from 0.5 to 25 cm²; a 100 cm² board is 5 K/W to still air; on a shared board the hottest case sits at the air plus its own loss through its own path plus the others' loss through the board, and never under the board's own rise; past 120 °C the checks say so. Against a published rule of thumb (15.3 cm² of two-sided board a watt for a 40 K rise), the board term alone gives 33 K for the same area: the same order, a little cooler, with each part's own rise on top.
-- A request superseded after its status arrived and before its body did is a superseded request, not an answer (`web/tests/api.test.ts`).
-- A heatsink in air settles at the air's temperature plus its resistance times the stage's loss, and the junction is the same as with a heatsink held at that temperature. Two devices in parallel load it with both.
-- With no heatsink the case of each package sits at the air's temperature plus its own resistance to air times its own loss.
-- Through the page: each kind of cooling asks for the figure it needs and refuses without it, and the motion follows the same cooling.
-
-One real 100 V transistor, typed in with the same table figures its read model holds, set beside that read model on a 48 V motor at 20 kHz: 1.98 W typed against 2.00 W read at 1 N·m, and 19.7 W against 19.8 W at 4 N·m. The read model has the body diode's curve and the output charge against voltage; the typed one has one figure for each, and at this voltage that costs under 1%. It says nothing about how well either matches the part.
-
-## The tests, tested
+The page is toured at four widths, from 1440 px down to 320 px, through every step and tab. It is also walked at random: a seeded sequence of whatever can be pressed, on a desk-width and a phone-width screen, with every placement check run after each press and nothing allowed to stay waiting. Six walks of thirty presses, about 180 surfaces a run. One fixed journey through the hosted page runs in CI at two widths: a first visit, a made-up part, every step to a verdict, a setting changed, a reload.
 
 The cooling, dead-time and typed-part code is held by tests whose expected values are worked out apart from the code: closed forms, literals from the published figures, and one path through the engine checked against another. Among them (`tests/test_entry.py`, `tests/test_values.py`):
 
@@ -458,8 +353,6 @@ The page in its hosted form scores 100 for accessibility, best practices and sea
 
 What the page shows is held to what it would show afresh. A walk presses controls in an order nobody planned (tabs, steps, the device on the drawing, what is compared, values of a setting added and taken out), on two parts that differ so that one cannot pass for the other, and every fifth press it reloads the page from what it saved and compares every figure on show: a figure left over from before the last change, or one that belongs to another device, fails it. A second script chooses another device at four delays after one of the slow tabs is opened, in the local page and in the hosted one, and holds the page to the same test.
 
-The loss and temperature solver was set against a calculation written apart from it, by numerical integration over the output period: 421 operating points of an IGBT with its diode and 240 of a MOSFET, across six modulation schemes, modulation index 0.05 to 1.15, power factor -1 to 1, 2 to 40 kHz and 25 to 110 °C. Total loss agrees within 0.14%, each loss term within 0.4%, junction rise within 0.15%. The motors (currents, voltages, slip, field weakening found by a brute-force scan) agree within 0.01%; the link capacitor's current and the motor current's ripple, against a simulation of the switching itself, within 0.5%.
-
 The engine the hosted page runs inside the browser is the same Python as the installed one, and is held to it: 44 figures (every kind of motor at its starting point, a motion, a map) agree to better than one part in a thousand million, checked on every change (`web/scripts/engine-check.mjs`).
 
 ## What these figures were produced with
@@ -467,4 +360,3 @@ The engine the hosted page runs inside the browser is the same Python as the ins
 The engine's figures in this document were last produced with Python 3.12.3 (the tests also run on 3.11), NumPy 2.5.3, SciPy 1.18.1 and Pydantic 2.13.5. The package itself asks only for lower bounds; the product's figures are held to the last digit by `tests/test_golden.py`, so a version of a library that moves one fails there before it reaches a result.
 
 Reading a datasheet is different: it uses a language model, and two readings can differ. The model is named in `src/motionsim/observe/reader.py`; what was read is saved beside each device model, value by value with its page, and it is that saved reading, not a fresh one, that a result rests on.
-

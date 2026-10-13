@@ -611,3 +611,27 @@ def test_every_kind_of_motor_opens_on_a_design_that_runs(workspace, part) -> Non
         body = {"motor": {"type": kind, **m["values"]}, "conditions": {**m["start"], "t_sink": 60}, "devices": [part]}
         found = page.proposal(body, workspace)["candidates"][0]
         assert found["result"] is not None and found["level"] != "fail", (part, kind, found["problem"])
+
+
+def test_a_trajectory_takes_how_the_package_is_mounted(tmp_path, capsys) -> None:
+    """The case stands over the heatsink by the layer's resistance times all the package loses."""
+    assert cli.main(["template", "trajectory"]) == 0
+    trace = tmp_path / "trace.csv"
+    trace.write_text(capsys.readouterr().out)
+    base = ["trajectory", "examples/synthetic_igbt_600v_30a.yaml", str(trace), "--vdc", "300", "--fsw", "8000"]
+
+    def case_and_loss(*more: str) -> tuple[float, float]:
+        assert cli.main([*base, "--tsink", "60", *more]) == 0
+        said = capsys.readouterr().out
+        figure = lambda label: float(re.search(rf"{label}\s+([\d.]+)", said).group(1))
+        return figure("T case"), figure("power-stage loss")
+
+    case, _ = case_and_loss("--rth-case-sink", "0")
+    assert case == pytest.approx(60.0, abs=0.05)
+    case, loss = case_and_loss("--rth-case-sink", "0.5")
+    assert case == pytest.approx(60.0 + 0.5 * loss, abs=0.1)  # one six-pack: the package is the stage
+    on_grease, _ = case_and_loss()
+    on_a_pad, _ = case_and_loss("--interface", "pad")
+    assert on_a_pad > on_grease + 1.0
+    with pytest.raises(SystemExit, match="0 to 50 K/W"):
+        cli.main([*base, "--tsink", "60", "--rth-case-sink", "80"])

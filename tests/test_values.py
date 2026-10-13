@@ -685,7 +685,7 @@ def test_a_heatsink_limit_the_user_gave_is_held_to_or_said_to_be_out_of_reach() 
 
     device = igbt("made-up", 1.0)
     cool = lambda t: (t + 5.0, 10.0)  # runs 5 K over its heatsink, losing 10 W
-    # 42 °C in 40 °C air carrying 10 W: 0.2 K/W. It used to be dropped, and 8 K/W given.
+    # 42 °C in 40 °C air carrying 10 W: 0.2 K/W, and not the 8 K/W the junction alone would allow.
     close = recommend.heatsink(device, 40.0, cool, sink_limit=42.0)
     assert close.value["t_sink"] == 42.0 and close.value["rth_sink"] == pytest.approx(0.2)
     # A limit at or under the air's temperature cannot be held by any heatsink, and is not passed over.

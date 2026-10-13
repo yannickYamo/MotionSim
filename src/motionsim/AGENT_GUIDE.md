@@ -97,7 +97,7 @@ then run at the design point on the device that was followed.
 
 | Key | What it holds |
 |---|---|
-| `outcome` | `passes`, `passes with cautions`, `does not pass`, or `refused` |
+| `outcome` | `passes`, `passes with cautions`, `undecided`, `does not pass`, or `refused` |
 | `fit` | whether the motor fits the part before any design point: `level`, and `lines` with the reasons |
 | `stage.stage` | what the motor asks of the power stage at the design point: `i_peak`, `p_shaft`, `p_electrical`; `stage.advice` says what kind of device to look for |
 | `verdict.candidates[]` | for each device: `level` (ok, caution, fail), `result.loss`, `.conduction`, `.switching` (W), `.tj_peak` (°C), `margin` and `stall_tj`, `checks[]` (`level`, `topic`, `message`), `gate` (the gate drive used and why), `needs`, `switching` (what its switching loss rests on) |

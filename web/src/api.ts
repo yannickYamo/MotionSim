@@ -35,7 +35,7 @@ export interface Losses {
 export interface Position extends Losses { name: string; count: number; tj: number; tj_switch: number; tj_diode: number; tj_switch_mean: number; tj_diode_mean: number }
 export interface Result {
   loss: number; conduction: number; switching: number; efficiency: number | null; tj_peak: number;
-  tj_range: [number, number] | null; tj_max: number; t_case: number; t_sink?: number | null; validity: string;
+  tj_range: [number, number] | null; range_lead?: string | null; tj_max: number; t_case: number; t_sink?: number | null; validity: string;
   notes: string[]; limits: string[]; assumptions: string[]; warnings: string[];
   hottest: Losses; positions: Position[];
 }
@@ -185,7 +185,7 @@ async function send<T>(route: string, data: unknown, signal?: AbortSignal, metho
 export async function boot(onProgress: (text: string) => void): Promise<{ mode: Mode; setup: Setup; ready: Promise<void> }> {
   // A small file says where the engine is. Asking a server that is not there would be a
   // failed request on every visit to the hosted page; a build without the file (the
-  // development server) is asked the old way.
+  // development server) is asked directly.
   let server: boolean | null = null;
   try {
     const said = await fetch("engine/mode.json");

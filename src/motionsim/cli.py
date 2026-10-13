@@ -309,6 +309,8 @@ def _trajectory(args: argparse.Namespace) -> int:
     from motionsim.trajectory import BadTrajectory, load_trajectory, run
 
     device = load_device(args.device)
+    if args.rth_case_sink is not None and not 0 <= args.rth_case_sink <= 50:
+        raise SystemExit("--rth-case-sink has to be from 0 to 50 K/W: it is one package's case to its heatsink")
     try:
         trajectory = load_trajectory(args.trajectory)
     except (BadTrajectory, OSError) as exc:
@@ -326,6 +328,8 @@ def _trajectory(args: argparse.Namespace) -> int:
         rg_on=args.rgon,
         rg_off=args.rgoff,
         l_loop=args.lloop,
+        rth_case_sink=args.rth_case_sink,
+        interface=args.interface,
     )
     try:
         outcome = run(device, trajectory, op)
@@ -1107,7 +1111,12 @@ def main(argv: list[str] | None = None) -> int:
         if motor:
             p.add_argument("--motor", required=True, help="motor YAML file")
         else:
-            p.add_argument("--m", type=_figure, required=True, help="modulation index, 0 to 1")
+            p.add_argument(
+                "--m",
+                type=_figure,
+                required=True,
+                help="modulation index, 0 to 1.155 (above 1 only where the modulation scheme reaches it)",
+            )
             p.add_argument("--pf", type=_figure, required=True, help="power factor")
             p.add_argument("--fout", type=_figure, default=50.0, help="output frequency, Hz (default 50)")
         p.add_argument("--fsw", type=_figure, required=True, help="switching frequency, Hz")
@@ -1198,6 +1207,12 @@ def main(argv: list[str] | None = None) -> int:
     trj.add_argument("--vdc", type=_figure, required=True, help="DC-link voltage, V")
     trj.add_argument("--fsw", type=_figure, required=True, help="switching frequency, Hz")
     trj.add_argument("--tsink", type=_figure, required=True, help="heatsink temperature, °C")
+    trj.add_argument(
+        "--rth-case-sink",
+        type=_figure,
+        help="one package's case-to-heatsink resistance as you mount it, K/W, where you know it",
+    )
+    trj.add_argument("--interface", choices=["grease", "pad"], help="the layer under the package")
     trj.add_argument("--tdead", type=_figure, default=0.0, help="dead time, s (mosfets)")
     trj.add_argument("--vdrive", type=_figure, help="gate drive voltage, V")
     trj.add_argument("--rgon", type=_figure, help="total turn-on gate resistance, ohm")

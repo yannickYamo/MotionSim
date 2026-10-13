@@ -6,13 +6,9 @@ dist/
 datasheets/
 .env
 runs/
-.playwright-mcp/
-private/
-.impeccable/
 measurements/
 
 .coverage
 .hypothesis/
 .mypy_cache/
 .ruff_cache/
-dist/

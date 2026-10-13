@@ -60,19 +60,24 @@ class Trajectory:
 
 
 def load_trajectory(path: str | Path) -> Trajectory:
-    with open(path, newline="", encoding="utf-8") as f:
+    # utf-8-sig: a spreadsheet's export starts with a byte-order mark, which is not part of a name.
+    with open(path, newline="", encoding="utf-8-sig") as f:
         rows = [row for row in csv.reader(f) if row and not row[0].lstrip().startswith("#")]
     if len(rows) < 3:
         raise BadTrajectory("a trajectory needs a header row and at least two rows of data")
     header = [name.strip().lower() for name in rows[0]]
     if header[0] != "time_s":
         raise BadTrajectory("the first column must be time_s")
+    if len(set(header)) != len(header):
+        raise BadTrajectory("two columns have the same name")
+    if any(len(row) != len(header) for row in rows[1:]):
+        raise BadTrajectory("every row must have as many values as the header has names")
     try:
         data = np.array([[float(v) for v in row] for row in rows[1:]])
     except ValueError as exc:
         raise BadTrajectory(f"not a number: {exc}") from exc
-    if data.shape[1] != len(header):
-        raise BadTrajectory("every row must have as many values as the header has names")
+    if not np.isfinite(data).all():
+        raise BadTrajectory("every value has to be a finite number: no nan, no inf")
     columns = dict(zip(header, data.T, strict=True))
     legs = [leg for leg in LEGS if f"i_{leg}" in columns]
     if not legs:

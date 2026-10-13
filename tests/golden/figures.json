@@ -53,7 +53,7 @@
     "topic": "heatsink",
     "value": {
      "loss": 2.397971331087578,
-     "rth_ja": 112.14150962829589,
+     "rth_ja": 112.14186725616455,
      "rth_sink": 25.0211498453518,
      "sink_limit": 100.0,
      "t_sink": 100.0
@@ -116,7 +116,7 @@
      "topic": "heatsink",
      "value": {
       "loss": 2.397971331087578,
-      "rth_ja": 112.14150962829589,
+      "rth_ja": 112.14186725616455,
       "rth_sink": 25.0211498453518,
       "sink_limit": 100.0,
       "t_sink": 100.0
@@ -162,31 +162,31 @@
    "by_f_sw": [
     {
      "current": 56.56305411767631,
-     "tj": 64.71903744505892,
+     "tj": 64.73968995986672,
      "torque": 4.677734375,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.549254042954786,
-     "tj": 64.84648323432341,
+     "tj": 64.86759860363543,
      "torque": 4.6765923500061035,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.55477278578292,
-     "tj": 65.11640186838677,
+     "tj": 65.13847166549535,
      "torque": 4.677049048477784,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.56029198676808,
-     "tj": 65.65762633588535,
+     "tj": 65.68160463426396,
      "torque": 4.677505791548924,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.5658116459371,
-     "tj": 66.7395100872844,
+     "tj": 66.76730724653125,
      "torque": 4.67796257922388,
      "why": "the motor itself: its current limit, or its reach on this supply"
     }
@@ -194,25 +194,25 @@
    "by_t_sink": [
     {
      "current": 56.56305411767631,
-     "tj": 44.548288080852515,
+     "tj": 44.56783770247287,
      "torque": 4.677734375,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.549254042954786,
-     "tj": 65.11543231241306,
+     "tj": 65.13749741469944,
      "torque": 4.6765923500061035,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.55477278578292,
-     "tj": 85.68579788770167,
+     "tj": 85.71039405347018,
      "torque": 4.677049048477784,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.56029198676808,
-     "tj": 106.25639409312168,
+     "tj": 106.28352246037326,
      "torque": 4.677505791548924,
      "why": "the motor itself: its current limit, or its reach on this supply"
     }
@@ -223,62 +223,62 @@
     "rated": 100.0,
     "rpm": 2000.0,
     "share": 0.21382047917325375,
-    "tj": 65.1159166516203,
+    "tj": 65.13798409918199,
     "torque": 4.676820498516062,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    "edge": [
     {
      "current": 56.56300962595859,
-     "tj": 70.42852551018288,
+     "tj": 70.42250738015882,
      "torque": 4.677734375,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.54928918818661,
-     "tj": 65.03178332139927,
+     "tj": 65.05170450458726,
      "torque": 4.6765923500061035,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.55485383611664,
-     "tj": 65.04496098914079,
+     "tj": 65.06343811992821,
      "torque": 4.677049048477784,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.56037964667746,
-     "tj": 65.07834982577337,
+     "tj": 65.09823531724179,
      "torque": 4.677505791548924,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.56588916676344,
-     "tj": 65.10229807319169,
+     "tj": 65.12343952008955,
      "torque": 4.67796257922388,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.55201099889419,
-     "tj": 65.1159166516203,
+     "tj": 65.13798409918199,
      "torque": 4.676820498516062,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.55753148922954,
-     "tj": 65.12864770752125,
+     "tj": 65.15143397532862,
      "torque": 4.67727721926787,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.56312190877235,
-     "tj": 65.13803995930373,
+     "tj": 65.16137155114195,
      "torque": 4.677733984621312,
      "why": "the motor itself: its current limit, or its reach on this supply"
     },
     {
      "current": 56.54295572399336,
-     "tj": 65.10124412399462,
+     "tj": 65.12287227870385,
      "torque": 4.41278420814862,
      "why": "the motor itself: its current limit, or its reach on this supply"
     }
@@ -377,7 +377,7 @@
     "hours": null,
     "repeats": null,
     "swing": 0.0,
-    "swing_mean": 60.10945758342071,
+    "swing_mean": 60.10906653706929,
     "swing_share": 0.0,
     "swings": 0,
     "within_turn": false
@@ -395,10 +395,10 @@
     "capacitor_rms": 0.9855491575909954,
     "capacitor_rms_worst": 2.3671110716310055,
     "duration": 3.05,
-    "forever": 60.35662467841004,
+    "forever": 60.35652042952853,
     "loss_energy": 9.230145540008008,
     "mean_loss": 0.9199848119991506,
-    "peak": 60.213484181989266,
+    "peak": 60.213484648194,
     "returned": 0.0,
     "returned_peak": 0.0,
     "ripple_pp_worst": 1.0265283763845277,
@@ -528,7 +528,7 @@
      "hours": null,
      "repeats": null,
      "swing": 0.0,
-     "swing_mean": 60.10945758342071,
+     "swing_mean": 60.10906653706929,
      "swing_share": 0.0,
      "swings": 0,
      "within_turn": false
@@ -546,10 +546,10 @@
      "capacitor_rms": 0.9855491575909954,
      "capacitor_rms_worst": 2.3671110716310055,
      "duration": 3.05,
-     "forever": 60.35662467841004,
+     "forever": 60.35652042952853,
      "loss_energy": 9.230145540008008,
      "mean_loss": 0.9199848119991506,
-     "peak": 60.213484181989266,
+     "peak": 60.213484648194,
      "returned": 0.0,
      "returned_peak": 0.0,
      "ripple_pp_worst": 1.0265283763845277,
@@ -755,7 +755,7 @@
       "capacitor_rms": 5.425158981062286,
       "ripple_pp": 1.575183477774341
      },
-     "margin": 114.48837103667455,
+     "margin": 114.48778880072568,
      "name": "synthetic MOSFET-100V-100A",
      "needs": [
       "6 packages for the 6 switches",
@@ -809,30 +809,31 @@
         "diode_recovery": 0.0,
         "name": "phase leg",
         "recovery": 0.0,
-        "tj": 60.376796271667146,
-        "tj_diode": 60.376796271667146,
+        "tj": 60.378080663337286,
+        "tj_diode": 60.378080663337286,
         "tj_diode_mean": 60.35295998880012,
-        "tj_switch": 60.376796271667146,
+        "tj_switch": 60.378080663337286,
         "tj_switch_mean": 60.35295998880012,
         "total": 0.35296046825306515,
         "turn_off": 0.045443132351516605,
         "turn_on": 0.10384749959267793
        }
       ],
+      "range_lead": "mounting",
       "switching": 0.8957437916651672,
       "t_case": 60.14118418730123,
       "t_sink": 60.0,
       "tj_max": 175.0,
-      "tj_peak": 60.376796271667146,
+      "tj_peak": 60.378080663337286,
       "tj_range": [
-       60.30944248320016,
-       60.51162896332544
+       60.3129158249609,
+       60.51221119927432
       ],
       "validity": "assumed",
       "warnings": []
      },
-     "stall_margin": 113.94061894020126,
-     "stall_tj": 60.76373280931942,
+     "stall_margin": 113.94193715836171,
+     "stall_tj": 60.763399529994146,
      "switching": {
       "kind": "from charge",
       "text": "estimated from gate and output charge, with 3.8 \u03a9 on, 5 \u03a9 off at 10 V drive"
@@ -958,6 +959,7 @@
         "turn_on": 0.2716018369730255
        }
       ],
+      "range_lead": "between chips",
       "switching": 3.661895249452227,
       "t_case": 63.14691281347682,
       "t_sink": 60.0,
@@ -991,31 +993,31 @@
   "by_f_sw": [
    {
     "current": 56.56305411767631,
-    "tj": 64.71903744505892,
+    "tj": 64.73968995986672,
     "torque": 4.677734375,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.549254042954786,
-    "tj": 64.84648323432341,
+    "tj": 64.86759860363543,
     "torque": 4.6765923500061035,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.55477278578292,
-    "tj": 65.11640186838677,
+    "tj": 65.13847166549535,
     "torque": 4.677049048477784,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.56029198676808,
-    "tj": 65.65762633588535,
+    "tj": 65.68160463426396,
     "torque": 4.677505791548924,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.5658116459371,
-    "tj": 66.7395100872844,
+    "tj": 66.76730724653125,
     "torque": 4.67796257922388,
     "why": "the motor itself: its current limit, or its reach on this supply"
    }
@@ -1023,25 +1025,25 @@
   "by_t_sink": [
    {
     "current": 56.56305411767631,
-    "tj": 44.548288080852515,
+    "tj": 44.56783770247287,
     "torque": 4.677734375,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.549254042954786,
-    "tj": 65.11543231241306,
+    "tj": 65.13749741469944,
     "torque": 4.6765923500061035,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.55477278578292,
-    "tj": 85.68579788770167,
+    "tj": 85.71039405347018,
     "torque": 4.677049048477784,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.56029198676808,
-    "tj": 106.25639409312168,
+    "tj": 106.28352246037326,
     "torque": 4.677505791548924,
     "why": "the motor itself: its current limit, or its reach on this supply"
    }
@@ -1052,62 +1054,62 @@
    "rated": 100.0,
    "rpm": 2000.0,
    "share": 0.21382047917325375,
-   "tj": 65.1159166516203,
+   "tj": 65.13798409918199,
    "torque": 4.676820498516062,
    "why": "the motor itself: its current limit, or its reach on this supply"
   },
   "edge": [
    {
     "current": 56.56300962595859,
-    "tj": 70.42852551018288,
+    "tj": 70.42250738015882,
     "torque": 4.677734375,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.54928918818661,
-    "tj": 65.03178332139927,
+    "tj": 65.05170450458726,
     "torque": 4.6765923500061035,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.55485383611664,
-    "tj": 65.04496098914079,
+    "tj": 65.06343811992821,
     "torque": 4.677049048477784,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.56037964667746,
-    "tj": 65.07834982577337,
+    "tj": 65.09823531724179,
     "torque": 4.677505791548924,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.56588916676344,
-    "tj": 65.10229807319169,
+    "tj": 65.12343952008955,
     "torque": 4.67796257922388,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.55201099889419,
-    "tj": 65.1159166516203,
+    "tj": 65.13798409918199,
     "torque": 4.676820498516062,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.55753148922954,
-    "tj": 65.12864770752125,
+    "tj": 65.15143397532862,
     "torque": 4.67727721926787,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.56312190877235,
-    "tj": 65.13803995930373,
+    "tj": 65.16137155114195,
     "torque": 4.677733984621312,
     "why": "the motor itself: its current limit, or its reach on this supply"
    },
    {
     "current": 56.54295572399336,
-    "tj": 65.10124412399462,
+    "tj": 65.12287227870385,
     "torque": 4.41278420814862,
     "why": "the motor itself: its current limit, or its reach on this supply"
    }
@@ -1423,6 +1425,7 @@
        "turn_on": 0.19579391430047488
       }
      ],
+     "range_lead": "between chips",
      "switching": 1.7697706875159989,
      "t_case": 71.1288635662177,
      "t_sink": 70.0,
@@ -1563,6 +1566,7 @@
        "turn_on": 0.19666439885771578
       }
      ],
+     "range_lead": "between chips",
      "switching": 1.7767849659749686,
      "t_case": 71.14322093978514,
      "t_sink": 70.0,
@@ -1698,6 +1702,7 @@
        "turn_on": 1.2565345074406908
       }
      ],
+     "range_lead": "between chips",
      "switching": 16.244565586181654,
      "t_case": 73.81589191266839,
      "t_sink": 70.0,
@@ -1765,6 +1770,7 @@
     "turn_on": 0.8812657575033842
    }
   ],
+  "range_lead": "between chips",
   "switching": 11.203006004402447,
   "t_case": 64.52537934561535,
   "t_sink": 60.0,

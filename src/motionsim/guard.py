@@ -5,6 +5,7 @@ Thresholds here are common practice, not laws. Each is a parameter.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import IntEnum
 
@@ -28,6 +29,21 @@ class Check:
     level: Level
     topic: str
     message: str
+
+
+# What would narrow a temperature range, by the assumption that widens it most.
+NARROWS = {
+    "mounting": "Most of that range is the layer between the package and the heatsink, whose thickness "
+    "depends on how it is mounted. Its case-to-heatsink resistance, from the part's datasheet, the pad's "
+    "or a measurement, would narrow it",
+    "between chips": "Most of that range is how the chips of the package heat each other, which the "
+    "datasheet does not give. The maker's figure for it would narrow the range; so would a measurement",
+    "transient": "Most of that range is the temperature swing within one turn of the output, which is "
+    "assumed because the datasheet gives no transient thermal curve. That curve would narrow it; so "
+    "would a measurement",
+    None: "A transient thermal curve, or how the chips of the package heat each other, would narrow it; "
+    "so would a measurement",
+}
 
 
 def _coolest(op: OperatingPoint, result: Result) -> float:
@@ -174,12 +190,20 @@ def check(
             level = Level.fail if "above its" in warning else Level.caution
             out.append(Check(level, "voltage", warning))
 
+    # What is beyond the data, in the result's own words: the note that decided the stage is
+    # outside it, or, where the stage as a whole is not, the note on the term in doubt.
+    beyond = next(iter(result.outside), None) or next(
+        (n for n in result.notes if "above the last" in n or "outside the data" in n), None
+    )
     peak = hottest(result)
     low, high = result.tj_peak_range or (peak, peak)
     # A range whose ends read the same says nothing, and is left out.
     wide = bool(result.tj_peak_range) and f"{low:.0f}" != f"{high:.0f}"
     spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions)" if wide else ""
-    if peak > r.tj_max:
+    if not math.isfinite(peak):
+        # No comparison with a figure that is not a number holds, so none is left to pass it.
+        out.append(Check(Level.fail, "temperature", "the junction temperature could not be worked out"))
+    elif peak > r.tj_max:
         out.append(
             Check(
                 Level.fail,
@@ -195,8 +219,7 @@ def check(
                 Level.undecided,
                 "temperature",
                 f"junction peaks at {peak:.0f} °C{spread}: the range crosses the {r.tj_max:g} °C rating, so this "
-                "data cannot say whether it passes. A transient thermal curve, or how the chips of the package "
-                "heat each other, would narrow it; so would a measurement",
+                f"data cannot say whether it passes. {NARROWS[result.range_lead]}",
             )
         )
     elif result.doubt > 0 and high + result.doubt * (high - _coolest(op, result)) > r.tj_max:
@@ -207,10 +230,10 @@ def check(
                 Level.undecided,
                 "temperature",
                 f"junction peaks at {peak:.0f} °C{spread}, under the {r.tj_max:g} °C rating as drawn. The loss "
-                "behind it is drawn beyond the datasheet's data, and could be "
-                f"{result.doubt:.0%} higher in the hottest chip: that much more would take the junction over the "
-                "rating. The datasheet's own curve up to this current, or a measurement, would settle it"
-                + (f" ({result.outside[0]})" if result.outside else ""),
+                "behind it is drawn beyond the datasheet's data: were it as far off as it can be, the "
+                f"junction's rise would be {result.doubt:.0%} higher, which would take it over the rating. The "
+                "datasheet's own curve up to this current, or a measurement, would settle it"
+                + (f" ({beyond})" if beyond else ""),
             )
         )
     elif r.tj_max - high < junction_margin:

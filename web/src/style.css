@@ -324,6 +324,18 @@ button.primary:disabled:hover .icon { transform: none; }
 .drop .quiet { grid-column: 2; font-size: 0.88rem; }
 .drop.big { padding: 26px 20px; margin-bottom: 4px; }
 .aside { margin: 22px 0 0; }
+.verdict-strip { display: none; }
+@media (max-width: 900px) {
+  .verdict-strip:not(:empty) { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; }
+  .verdict-strip .link { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; white-space: nowrap; color: var(--ink-2); text-underline-offset: 3px; }
+}
+.path { margin: 22px 0 0; }
+.path > h3 { margin: 0 0 6px; }
+.path > .quiet { margin: 0 0 10px; }
+.path-go { display: flex; flex-wrap: wrap; gap: 10px; margin: 0; }
+.path .drop.big { padding: 16px; }
+.path .drop b { display: none; }
+.path details.more:first-of-type { margin-top: 0; }
 button.link { min-height: 32px; padding: 0; background: none; border: 0; color: var(--ink-2); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 button.link:hover { color: var(--ink); }
 .read-result { margin-top: 14px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: var(--radius); }

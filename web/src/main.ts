@@ -303,6 +303,11 @@ function renderStage(): void {
   const r = c?.result ?? null;
   const chosen = setup.devices.filter((d) => state.devices.includes(d.id));
   const shown = setup.devices.find((d) => d.id === (c?.id ?? chosen[0]?.id));
+  // On a narrow screen the verdict is a long way below the drawing: its word is said first,
+  // with the way down to the reasons. It repeats the panel, so it is kept from screen readers.
+  $("#verdict-strip").innerHTML = state.step === RESULTS && c?.level && !blocked
+    ? `${verdict(c.level)}<a class="link" href="#panel" tabindex="-1">Why${icon("chevron-down")}</a>`
+    : "";
   $("#plate").innerHTML = schematic({
     kind: state.kind, stage: state.reached >= SUPPLY ? stage : null, result: r,
     tSink: state.conditions.cooling === "held" ? state.conditions.t_sink : state.conditions.t_ambient, vdc: state.reached >= SUPPLY ? state.conditions.v_dc : null,
@@ -326,7 +331,10 @@ function renderStage(): void {
     ? `<span class="switcher-label">On the drawing</span>${proposal!.candidates.filter((x) => x.result).map((x) => `<button type="button" class="chip${x.id === c?.id ? " is-on" : ""}" data-focus="${escape(x.id)}" aria-pressed="${x.id === c?.id}">${escape(x.name)}</button>`).join("")}`
     : "";
   let cells: string;
-  if (!chosen.length) {
+  if (!chosen.length && starting && state.devices.length) {
+    // A part kept from an earlier visit is not on the page until the engine has it again.
+    cells = readout("Starting the engine", starting, "Your part and what you entered are kept in this browser, and come back when the engine has started.");
+  } else if (!chosen.length) {
     cells = readout("Start here", "Choose the device to test", "Step 1. Nothing is worked out until you have brought a part.");
   } else if (blocked && state.reached >= SUPPLY) {
     cells = readout("Power stage", "No solution", state.step === RESULTS ? `go back to ${STEPS[blockedStep() < 0 ? SUPPLY : blockedStep()].name.toLowerCase()} and change it` : "change an input on the right");
@@ -339,7 +347,7 @@ function renderStage(): void {
       readout("Conduction", watts(r.conduction), percent(r.conduction / Math.max(r.loss, 1e-9), 0)) +
       readout("Switching", watts(r.switching), percent(r.switching / Math.max(r.loss, 1e-9), 0), "accent") +
       readout("Hottest junction", degrees(r.tj_peak), settled + range, hot) +
-      (c?.efficiency != null ? readout("Shaft over DC power", percent(c.efficiency), "motor windings included") : "");
+      (c?.efficiency != null ? readout("DC-to-shaft efficiency", percent(c.efficiency), "motor windings included") : "");
   } else if (starting) {
     cells = readout("Starting the engine", starting, "About 20 MB the first time, fetched from cdn.jsdelivr.net and then kept by your browser. Nothing you enter leaves this page. Carry on meanwhile.");
   } else if (conditionsGiven() && c?.problem) {
@@ -479,7 +487,6 @@ function openEquations(): void {
   dialog.showModal();
 }
 
-/** The gate drive a result was worked out with: the headline value, then the reasons. */
 /** The checks that need reading stay in the open; those that passed are counted and folded. */
 function checksBlock(c: Candidate): string {
   if (!c.checks.length) return "";
@@ -489,9 +496,16 @@ function checksBlock(c: Candidate): string {
   const rest = passed.length
     ? `<details class="more" data-fold="${escape(id)}"${openFolds.has(id) ? " open" : ""}><summary>${icon("circle-check")}${passed.length} ${passed.length === 1 ? "check passes" : "checks pass"}<span class="quiet">${escape(passed.map((x) => x.topic).join(", "))}</span></summary>${checkList(passed)}</details>`
     : "";
-  return `${raised.length ? `<h4>To read</h4>${checkList(raised)}` : ""}${rest}`;
+  // Where the layer under the package is what leaves the answer open, the way to it is one press.
+  const cond = state.conditions;
+  const mount = c.result?.range_lead === "mounting" && raised.some((x) => x.level === "undecided" && x.message.includes("how it is mounted"))
+    && (cond.cooling === "held" || cond.cooling === "heatsink") && String(cond.rth_case_sink ?? "").trim() === ""
+    ? `<p><button type="button" class="ghost" data-step="${SUPPLY}" data-open-fold="mounting">${icon("adjustments")}Give the case-to-heatsink resistance</button></p>`
+    : "";
+  return `${raised.length ? `<h4>To read</h4>${checkList(raised)}${mount}` : ""}${rest}`;
 }
 
+/** The gate drive a result was worked out with: the headline value, then the reasons. */
 function gateBlock(c: Candidate): string {
   const g = c.gate;
   if (!g || !c.result) return "";
@@ -626,7 +640,7 @@ async function printReport(): Promise<void> {
     : "";
   const page = `<article class="report"><header><h1>${escape(c.name)}: power-stage estimate</h1><p>${new Date().toISOString().slice(0, 10)} · MotionSim, an exploratory tool. Results are estimates from datasheet values, stated assumptions and simplified models. Verify by measurement before building anything.</p></header>
 <h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", String(k.parallel || 1)], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`.trim()).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Cooling", sentence(coolingWords())], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
-<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", undecided: "Undecided on this data", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["Shaft over DC power", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
+<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", undecided: "Undecided on this data", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["DC-to-shaft efficiency", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
 <h3>Checks</h3>${list(c.checks.map((x) => `${x.topic}: ${x.message}`))}
 <h3>What it needs around it</h3>${list(c.needs)}
 ${compared}${motion}
@@ -676,7 +690,7 @@ function lifeBlock(c: Cycle): string {
   if (!l) return "";
   const big = (v: number) => (v >= 1e12 ? `${sig(v / 1e12, 2)} trillion` : v >= 1e9 ? `${sig(v / 1e9, 2)} billion` : v >= 1e6 ? `${sig(v / 1e6, 2)} million` : v >= 1e3 ? `${sig(v / 1e3, 2)} thousand` : sig(v, 2));
   const body = l.repeats === null
-    ? `<li>The junction temperature swings by less than 1 °C through this motion: thermal cycling wears nothing out here.</li>`
+    ? `<li>The junction temperature swings by less than 1 °C through this motion: this thermal-cycling model counts the wear from a swing that small as negligible.</li>`
     : `<li>About <b>${big(l.repeats)}</b> repeats of this motion${l.hours !== null ? `, which back to back is about ${big(l.hours)} hours` : ""}.</li><li>${l.chip ? `The chip that wears out first is the ${escape(l.chip)}. ` : ""}${percent(l.swing_share, 0)} of its wear comes from ${l.within_turn ? `the swing of ${sig(l.swing, 2)} °C it goes through on every turn of the motor` : `one swing of ${sig(l.swing, 2)} °C`}, about ${Math.round(l.swing_mean)} °C. A smaller swing lasts far longer: halving it gives about thirty times the life.${l.within_turn ? " Turning faster, or a larger chip, makes that swing smaller." : ""}</li>`;
   // Shown, since it is what the swings on the chart above cost; named for what it is, a generic model.
   return `<h4>Life under thermal cycling <span class="quiet">a rough indicator</span></h4><ul class="plain small">${body}<li>A generic model for modules with aluminium bond wires (LESIT), applied to discrete parts too. A real part may last several times longer or shorter; use the maker's power-cycling curve where there is one.</li></ul>`;
@@ -915,6 +929,15 @@ function devicesPanel(): string {
   const example = spare.length
     ? `<p class="aside examples">No part to hand? Try the tool with a made-up one: ${spare.map((d) => `<button type="button" class="link" data-example="${escape(d.id)}">a ${sig(d.v_max)} V ${escape(d.technology.replace(/^Si /, ""))}</button>`).join(" or ")}.</p>`
     : "";
+  // Where a datasheet cannot be read on this page, a newcomer has no file to drop: what they
+  // can do at once comes first, and the file last.
+  if (!canRead && !parts.length && !reading && !(starting && state.added.length)) {
+    const tryIt = spare.length
+      ? `<section class="path"><h3>See what it does</h3><p class="quiet">A made-up part, to walk through every step. Not a real device.</p><p class="path-go">${spare.map((d) => `<button type="button" class="ghost" data-example="${escape(d.id)}">${icon("player-play")}A ${sig(d.v_max)} V ${escape(d.technology.replace(/^Si /, ""))}</button>`).join("")}</p></section>`
+      : "";
+    return `<h2 tabindex="-1">The device you want to test</h2><p class="lead">The power transistor or module you have in mind. Three ways to bring one.</p>
+${tryIt}<section class="path"><h3>Your own part, typed in</h3>${typedForm()}</section><section class="path"><h3>Your own part, from a file</h3>${drop}${how}</section>${files}${again}${nextButton(DEVICE)}`;
+  }
   return `<h2 tabindex="-1">The device you want to test</h2><p class="lead">The power transistor or module you have in mind: ${canRead ? "drop its datasheet, " : ""}type in its figures, or drop a device file.</p>
 ${drop}${outcome}${typedForm()}${how}${list}${reviewBlock()}${example}${files}${again}${nextButton(DEVICE)}`;
 }
@@ -941,7 +964,7 @@ function proposalTab(): string {
   const rows = proposal.candidates
     .map((c, k) => {
       const r = c.result;
-      return `<details class="candidate ${c.level}"${c.id === focused()?.id ? " open" : ""}><summary data-focus="${escape(c.id)}"><span class="rank">${k + 1}</span><span class="cand-name">${escape(c.name)}<span class="quiet">${escape(c.technology)}</span></span><span class="num loss"><span class="cell-label">Loss </span>${r ? watts(r.loss) : "–"}</span><span class="num junction"><span class="cell-label">Junction </span>${r ? degrees(r.tj_peak) : "–"}</span><span class="num still"><span class="cell-label">Held still </span>${c.stall_tj != null ? degrees(c.stall_tj) : "–"}</span>${verdict(c.level)}</summary>
+      return `<details class="candidate ${c.level}"${c.id === focused()?.id ? " open" : ""}><summary data-focus="${escape(c.id)}"><span class="rank">${k + 1}</span><span class="cand-name">${escape(c.name)}<span class="quiet">${escape(c.technology)}</span></span><span class="num loss"><span class="cell-label">Loss </span>${r ? watts(r.loss) : "–"}</span><span class="num junction"><span class="cell-label">Junction </span>${r ? degrees(r.tj_peak) : "–"}</span><span class="num still"><span class="cell-label">Standstill </span>${c.stall_tj != null ? degrees(c.stall_tj) : "–"}</span>${verdict(c.level)}</summary>
 <div class="cand-body">${c.problem ? `<p class="fix"><b>${escape(sentence(c.problem))}.</b> ${escape(sentence(c.fix))}${c.fix ? "." : ""}</p>` : ""}${checksBlock(c)}${gateBlock(c)}${c.needs.length ? `<details class="more" data-fold="needs-${escape(c.id)}"${openFolds.has(`needs-${c.id}`) ? " open" : ""}><summary>${icon("adjustments")}What it needs around it<span class="quiet">${escape(c.needs[0] ?? "")}</span></summary><ul class="plain">${c.needs.map((n) => `<li>${escape(sentence(n))}</li>`).join("")}</ul></details>` : ""}</div></details>`;
     })
     .join("");
@@ -955,7 +978,7 @@ function proposalTab(): string {
     : null;
   const lead = headline ? `<p>${escape(headline)}</p>` : proposal.explain.map((l) => `<p>${escape(l)}</p>`).join("");
   return `<div class="explain">${lead}</div>
-<div class="cand-head" aria-hidden="true"><span></span><span>Device</span><span class="num">Loss</span><span class="num">Junction</span><span class="num">Held still</span><span>Verdict</span></div>${rows}${adviceBlock()}`;
+<div class="cand-head" aria-hidden="true"><span></span><span>Device</span><span class="num">Loss</span><span class="num">Junction</span><span class="num" title="The hottest junction holding the same torque at standstill">Standstill</span><span>Verdict</span></div>${rows}${adviceBlock()}`;
 }
 
 function lossesTab(): string {
@@ -1067,7 +1090,7 @@ function buildSpec(): string {
   const protect = [
     ...(trip ? [`${sentence(trip.message)}.`] : []),
     ...(c.link?.ripple_pp ? [`A switch turns off up to ${sig(stage ? stage.i_peak + c.link.ripple_pp / 2 : c.link.ripple_pp / 2, 3)} A: the current peak with half the ${sig(c.link.ripple_pp, 2)} A ripple on top. Set the overcurrent trip above that and below the device's limit.`] : []),
-    ...(c.stall_tj !== null ? [`Held still at this torque the hottest junction reaches ${degrees(c.stall_tj)}: a stalled motor needs a current limit that holds it there, or a time limit.`] : []),
+    ...(c.stall_tj !== null ? [`Holding this torque at standstill, the hottest junction reaches ${degrees(c.stall_tj)}: a stalled motor needs a current limit that holds it there, or a time limit.`] : []),
   ];
   const section = (title: string, glyph: string, head: string, lines: string[]) => `<section class="rec"><h4>${icon(glyph)}${title}<span class="rec-value">${escape(head)}</span></h4><ul class="plain small">${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></section>`;
   return `<h3>What to build</h3><p class="quiet">What this motor and load require of the power stage, with ${escape(c.name)} as the switch: requirements to start a design from, not a finished design.</p>
@@ -1242,7 +1265,7 @@ ${line("Conduction", cell((r) => `${watts(r.conduction)} <span class="quiet">${p
 ${line("Switching", cell((r) => `${watts(r.switching)} <span class="quiet">${percent(r.switching / Math.max(r.loss, 1e-9), 0)}</span>`))}
 ${line("Hottest junction", whole((c) => `<span class="${c.result!.tj_peak > c.result!.tj_max ? "fail" : ""}">${degrees(c.result!.tj_peak)}</span>${room(c.margin)}`))}
 ${line("Held at standstill", whole((c) => (c.stall_tj == null ? "n/a" : `<span class="${c.stall_tj > c.result!.tj_max ? "fail" : ""}">${degrees(c.stall_tj)}</span>${room(c.stall_margin)}`)))}
-${line("Shaft over DC power", list.map((x, k) => { const e = resultOf(x)?.efficiency; return got[k] === "refused" ? "cannot run" : e != null ? percent(e) : resultOf(x) ? "n/a" : "…"; }))}
+${line("DC-to-shaft efficiency", list.map((x, k) => { const e = resultOf(x)?.efficiency; return got[k] === "refused" ? "cannot run" : e != null ? percent(e) : resultOf(x) ? "n/a" : "…"; }))}
 ${state.compare === "devices" ? line("Switching data", whole((c) => `<span class="basis">${escape(sentence(c.switching?.text ?? "not given"))}</span>`)) : ""}
 ${chipRows(list, got, line)}
 </tbody></table>${list.flatMap((x) => { const r = x.over ? variants.get(x.key) : null; return r instanceof Refused ? [`<p class="fact warn">${icon("alert-triangle")}<span>${escape(x.name)} cannot run: ${escape(r.reason)}.</span></p>`] : []; }).join("")}<p class="quiet small">${foot} ${marked} The margin is counted from the top of the temperature range where values are assumed.${list.length > 1 ? " Slide the table sideways if a column is cut." : ""}</p>`;
@@ -1845,6 +1868,7 @@ function wire(): void {
     if (el.dataset.review !== undefined) { void openReview(el.dataset.review); return; }
     if (el.dataset.addTyped !== undefined) { void addTyped(); return; }
     if (el.dataset.example !== undefined) { const made = el.dataset.example || "example"; state.devices = [...new Set([...state.devices, made])].slice(-MOST); state.added = [...new Set([...state.added, made])]; save(state); void suggestFor(); renderPanel(true); renderRail(); renderStage(); schedule(); (document.querySelector<HTMLElement>(`[data-drop-device="${made}"]`) ?? document.querySelector<HTMLElement>("#panel h2"))?.focus({ preventScroll: true }); return; }
+    if (el.dataset.openFold) openFolds.add(el.dataset.openFold);
     if (el.dataset.step !== undefined) goTo(Number(el.dataset.step));
     else if (el.dataset.tab) { state.tab = el.dataset.tab as Tab; save(state); renderPanel(true); document.querySelector<HTMLElement>(`#tab-${state.tab}`)?.focus(); void deep(); }
     else if (el.dataset.focus) { state.focusPicked = true; if (state.focus !== el.dataset.focus) { state.focus = el.dataset.focus; cycle = grid = advised = null; capable = null; biggest = null; if (state.compare !== "devices") { variants.clear(); cycles.clear(); } save(state); renderStage(); if (!el.matches("summary")) renderPanel(true); void deep(); } }
@@ -1889,7 +1913,7 @@ async function start(): Promise<void> {
   // The steps, the drawing and the form are put on the page only once they can be drawn in
   // full: an empty frame filled a moment later pushes everything below it down.
   const frame = `<nav id="rail" aria-label="Steps"></nav>
-<main id="stage"><div id="plate" class="plate" tabindex="0" role="group" aria-label="Power stage drawing"></div><p class="swipe-hint">${icon("arrow-right")}Slide the drawing sideways to see the motor.</p><div id="switcher" class="switcher"></div><dl id="readouts" class="readouts" aria-live="polite"></dl><div id="compare-table" class="compare-table" aria-live="polite"></div><section id="pwm" class="pwm-view" aria-label="Switching periods"></section></main>
+<main id="stage"><p id="verdict-strip" class="verdict-strip" aria-hidden="true"></p><div id="plate" class="plate" tabindex="0" role="group" aria-label="Power stage drawing"></div><p class="swipe-hint">${icon("arrow-right")}Slide the drawing sideways to see the motor.</p><div id="switcher" class="switcher"></div><dl id="readouts" class="readouts" aria-live="polite"></dl><div id="compare-table" class="compare-table" aria-live="polite"></div><section id="pwm" class="pwm-view" aria-label="Switching periods"></section></main>
 <section id="panel" aria-label="Current step"></section>`;
   let engine: Awaited<ReturnType<typeof boot>>;
   try {

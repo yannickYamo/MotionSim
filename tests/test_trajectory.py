@@ -9,7 +9,7 @@ from conftest import V_REF, line, linear_device
 from motionsim.device import FosterNetwork, Source, Topology
 from motionsim.engine import OperatingPoint, solve
 from motionsim.engine.thermal import zth
-from motionsim.trajectory import BadTrajectory, example, load_trajectory, roles, run
+from motionsim.trajectory import BadTrajectory, Trajectory, example, load_trajectory, roles, run
 
 NETWORK = FosterNetwork(r=[0.3, 0.7], tau=[0.002, 0.05], source=Source(kind="synthetic"))
 
@@ -53,7 +53,7 @@ def test_a_sine_drive_written_as_a_trajectory_matches_the_engine(tmp_path) -> No
 
 
 def test_each_position_carries_what_its_current_direction_says() -> None:
-    trajectory = load_trajectory.__globals__["Trajectory"](
+    trajectory = Trajectory(
         time=np.array([0.0, 1.0]),
         current={"a": np.array([10.0, -10.0])},
         duty={"a": np.array([0.3, 0.3])},
@@ -87,3 +87,20 @@ def test_bad_files_are_refused_with_the_reason(tmp_path) -> None:
     ):
         with pytest.raises(BadTrajectory, match=reason):
             load_trajectory(write(tmp_path, text))
+
+
+def test_a_file_from_a_spreadsheet_is_read_and_a_broken_one_is_refused_in_words(tmp_path) -> None:
+    good = "time_s,i_a,d_a\n0,1,0.5\n0.001,2,0.5\n0.002,1,0.5\n"
+    path = tmp_path / "t.csv"
+    # A spreadsheet's export starts with a byte-order mark; it is not part of the first name.
+    path.write_bytes(b"\xef\xbb\xbf" + good.encode())
+    assert load_trajectory(path).legs == ["a"]
+    for text, reason in (
+        (good.replace("0.001,2,0.5", "0.001,nan,0.5"), "finite"),
+        (good.replace("0.001,2,0.5", "0.001,inf,0.5"), "finite"),
+        (good.replace("0.001,2,0.5", "0.001,2"), "as many values"),
+        (good.replace("time_s,i_a,d_a", "time_s,i_a,i_a"), "same name"),
+    ):
+        path.write_text(text)
+        with pytest.raises(BadTrajectory, match=reason):
+            load_trajectory(path)

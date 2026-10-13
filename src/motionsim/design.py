@@ -594,7 +594,7 @@ def markdown(result: dict) -> str:
                 add(_said(sentence))
         add("")
         add(
-            "| Device | Verdict | Loss | Conduction | Switching | Hottest junction | Margin | Held still | Shaft over DC |"
+            "| Device | Verdict | Loss | Conduction | Switching | Hottest junction | Margin | Standstill, same torque | DC-to-shaft efficiency |"
         )
         add("|---|---|---|---|---|---|---|---|---|")
         word = WORD
@@ -694,7 +694,9 @@ def markdown(result: dict) -> str:
     if compared:
         add(f"## Motors compared, on {name}")
         add("")
-        add("| Motor | Verdict | Peak current | Loss | Hottest junction | Margin | Capacitor ripple | Shaft over DC |")
+        add(
+            "| Motor | Verdict | Peak current | Loss | Hottest junction | Margin | Capacitor ripple | DC-to-shaft efficiency |"
+        )
         add("|---|---|---|---|---|---|---|---|")
         for mo in compared:
             if "refused" in mo:

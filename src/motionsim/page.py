@@ -554,6 +554,7 @@ def _result(r, tj_max: float, parallel: int = 1) -> dict:
         "efficiency": r.efficiency,
         "tj_peak": hottest(r),
         "tj_range": r.tj_peak_range,
+        "range_lead": r.range_lead,
         "tj_max": tj_max,
         "t_case": r.t_case,
         "t_sink": r.t_sink,

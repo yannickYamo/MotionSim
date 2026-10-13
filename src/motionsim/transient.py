@@ -232,8 +232,8 @@ def _in_air(device, motor, base: OperatingPoint, heatsink, repeats, start, sampl
 def follow(
     device: Device,
     motor,
-    load: Load,
-    profile: Profile,
+    load: Load | None,
+    profile: Profile | None,
     base: OperatingPoint,
     *,
     heatsink: Heatsink | None = None,

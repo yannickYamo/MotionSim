@@ -169,6 +169,8 @@ class Result:
     roles: list[RoleResult] = field(default_factory=list)
     assumptions: list[str] = field(default_factory=list)  # thermal values assumed, not given
     tj_peak_range: tuple[float, float] | None = None  # hottest junction across those assumptions
+    # Which assumption widens that range most: "mounting", "between chips" or "transient".
+    range_lead: str | None = None
     t_sink: float | None = None  # °C, what the packages sit on: the heatsink, or the air without one
     doubt: float = 0.0  # share of the stage's loss that rests on data the datasheet does not hold
 

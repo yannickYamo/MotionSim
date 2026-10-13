@@ -74,4 +74,4 @@ The life estimate counts each chip's own temperature swings, those of every turn
 
 - Export of a device model to other simulators.
 - Reading a datasheet on the hosted page. That needs your own key and a local install.
-- The page can also be opened as plain files, with the engine running in the browser. In that mode the Python runtime is fetched once from cdn.jsdelivr.net; nothing you enter is sent anywhere. `motionsim serve` fetches nothing.
+- The hosted page runs the engine in the browser. In that mode the Python runtime is fetched once from cdn.jsdelivr.net; nothing you enter is sent anywhere. `motionsim serve` fetches nothing.

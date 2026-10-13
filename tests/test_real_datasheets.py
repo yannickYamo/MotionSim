@@ -141,7 +141,7 @@ def test_module_against_the_vendor_simulator() -> None:
     device = load_device(built)
     results = FOLDER.parent / "private" / "simulator_modules.yaml"
     if not results.exists():
-        pytest.skip("no simulator results kept locally")
+        pytest.skip("no simulator reference file present")
     data = yaml.safe_load(results.read_text())
     reference = data["parts"][data["aliases"]["module_c"]]
     for row in reference["points"]:

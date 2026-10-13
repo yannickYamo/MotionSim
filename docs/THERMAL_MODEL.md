@@ -95,9 +95,9 @@ The spread across the thermal assumptions is not recomputed in time. The range f
 
 ## How it compares with a vendor's simulator
 
-A cross-check, not a source. One vendor's public simulator was run for eight of its modules (kept locally, outside the repository). Its junction temperatures fit the same form as above, with coupling of 0.67 to 1.09 K/W for five fully moulded modules and zero for three ceramic-substrate ones. The first-principles figures are 0.36 K/W (0.14 to 1.10) and 0.01 K/W. Same order, same contrast between constructions, from independent reasoning.
+A cross-check, not a source. For the one module compared (module C in [VALIDATION.md](VALIDATION.md)), the simulator's junction temperatures fit the same form as above, with heating between chips of about 0.5 K/W for the switch against the 0.36 K/W (0.14 to 1.10) computed here: the same order, from independent reasoning.
 
-For the one module whose datasheet has been read (module C), with construction left unknown and the transient response assumed, the hottest junction was within −5 to +4 °C of the simulator's at six operating points. With the datasheet's own transient curve and its energy curves now read, it is within −4 to +7 °C. The simulator works from the case temperature; with the case-to-heatsink layer taken out of our side as well, the figure is −8 to +3 °C, the low end being the one point where the diode is the hottest chip. The simulator's value lies inside the reported range at all six in every one of these. The temperature swing within an output period comes out about a third smaller than the simulator's (2.2 against 3.5 °C at 50 Hz, 5.6 against 6.7 °C at 5 Hz).
+With that module's curves read from its datasheet and the construction left unknown, the hottest junction is 0.2 to 3.4 °C above the simulator's at the five operating points where the switch is the hottest chip, and 7.5 °C below at the one where the diode is. The simulator's value lies inside the reported range at all six.
 
 ## Limits
 
@@ -105,6 +105,6 @@ For the one module whose datasheet has been read (module C), with construction l
 - Chips on separate pieces of copper are taken not to heat each other through the package. The heatsink surface is taken to be at one temperature.
 - Baseplate power modules, press-fit and double-sided cooled packages have no template.
 - Surface-mount packages cooled through a circuit board are represented only by the tab-to-interface model, which is wrong for them.
-- The transient response is that of the generic package, junction to heatsink, applied to a datasheet resistance defined junction to case. The two are not the same thing; the comparison above suggests the swing is somewhat underestimated.
+- The transient response is that of the generic package, junction to heatsink, applied to a datasheet resistance defined junction to case. The two are not the same thing.
 - Through time, neighbour heating and the interface follow the loss as fast as the copper alone allows, and the heatsink has no gradient across it. A burst of seconds on a moulded module comes out warm.
-- One vendor's simulator is the only external check.
+- One vendor's simulator, on one part, is the only external check on temperature.

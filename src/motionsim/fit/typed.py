@@ -8,8 +8,6 @@ held to the same checks and carries the same assumptions as a read one.
 
 from __future__ import annotations
 
-import yaml
-
 from motionsim.device.schema import Device, ReviewStatus, Topology
 from motionsim.fit.sparse import MissingData
 from motionsim.observe.schema import Document, Observation, ObservationSet, Quantity
@@ -317,8 +315,3 @@ def _without_pages(device: Device) -> Device:
 def is_figures(data) -> bool:
     """Whether a parameter file is typed figures, not a reader's observations."""
     return not isinstance(data, dict) or "observations" not in data
-
-
-def load_figures(path) -> Device:
-    with open(path, encoding="utf-8") as f:
-        return from_figures(yaml.safe_load(f))

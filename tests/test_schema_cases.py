@@ -313,3 +313,30 @@ def test_a_substrate_module_is_insulated_by_0_38_mm_of_alumina_its_back_copper_a
     # The same notes print how far heat spreads in this module's copper: 2.8 mm.
     assert stack.spreading_length == pytest.approx(math.sqrt(390 * 0.3e-3 * per_area), rel=1e-9)
     assert f"{stack.spreading_length * 1000:.1f}" == "2.8"
+
+
+def test_how_an_energy_moves_with_gate_resistor_or_voltage_is_a_pair_of_lists_alike() -> None:
+    """The two lists are read against each other: unlike lengths, one without the other, or
+    resistances that do not rise are refused when the device is loaded, not when it is solved."""
+    device = load_device("examples/synthetic_igbt_600v_30a.yaml")
+    energy = device.switch.e_on.model_dump()
+    kind = type(device.switch.e_on)
+    kind.model_validate({**energy, "rg_values": [5.0, 10.0, 20.0], "rg_factor": [0.8, 1.0, 1.4]})
+    for more in (
+        {"rg_values": [5.0, 10.0, 20.0], "rg_factor": [0.8, 1.0]},
+        {"rg_values": [5.0, 10.0]},
+        {"v_factor": [0.5, 1.0]},
+        {"v_values": [300.0, 300.0], "v_factor": [1.0, 1.0]},
+        {"rg_values": [10.0], "rg_factor": [1.0]},
+    ):
+        with pytest.raises(ValidationError):
+            kind.model_validate({**energy, **more})
+
+
+def test_a_chip_is_no_larger_than_the_tab_it_sits_on() -> None:
+    from motionsim.package.templates import TABS
+
+    width, height, _ = TABS["TO-220"]
+    for rated in (20.0, 250.0, 1000.0):
+        for chip in build("TO-220", rated, diode=False).plates[0].chips:
+            assert chip.width <= min(width, height) and chip.height <= min(width, height)

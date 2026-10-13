@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "motionsim"
-version = "0.3.3"
+version = "0.3.4"
 description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
 readme = "README.md"
 license = "Apache-2.0"
@@ -28,6 +28,10 @@ dependencies = [
     "pillow>=10.0",
     "anthropic>=0.80",
 ]
+
+[project.urls]
+Homepage = "https://yannickyamo.github.io/MotionSim/"
+Repository = "https://github.com/yannickYamo/MotionSim"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-cov", "hypothesis", "ruff==0.17.0", "mypy", "types-PyYAML", "pre-commit"]
@@ -70,6 +74,6 @@ source = ["motionsim"]
 branch = true
 
 [tool.coverage.report]
-# Measured at 81% on the public tree (the reader's tests on real datasheets are not shipped).
+# Measured at 81% with no real datasheets present (the reader's tests on them then skip).
 # Held a little under that, and raised as tests land.
 fail_under = 78

@@ -151,7 +151,9 @@ def thermal_network(device: Device, chip: Chip, variant: str = "typical") -> tup
         package = device.package
         template, _ = assumed.template_for(package.construction, package.outline, package.topology.positions)
         kind = "diode" if chip.kind is ChipKind.diode else "switch"
-        stages = assumed.response(template, device.ratings.i_nominal, variant, package.interface, kind)
+        stages = assumed.response(
+            template, device.ratings.i_nominal, variant, package.interface, kind, device.diode is not None
+        )
         network = FosterNetwork(
             r=[share * chip.thermal.rth for share, _ in stages],
             tau=[tau for _, tau in stages],
@@ -167,6 +169,26 @@ def _peak(
     """Highest junction temperature within the period."""
     network, basis = thermal_network(device, chip, variant)
     return t_case + float(periodic_rise(network, power, period).max()), basis
+
+
+def _range_lead(
+    device: Device, op: OperatingPoint, role: RoleResult, package: float, top: float, peak_basis: PeakBasis
+) -> str | None:
+    """Which thermal assumption lifts the top of the range most, reckoned from the typical
+    result: the layer under the package carries the package's loss, the heating between chips
+    the loss of the others, and what is left is the shape assumed for the transient response."""
+    hot = role.switch.total if role.tj_switch_peak >= role.tj_diode_peak else role.diode.total
+    parts = {}
+    if op.rth_free is None:
+        parts["mounting"] = (case_sink(device, "high", op) - case_sink(device, "typical", op)) * package
+    if device.package.rth_mutual is None and device.package.topology.positions > 1:
+        parts["between chips"] = (_mutual(device, "high") - _mutual(device, "typical")) * max(package - hot, 0.0)
+    if peak_basis is PeakBasis.assumed and (math.isfinite(top) or not parts):
+        # Where the top of the range ran away there is no remainder to reckon: the shape is
+        # named only where nothing else is assumed.
+        parts["transient"] = max(top - role.hottest - sum(parts.values()), 0.0)
+    lead = max(parts, key=parts.get, default=None)
+    return lead if lead is not None and parts[lead] > 0 else None
 
 
 def _assumptions(
@@ -365,15 +387,23 @@ def _shares(roles: list[RoleResult]) -> dict[str, float]:
     return {name: sum(r.count * pick(r) for r in roles) / total for name, pick in terms.items()}
 
 
-def _doubt(marks: _Notes, roles: list[RoleResult]) -> float:
-    """The share of a loss that rests on data the datasheet does not hold: of the stage's, or
-    of one chip's where that is larger. A junction rises mostly with its own chip's loss, so
-    a term in doubt in the hot chip counts for its share of that chip, not of the stage."""
+def _doubt(marks: _Notes, roles: list[RoleResult], coolest: float) -> float:
+    """How much higher the hottest junction's rise would be, as a share of it, were the loss
+    that rests on data the datasheet does not hold as far off as it can be. A junction rises
+    mostly with its own chip's loss, so a term in doubt counts for its share of that chip's
+    loss, and never for less than its share of the stage's, which every chip is warmed by.
+    Each chip is carried to where it would then stand, and the hottest of those is set
+    against the hottest as drawn: a cool chip much in doubt does not speak for a hot one."""
     share = _shares(roles)
     off = marks.off.get
-    worst = sum(share.get(term, 1.0) * far for term, far in marks.off.items())
+    stage = sum(share.get(term, 1.0) * far for term, far in marks.off.items())
+    hottest = max(r.hottest for r in roles)
+    if hottest <= coolest:
+        return 0.0
+    would = hottest
     for r in roles:
         sw, d = r.switch, r.diode
+        chips = []
         if sw.total > 0:
             in_doubt = (
                 sw.conduction * off("switch conduction", 0.0)
@@ -382,11 +412,16 @@ def _doubt(marks: _Notes, roles: list[RoleResult]) -> float:
                 + sw.dead_time * off("reverse conduction", 0.0)
                 + sw.recovery * off("recovery energy", 0.0)
             )
-            worst = max(worst, in_doubt / sw.total)
+            chips.append((r.tj_switch_peak, in_doubt / sw.total))
         if d.total > 0:
             in_doubt = d.conduction * off("diode conduction", 0.0) + d.recovery * off("recovery energy", 0.0)
-            worst = max(worst, in_doubt / d.total)
-    return min(worst, 1.0)
+            chips.append((r.tj_diode_peak, in_doubt / d.total))
+        for peak, own in chips:
+            would = max(would, peak + min(max(own, stage), 1.0) * (peak - coolest))
+    # Reckoned whether or not the stage as a whole is outside its data: a term that is a
+    # twentieth of the stage's loss can be most of the hottest chip's.
+    worst = (would - hottest) / (hottest - coolest)
+    return min(worst, 1.0) if worst >= MINOR_SHARE else 0.0
 
 
 def _outside(marks: _Notes, roles: list[RoleResult]) -> list[str]:
@@ -447,7 +482,7 @@ def _rating_warnings(device: Device, op: OperatingPoint, i_pk: float) -> list[st
     peak = op.v_dc + overshoot
     if peak > v_max:
         if "gan" in technology:
-            consequence = "GaN transistors have no avalanche capability, so this is a violation"
+            consequence = "a GaN transistor is not rated for avalanche, so this is a violation"
         elif sw.kind is ChipKind.mosfet:
             consequence = (
                 "the device would avalanche every switching cycle; check its repetitive "
@@ -725,6 +760,8 @@ def solve_roles(
         held = sink + max(op.rth_board * max(everything - own, 0.0), op.rth_board * everything - under * own)
     assumptions = _assumptions(device, peak_basis, in_air=op.rth_free is not None, op=op)
     tj_range = None
+    lead = None
+    ran_away = False
     # The range across the thermal assumptions takes two more solves. A search that only
     # needs the typical value asks for it to be left out.
     if assumptions and variant == "typical" and spread:
@@ -744,8 +781,20 @@ def solve_roles(
                 )
                 ends.append(max(alt.tj_switch_peak, alt.tj_diode_peak))
             except ThermalRunaway:
-                ends.append(float("inf"))
+                # No temperature to report at this end: the range is closed where the search
+                # gave up, far above any rating, and the result says why.
+                ends.append(runaway_limit)
+                ran_away = True
         tj_range = (min(ends + [worst.hottest]), max(ends + [worst.hottest]))
+        if ran_away:
+            assumptions = assumptions + [
+                "at one end of these assumptions the junction temperature does not settle (thermal "
+                f"runaway): the range is closed at {runaway_limit:.0f} °C, where the search stopped"
+            ]
+        if tj_range[1] > worst.hottest:
+            at = role_results.index(worst)
+            top = float("inf") if ran_away else tj_range[1]
+            lead = _range_lead(device, op, worst, packages[at], top, peak_basis)
     i_pk = float(max(r.current.max() for r in roles))
     envelope = _envelope_notes(device, op, i_pk, worst.tj_switch, worst.tj_diode)
     outside = list(extra_outside or []) + _outside(envelope, role_results)
@@ -811,8 +860,9 @@ def solve_roles(
         roles=role_results,
         assumptions=assumptions,
         tj_peak_range=tj_range,
+        range_lead=lead,
         t_sink=sink,
-        doubt=_doubt(envelope, role_results) if outside else 0.0,
+        doubt=_doubt(envelope, role_results, op.t_sink),
     )
 
 

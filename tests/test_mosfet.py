@@ -145,7 +145,7 @@ def test_overshoot_check_and_avalanche_wording() -> None:
 
     # t_fall = (9 - 6) nC * 1 ohm / 2.5 V = 1.2 ns; 28.3 A peak; 20 nH -> about 471 V
     hard = solve(fet(), op(v_dc=400.0, l_loop=20e-9))
-    assert any("no avalanche capability" in w for w in hard.rating_warnings)
+    assert any("not rated for avalanche" in w for w in hard.rating_warnings)
 
     silicon = fet()
     silicon.technology = "Si MOSFET"

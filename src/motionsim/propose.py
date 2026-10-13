@@ -204,11 +204,18 @@ def propose(
 def level_with_best(candidates: list[Candidate]) -> list[Candidate]:
     """The candidates that pass and lose so nearly what the best one loses that the model does
     not tell them apart. The best is among them; alone, when it leads clearly."""
-    usable = [c for c in candidates if c.level is not guard.Level.fail]
+    usable = _contenders(candidates)
     if not usable:
         return []
     least = min(c.loss for c in usable)
     return [c for c in usable if c.loss <= least * (1 + LEVEL)]
+
+
+def _contenders(candidates: list[Candidate]) -> list[Candidate]:
+    """The candidates the best is chosen among: those that pass, or, where none does, those
+    the data cannot decide. A part that is not decided is never level with one that passes."""
+    passing = [c for c in candidates if c.level in (guard.Level.ok, guard.Level.caution)]
+    return passing or [c for c in candidates if c.level is guard.Level.undecided]
 
 
 def _unlike(usable: list[Candidate]) -> list[str]:
@@ -249,6 +256,8 @@ def explain(candidates: list[Candidate]) -> list[str]:
         best = usable[0]
         name = best.name
         level = [c for c in level_with_best(candidates) if c is not best]
+        if best.level is guard.Level.undecided:
+            lines.append("None of these devices is shown to pass every check at this operating point.")
         if level:
             lines.append(
                 f"{_and([name] + [c.name for c in level])} lose within {LEVEL:.0%} of each other "
@@ -256,16 +265,21 @@ def explain(candidates: list[Candidate]) -> list[str]:
                 "and something else has to decide."
             )
         else:
-            lines.append(f"{name} has the lowest power-stage loss among the devices that pass: {best.loss:.1f} W.")
+            among = (
+                "the devices this data cannot decide"
+                if best.level is guard.Level.undecided
+                else "the devices that pass"
+            )
+            lines.append(f"{name} has the lowest power-stage loss among {among}: {best.loss:.1f} W.")
         if best.level is guard.Level.caution:
             lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
         if best.level is guard.Level.undecided:
             lines.append(
-                f"{name} is not decided by this data: its temperature range crosses the rating. "
-                "The check below says what would settle it."
+                f"{name} is not decided by this data: what the datasheet leaves out could change the "
+                "answer. The check below says what would settle it."
             )
         if not best.device.package.integrated_driver:
-            built_in = [c for c in usable[1:] if c.device.package.integrated_driver]
+            built_in = [c for c in _contenders(candidates) if c is not best and c.device.package.integrated_driver]
             if built_in:
                 other = built_in[0]
                 lines.append(
@@ -276,6 +290,10 @@ def explain(candidates: list[Candidate]) -> list[str]:
             if other in level:
                 continue
             extra = other.loss - best.loss
+            if other.level is guard.Level.undecided and best.level is not guard.Level.undecided:
+                against = f"{abs(extra):.1f} W {'more' if extra >= 0 else 'less'}"
+                lines.append(f"{other.name} is not decided by this data, and would lose {against}.")
+                continue
             share = f" ({extra / best.loss:.0%})" if best.loss > 0 else ""
             lines.append(f"{other.name} loses {extra:.1f} W more{share}.")
         # Loss is not the only thing to choose on: the room left to the junction limit is
@@ -284,7 +302,7 @@ def explain(candidates: list[Candidate]) -> list[str]:
             ("at the design point", lambda c: c.margin),
             ("holding the torque at standstill", lambda c: c.stall_margin),
         ):
-            known = [c for c in usable if room(c) is not None]
+            known = [c for c in _contenders(candidates) if room(c) is not None]
             if len(known) < 2 or room(best) is None:
                 continue
             roomiest = max(known, key=room)

@@ -157,6 +157,8 @@ def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, dio
     """One switch, with or without a diode beside it, on the package's copper tab."""
     width, height, thickness = TABS[outline]
     sw, d = _sides(i_rated, variant)
+    # A chip is no larger than the tab it sits on, whatever its rating would ask for.
+    sw, d = min(sw, width, height), min(d, width, height)
     if diode:
         chips = (
             ChipSite("switch", width / 2, height * 0.36, sw, sw),
@@ -196,7 +198,8 @@ def build(
 
 @dataclass(frozen=True)
 class Summary:
-    """A package matrix reduced to the three numbers the loss engine uses."""
+    """A package matrix reduced to a few numbers: what the loss engine uses, and each chip's own
+    resistance for the `motionsim package` printout."""
 
     self_switch: float  # junction to heatsink, switch alone, K/W
     self_diode: float | None
@@ -249,6 +252,7 @@ def response_shape(
     variant: str = "typical",
     interface: str = "grease",
     chip: str = "switch",
+    diode: bool = True,
 ) -> tuple[tuple[float, float], ...]:
     """Shape of a chip's thermal step response in a generic package of this kind.
 
@@ -259,7 +263,7 @@ def response_shape(
     """
     from motionsim.fit.foster import fit_foster
 
-    model = build(template, i_rated, variant, interface)
+    model = build(template, i_rated, variant, interface, diode=diode)
     plate = model.plates[0]
     index = next(k for k, c in enumerate(plate.chips) if chip in c.name)
     times = np.geomspace(2e-5, 20.0, 36)

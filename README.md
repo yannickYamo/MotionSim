@@ -1,18 +1,18 @@
 # MotionSim
 
-Bring a power transistor's datasheet, or a dozen figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
+Bring a power transistor's datasheet, or nine figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
 
 MotionSim is a web page with a loss and temperature engine behind it. It needs no vendor's model library: the device model is built from the part's own datasheet, whichever vendor's, where the datasheet gives enough ([docs/LIMITS.md](docs/LIMITS.md) says what the reader cannot read yet). It shows the equations it uses, and says in every result what the data supports and what it leaves out. It answers two questions: what power stage a load needs, and what load a device can drive.
 
 Live page: https://yannickyamo.github.io/MotionSim/
 
-No browser needed: the same five steps run from a terminal with one command, `motionsim design run design.yaml`, and a coding agent can drive it that way. See [From the terminal, or driven by a coding agent](#from-the-terminal-or-driven-by-a-coding-agent).
+No browser needed: the same five steps run from a terminal with one command, `motionsim design run design.yaml`, and a coding agent can drive it that way. See [docs/GUIDE.md](docs/GUIDE.md).
 
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature, the verdict and its checks on the right](docs/images/page.png)
 
-The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. It does not read datasheet PDFs: that needs your own key and a local install, as below.
+The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. The first visit fetches about 20 MB. It does not read datasheet PDFs: that needs your own key and a local install, as below.
 
-**Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). Against the one measured inverter loss found in public, a 48 V reference design, it is 10 to 31% low on a measurement that includes the board's own resistance. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
+**Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 12% high). Against the one measured inverter loss found in public, a 48 V reference design, it is 10 to 31% low on a measurement that includes the board's own resistance. [docs/VALIDATION.md](docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](docs/LIMITS.md) says where it falls short.
 
 ## Who it is for
 
@@ -20,37 +20,33 @@ People with a motor to drive and a power stage to choose, who are not power-elec
 
 ## Why
 
-Every semiconductor vendor has a loss calculator, and each one knows only that vendor's parts. Comparing an IGBT from one vendor with a MOSFET from another means building the models yourself, usually by typing a datasheet into a simulator by hand.
+Every semiconductor vendor has a loss calculator, and each one knows only that vendor's parts. It takes an operating point a specialist has to work out, and gives back one number with no word on what it rests on. Comparing an IGBT from one vendor with a MOSFET from another means building the models yourself, usually by typing a datasheet into a simulator by hand.
 
-MotionSim starts from the datasheet itself, or from your own measurements. Each value in a device model records the page it came from, and each result says what it rests on.
+MotionSim starts from the datasheet itself, or from your own measurements. You give it a motor, a supply and a load, not a modulation index. Each value in a device model records the page it came from, and each result says what it rests on. Where the data cannot decide, it says so.
+
+[docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md) goes through the problems it starts from, the decisions behind it and what each one costs.
 
 ## What you do with it
 
 Five steps on one page, with the power stage drawn on screen the whole time:
 
-1. **The device.** Type in a dozen figures from a transistor's datasheet (ratings, on-resistance, gate and output charge, thermal resistance), drop its datasheet (PDF) or a device file, or bring your own double-pulse measurements. A figure that cannot be right, such as an on-resistance in the wrong unit, is refused where it sits. Nothing is listed that you did not bring.
-2. **The motor.** Seven kinds: permanent-magnet (magnets on, set into or buried in the rotor), reluctance, induction, brushless DC, brushed DC with a magnet or a series field, and stepper. The kinds that suit your device's voltage come first, and one is opened as the starting point. That is a template to begin from, picked by voltage and by how many switches the package holds; it is not a recommendation of a motor, which the application decides.
-3. **The supply and the design point.** Voltage, speed, torque, switching frequency (up to 10 MHz, for GaN), devices in parallel. And the cooling: a heatsink at a temperature you know, a heatsink in air from its K/W figure, or no heatsink, with each part standing in the air or all of them soldered to one board, where they warm each other. On a heatsink you can say what lies under each package, grease or a pad, or give its case-to-heatsink figure where you have measured it; left alone it is worked out, with a range.
-4. **The load.** Pick a kind (fan, compressor, robot joint, vehicle, washer drum, positioning axis, power tool) sized to your motor, or bring a mission profile as a CSV file. Each kind of motor is offered the loads it commonly drives (a reluctance motor a pump or a compressor); any load can be entered by its figures. Choose how the drive starts the motor.
-5. **The results.**
-   - A verdict with plain-language checks, and what the part needs around it. Where the temperature range crosses the rating the verdict is "undecided on this data", not a pass or a fail, and says what would settle it. So is a pass that rests on losses drawn beyond the datasheet's last point, when being as far off as they can be would undo it. A caution on the data means the operating point is outside what the datasheet gives, for a loss that matters there. A gate drive and a dead time you did not give are chosen, counted and stated, and the dead-time advice says what a firmware default of 500 ns would cost.
-   - Conduction and switching loss, and junction temperature as a range where values are assumed.
-   - Temperature through the whole motion, the motor current, and a rough indicator of life under thermal cycling: a generic model, named as one, which can be several times off.
-   - A speed-torque map, in the motor's units or the load's.
-   - **What to build**: the heatsink (sized to a default target of 100 °C, which you can change; it is a design assumption, not a rating), the DC-link capacitor and the ripple current it must carry, the gate drive, and the protection the design needs, on one sheet.
-   - **What it can drive**: the question turned round. The torque the device holds at each speed, how that moves with switching frequency and heatsink temperature, and how much heavier your load could be.
-   - Up to five devices, loads or motors compared side by side, or one setting (switching frequency, supply voltage, heatsink or air temperature, devices in parallel) tried at two to five values, each added as a column. The table gives each one's verdict, its margin to the junction limit running and held still, and every loss and temperature of the hottest switch position: the switch conducting, turning on and turning off, the diode, each junction's peak, average and swing, the case, and what the switching does to the link capacitor and the motor current. Losses too close to tell apart are marked level, and devices compared on unlike data are said to be.
-   - A setup you can save to a file, and the whole result as a report: a PDF, or a Markdown file to keep or to hand to a coding agent.
+1. **The device.** Type nine figures from a MOSFET, SiC or GaN transistor's datasheet, drop a datasheet or a device file (any supported part, IGBTs and modules included), or bring your own double-pulse measurements.
+2. **The motor.** One of seven kinds, from its catalogue figures.
+3. **The supply and the design point.** Voltage, speed, torque, switching frequency, and how the stage is cooled.
+4. **The load.** A fan, a robot joint, a vehicle and others, sized to your motor, or a mission profile from a file.
+5. **The results.** A verdict with plain-language checks, losses and junction temperatures, the temperature through the whole motion, what to build around the part, what the part can drive, and up to five parts, loads or motors side by side, or one setting tried at several values.
+
+A part passes, with any cautions listed, is ruled out, or is "undecided on this data" where the datasheet leaves the answer open, with what would settle it. An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away.
 
 ![The first step: a transistor typed in from its datasheet figures, with the made-up parts and the device file drop beside it](docs/images/device.png)
 
 ![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
 
-An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away. What you enter is kept in your browser from one visit to the next; Reset, at the top right, clears it.
+[docs/GUIDE.md](docs/GUIDE.md) describes each step and every result in detail.
 
 ## Install and run
 
-To read your own datasheets, run MotionSim on your own machine. There is no account, and nothing is sent to this project.
+The live page needs no install. To read your own datasheets, or to work offline, run MotionSim on your own machine. There is no account, and nothing is sent to this project.
 
 ```
 git clone https://github.com/yannickYamo/MotionSim.git
@@ -60,25 +56,9 @@ pip install .
 motionsim serve
 ```
 
-The page opens at `http://127.0.0.1:4310/`. It answers only requests from your own machine. It needs Python 3.11 or later.
+The page opens at `http://127.0.0.1:4310/`. It needs Python 3.11 or later.
 
-The same install gives the `motionsim` command: `motionsim --help` lists what it does, and `motionsim design init` followed by `motionsim design run` takes a part from datasheet figures to a verdict without opening the page.
-
-### Reading datasheets needs your own API key, and that is why it is local
-
-Reading a datasheet PDF is done by a language model, and that is a paid call. MotionSim makes it from your machine, with your own Anthropic API key, straight to Anthropic. The project has no server of its own, keeps no key and sees none of your files.
-
-```
-export ANTHROPIC_API_KEY=your-key
-motionsim serve
-```
-
-- The key is read from your environment each time the page starts. It is never written to disk, never sent to the page, and never leaves your machine except in the call to Anthropic.
-- A datasheet takes a minute or two and costs about what a long chat message does. The page says so before it starts.
-- What was read is saved beside the device model, value by value with its page number, so you can check it against the datasheet. Open "Check what was read" on any part.
-- Without a key everything else works: a transistor typed in from its datasheet, device files, your own measurements, and the made-up parts.
-
-Datasheets are their vendors' property. None is distributed here, and no device data ships with the project.
+Reading a datasheet PDF is done by a language model, and that is a paid call. It is made from your machine with your own Anthropic API key (`export ANTHROPIC_API_KEY=your-key`), straight to Anthropic: the project has no server, keeps no key and sees none of your files. Without a key everything else works. Datasheets are their vendors' property: none is distributed here, and no vendor's device data ships with the project.
 
 ## Example
 
@@ -110,64 +90,19 @@ synthetic LINEAR-600V-30A (Si IGBT)
 
 The margin is counted from the top of the range.
 
-With a datasheet of your own:
-
-```
-motionsim extract my_part.pdf -o my_part.observations.yaml
-motionsim build my_part.observations.yaml -o my_part.device.yaml
-motionsim serve --devices .
-```
-
-Or with a transistor typed in by hand, no key needed:
-
-```
-motionsim template device -o my_part.yaml      # fill in the figures from the datasheet
-motionsim build my_part.yaml -o my_part.device.yaml
-```
-
-Everything the page does is also a command: `motionsim --help` lists them. To rank several parts on one motor from the command line:
-
-```
-motionsim propose a.device.yaml b.device.yaml --vdc 48 --motor examples/motor_robot_joint_pmsm.yaml \
-    --fsw 20000 --tsink 50 --tdead 2e-7 --rpm 1000 --torque 1
-```
-
-A gate drive left open is chosen for each part, as on the page. `--parallel`, `--tmin` and `--tmotor` set devices in parallel, the shortest pulse and the winding temperature. In place of `--tsink`, cooling to air is `--tair` with `--rth-heatsink` (a heatsink's K/W), or with `--rth-ja` or `--no-heatsink` for none (add `--board-area` and `--copper` for parts soldered to one board). On a heatsink, `--interface pad` or `--rth-case-sink` says how the packages are mounted. A dead time left open is filled in, as on the page.
-
-## From the terminal, or driven by a coding agent
-
-Every step of the page can be run from one file, with no browser and no server:
-
-```
-motionsim design init --device my_part.yaml -o design.yaml   # a design sized to the part
-motionsim design run design.yaml --md report.md              # fit, verdict, motion, what to build, what it can drive
-motionsim design run design.yaml --json                      # the same, for a program to read
-```
-
-`my_part.yaml` is a device file, or the figures typed from a datasheet (`motionsim template device`). A design may name up to five devices, which are compared at the design point and through the motion, and several motors under `motors:`, which are compared on one inverter; `--csv table.csv` writes the comparison as a table. The exit status says how it went: 0 the part passes, 3 it does not (at the design point, or through the motion), 4 the data cannot decide (the temperature range crosses the rating), 2 the design cannot be run as written, with the reason and the figure at issue in the output.
-
-`motionsim agent` prints a guide written for coding agents: the loop, the design file, what comes back, and what to do with a refusal. There is no service to host and nothing to register: an agent that can run a command can use the tool. [AGENTS.md](AGENTS.md) points to it.
+Everything the page does is also a command, one file runs every step (`motionsim design run design.yaml`), and the exit status carries the verdict, so a coding agent can drive it: `motionsim agent` prints the guide written for one, and [AGENTS.md](AGENTS.md) points to it. [docs/GUIDE.md](docs/GUIDE.md) has the commands.
 
 ## How it works
 
 ![How MotionSim is put together: what you bring goes through a reader and checks into a device model; the engine takes that with your motor and load and gives the results](docs/images/architecture.svg)
 
-1. A language model copies the datasheet's tabulated values exactly as printed and says what each plot's axes mean. It produces no model values.
-2. Deterministic code checks that every number appears on the page it was cited from (for a scanned datasheet the check is weaker, and the result says so), converts units, reads curve coordinates from the PDF's own drawing commands (or traces them when a figure is a picture), and checks each curve against the tables. What fails a check is set aside and shown.
-3. The device model is built from what passed. Where a datasheet gives single points, the assumed shape is written into the model.
-4. The engine averages conduction and switching loss over an output period and iterates until the junction temperatures agree with the losses. Motors are solved from their steady-state equations, and a motion is followed through the device's thermal network in time.
-
-[docs/THERMAL_MODEL.md](docs/THERMAL_MODEL.md) explains the thermal part. The page's "The equations" button shows all of it.
-
-## Why it was built
-
-Choosing a power semiconductor usually means trusting each vendor's calculator for that vendor's parts, or building a model by hand. This project asks whether the datasheet itself can be the model, with the tool stating how far that data supports a design decision.
+A language model copies the datasheet's values as printed and produces no model values. Deterministic code checks them, reads the curves and builds the device model, setting aside whatever fails a check. One engine averages conduction and switching loss over an output period and iterates until the junction temperatures agree with the losses; motors are solved from their steady-state equations, and a motion is followed through the thermal network in time. The page and the command line show what that engine gives and have no model of their own.
 
 ## How it compares
 
 | | Vendor web tools | General circuit simulators | MotionSim |
 |---|---|---|---|
-| Parts covered | One vendor's | Any, if you build the model | Any, from its datasheet or a dozen typed figures |
+| Parts covered | One vendor's | Any, if you build the model | Any vendor's, from its datasheet where it gives enough, or nine typed figures |
 | Model source | Not shown | Entered by hand | Recorded per value, with its page |
 | Assumptions and gaps | Not shown | Not shown | Listed in each result |
 | Accuracy | Calibrated on the vendor's own measurements | As good as your model | One public measurement, 10 to 31% low with the board's resistance in it; a range where data is missing |
@@ -180,10 +115,14 @@ The vendors' tools and the circuit simulators are ahead on accuracy and breadth.
 
 ## More
 
+- [docs/GUIDE.md](docs/GUIDE.md): every step, every result, the command line and coding agents.
+- [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md): the problems it starts from, the decisions and their trade-offs.
+- [docs/THERMAL_MODEL.md](docs/THERMAL_MODEL.md): what a datasheet's thermal resistance means and how the rest is computed.
 - [docs/VALIDATION.md](docs/VALIDATION.md): every check, including the ones that fail, and the datasheets the reader has been tried on.
 - [docs/LIMITS.md](docs/LIMITS.md): what it does not do, in order of importance.
-- [docs/THERMAL_MODEL.md](docs/THERMAL_MODEL.md): what a datasheet's thermal resistance means and how the rest is computed.
 - [docs/ROADMAP.md](docs/ROADMAP.md): what is planned.
+
+To work on the code: `pip install -e ".[dev]"`, then `pytest`; [AGENTS.md](AGENTS.md) has the rest.
 
 The models follow from published physics and handbook material properties. Device data comes only from datasheets you supply. No vendor's internal data or models are used.
 

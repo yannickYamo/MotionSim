@@ -26,6 +26,7 @@ from motionsim.engine import OperatingPoint, Pwm, Role, Validity, solve, solve_r
 from motionsim.engine.limits import hottest, max_current
 from motionsim.engine.modulation import phase_leg_roles, waveform
 from motionsim.engine.mosfet import charge_energies
+from motionsim.engine.point import ThermalRunaway
 from motionsim.engine.solver import switching_period
 
 V0_SW, R_SW = 0.9, 0.03
@@ -491,14 +492,23 @@ def test_above_its_last_table_point_a_voltage_is_said_to_be_off_by_what_the_two_
     assert any("switch conduction: peak current 20 A is above the last table point (10 A)" in n for n in r.notes)
     assert any("could be 33% off either way" in n for n in r.notes)
     assert r.validity is Validity.extrapolated
-    # A junction rises mostly with its own chip's loss, so the doubt is the largest share of
-    # any one chip's loss that is in doubt: here the diode's, which does little but conduct.
+    # A junction rises mostly with its own chip's loss, so a chip's doubt is the share of its
+    # own loss that is in doubt, and never less than the stage's. Each chip is carried to where
+    # it would stand were that share higher, and the doubt is how much higher the hottest
+    # junction's rise would then be.
     role = r.roles[0]
     of_switch = role.switch.conduction / role.switch.total / 3
     of_diode = role.diode.conduction / role.diode.total / 3
-    assert of_diode > of_switch
+    of_stage = (role.switch.conduction + role.diode.conduction) / 3 / (role.switch.total + role.diode.total)
+    assert of_diode > of_stage > of_switch
+    hot = max(role.tj_switch_peak, role.tj_diode_peak)
+    would = max(
+        role.tj_switch_peak + of_stage * (role.tj_switch_peak - 25.0),
+        role.tj_diode_peak + of_diode * (role.tj_diode_peak - 25.0),
+    )
     # The recovery energy, measured at 25 °C and used warmer, adds a little of its own.
-    assert of_diode < r.doubt < of_diode + 0.01
+    expected = (would - hot) / (hot - 25.0)
+    assert expected < r.doubt < expected + 0.01
     inside = solve(from_one_table_point(i_last), point(i_rms=0.9 * i_last / math.sqrt(2)))
     assert inside.doubt == 0.0 and inside.validity is not Validity.extrapolated
 
@@ -523,6 +533,97 @@ def test_a_pass_that_would_not_survive_the_doubt_in_its_losses_is_undecided() ->
     assert held.level is guard.Level.undecided
     assert "beyond the datasheet's data" in held.message and f"{r.doubt:.0%}" in held.message
     assert temperature(top - 1.0).level is guard.Level.fail
+
+
+def test_a_hot_chip_whose_loss_is_in_doubt_holds_the_pass_though_the_stage_as_a_whole_is_inside_its_data() -> None:
+    """A diode that conducts a twentieth of the stage's loss is too little to put the stage
+    outside its data. Most of that diode's own loss is conduction all the same: where it is
+    the hottest chip its doubt holds the pass, and where it is a cool one it does not."""
+    from motionsim import guard
+
+    def stage(rth_d: float) -> Device:
+        device = igbt(
+            sw=[Curve(tj=t, current=[0.0, 40.0], value=[V0_SW, V0_SW + R_SW * 40.0]) for t in (25.0, 150.0)],
+            d=[Curve(tj=25.0, current=[0.0, 10.0], value=[V0_D / 2, (V0_D + R_D * 10.0) / 2])],
+            rth_d=rth_d,
+            rth_case_sink=0.0,
+        )
+        device.diode.conduction.basis = Basis.point
+        return device
+
+    op = point(i_rms=20 / math.sqrt(2), power_factor=1.0, modulation_index=1.0)
+
+    def temperature(device: Device, r, rating: float) -> guard.Check:
+        device.ratings.tj_max = rating
+        return next(c for c in guard.check(device, op, r, 20.0, junction_margin=0.0) if c.topic == "temperature")
+
+    # The diode on a poor thermal path: the hottest chip, and the one in doubt.
+    device = stage(rth_d=12.0)
+    r = solve(device, op)
+    role = r.roles[0]
+    assert role.tj_diode_peak > role.tj_switch_peak
+    of_stage = role.diode.conduction / (role.switch.total + role.diode.total)
+    assert of_stage < 0.05 and r.outside == [] and r.validity is not Validity.extrapolated
+    # At twice the last table point the voltage could be a third off: that share of the
+    # diode's conduction, with a little of its recovery measured cold and used warmer.
+    of_diode = role.diode.conduction / role.diode.total / 3
+    assert of_diode > 0.2
+    assert of_diode < r.doubt < of_diode + 0.02
+    top = role.tj_diode_peak
+    held = temperature(device, r, top + r.doubt * (top - 25.0) - 1.0)
+    assert held.level is guard.Level.undecided
+    assert "above the last table point" in held.message  # what is beyond the data is said
+    # The same diode on a good path stands far below the switch, which has nothing in doubt:
+    # carried up by its own share it is still the cooler chip, and the pass stands.
+    device = stage(rth_d=1.5)
+    r = solve(device, op)
+    role = r.roles[0]
+    assert role.tj_switch_peak > role.tj_diode_peak + 5.0
+    assert role.tj_diode_peak + (role.tj_diode_peak - 25.0) < role.tj_switch_peak
+    assert r.doubt == 0.0
+    assert temperature(device, r, role.tj_switch_peak + 2.0).level is guard.Level.ok
+
+
+def test_a_temperature_range_names_the_assumption_that_widens_it_most() -> None:
+    from motionsim import guard
+    from motionsim.engine import assumed
+
+    def held(device: Device, op: OperatingPoint) -> tuple[str | None, str]:
+        r = solve(device, op)
+        device.ratings.tj_max = (max(r.tj_switch_peak, r.tj_diode_peak) + r.tj_peak_range[1]) / 2
+        check = next(c for c in guard.check(device, op, r, 20.0, junction_margin=0.0) if c.topic == "temperature")
+        assert check.level is guard.Level.undecided
+        return r.range_lead, check.message
+
+    # A discrete part with its transient curve given: only the layer under it is assumed.
+    lead, said = held(igbt(outline="TO-247"), point())
+    assert lead == "mounting" and "case-to-heatsink resistance" in said
+    # The same part with the layer given leaves nothing assumed, and no range.
+    assert solve(igbt(outline="TO-247"), point(rth_case_sink=0.2)).tj_peak_range is None
+    # A module of two positions: each chip is heated by the three others through the coupling,
+    # and the whole package's loss crosses the layer. Whichever lifts the top more is named.
+    module = igbt(topology=Topology.half_bridge, construction="leadframe", i_nominal=15)
+    r = solve(module, point(i_rms=8.0))
+    role = r.roles[0]
+    package = 2 * (role.switch.total + role.diode.total)
+    hot = role.switch.total if role.tj_switch_peak >= role.tj_diode_peak else role.diode.total
+    by_layer = (
+        assumed.module_interface("leadframe", 15, "high") - assumed.module_interface("leadframe", 15, "typical")
+    ) * package
+    by_chips = (
+        assumed.module_coupling("leadframe", 15, "high") - assumed.module_coupling("leadframe", 15, "typical")
+    ) * (package - hot)
+    assert abs(by_layer - by_chips) > 0.5  # not a tie this test would call either way
+    lead, said = held(module, point(i_rms=8.0))
+    assert lead == ("mounting" if by_layer > by_chips else "between chips")
+    assert ("case-to-heatsink resistance" in said) == (by_layer > by_chips)
+    # Its mounting given, the chips are what is left.
+    lead, said = held(module, point(i_rms=8.0, rth_case_sink=0.3))
+    assert lead == "between chips" and "heat each other" in said
+    # No transient curve and nothing else assumed: the swing within the period is the range.
+    bare = igbt(outline="TO-247", tau=False)
+    lead, said = held(bare, point(rth_case_sink=0.2, f_out=2.0))
+    assert lead == "transient" and "transient thermal curve" in said
 
 
 def test_the_largest_current_says_how_much_of_it_the_data_covers() -> None:
@@ -592,3 +693,43 @@ def test_a_layer_named_for_the_build_is_computed_and_a_figure_given_for_it_is_no
     given = solve(unknown, replace(point(t_sink=60.0), rth_case_sink=0.5))
     assert given.t_case == pytest.approx(60.0 + 0.5 * (p_sw + p_d), abs=0.02)
     assert not any("sink temperature is used as the case temperature" in x for x in given.limits)
+
+
+def test_a_temperature_that_is_not_a_number_does_not_pass() -> None:
+    from dataclasses import replace
+
+    from motionsim import guard
+
+    device = igbt()
+    op = point()
+    r = solve(device, op)
+    broken = replace(r, tj_switch_peak=float("nan"), tj_diode_peak=float("nan"), tj_peak_range=None)
+    check = next(c for c in guard.check(device, op, broken, 20.0) if c.topic == "temperature")
+    assert check.level is guard.Level.fail and "could not be worked out" in check.message
+
+
+def test_a_range_whose_top_runs_away_is_closed_at_a_figure_and_says_so() -> None:
+    """Where the high end of the thermal assumptions does not settle there is no temperature
+    to give: the range ends where the search stopped, far over any rating, with the reason."""
+    from motionsim import guard
+
+    # On-state voltage rising steeply with temperature, on a module whose chips heat each other.
+    hot = [line(25.0, V0_SW, R_SW), line(150.0, V0_SW, 6 * R_SW)]
+    device = igbt(sw=hot, topology=Topology.half_bridge, construction="leadframe", i_nominal=15)
+    found = None
+    for amps in (8.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0, 24.0, 28.0):
+        try:
+            r = solve(device, point(i_rms=amps, t_sink=80.0))
+        except ThermalRunaway:
+            break
+        if any("does not settle" in a for a in r.assumptions):
+            found = r
+            break
+    assert found is not None, "no current where only the high end runs away"
+    high = found.tj_peak_range[1]
+    assert math.isfinite(high) and high == pytest.approx(device.ratings.tj_max + 500.0)
+    check = next(
+        c for c in guard.check(device, point(i_rms=amps, t_sink=80.0), found, 30.0) if c.topic == "temperature"
+    )
+    assert "inf" not in check.message and check.level in (guard.Level.undecided, guard.Level.fail)
+    assert found.range_lead in ("mounting", "between chips")

@@ -1,7 +1,7 @@
 """Level D: the model against measurements. Empty until someone measures.
 
 Put a device file and a reference file (see `motionsim template reference`) holding
-measured loss or temperature in a `measurements/` folder beside this repository, as
+measured loss or temperature in a `measurements/` folder at the root of this repository, as
 `<name>.device.yaml` and `<name>.reference.yaml`. Each pair found is compared here. With
 none, the test is skipped, which is the honest state: nothing has been measured.
 """

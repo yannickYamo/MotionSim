@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "measure": "node scripts/measure.mjs",
-    "walk": "node scripts/walk.mjs"
+    "walk": "node scripts/walk.mjs",
+    "journey": "node scripts/journey.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

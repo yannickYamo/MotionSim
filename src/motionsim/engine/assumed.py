@@ -64,9 +64,12 @@ def shared_time(construction: str, outline: str | None, positions: int, i_rated:
     return templates.shared_time(template, i_rated, interface)
 
 
-def response(template: str, i_rated: float, variant: str, interface: str, chip: str) -> tuple[tuple[float, float], ...]:
-    """Stages (share of the resistance, time constant in s) of a chip's thermal response."""
-    return response_shape(template, i_rated, variant, interface, chip)
+def response(
+    template: str, i_rated: float, variant: str, interface: str, chip: str, diode: bool = True
+) -> tuple[tuple[float, float], ...]:
+    """Stages (share of the resistance, time constant in s) of a chip's thermal response.
+    diode says whether a diode chip shares the package with the switch."""
+    return response_shape(template, i_rated, variant, interface, chip, diode)
 
 
 def template_for(construction: str, outline: str | None, positions: int) -> tuple[str, bool]:

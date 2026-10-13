@@ -2,7 +2,7 @@
 
 ## What works today
 
-- A transistor typed in from a dozen datasheet figures becomes a device model, on the page or from the command line, with no key.
+- A MOSFET, SiC or GaN transistor typed in from nine datasheet figures becomes a device model, on the page or from the command line, with no key.
 - A datasheet PDF becomes a device model: IGBT, silicon MOSFET, SiC MOSFET or GaN, discrete or module, with or without built-in drivers. Your own double-pulse measurements can replace its switching energy.
 - Seven kinds of motor, each from its catalogue figures, braking included where the machine can brake.
 - A load and its motion, or a mission profile from a file, with junction and heatsink temperature followed through time, the way the drive starts the motor, and braking energy turned into a DC-link voltage.

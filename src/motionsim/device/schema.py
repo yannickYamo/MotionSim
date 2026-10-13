@@ -122,6 +122,17 @@ class SwitchingEnergy(_Model):
     @model_validator(mode="after")
     def _check(self) -> SwitchingEnergy:
         _check_curves(self.curves)
+        for at, factor, what in (
+            (self.rg_values, self.rg_factor, "rg_values and rg_factor"),
+            (self.v_values, self.v_factor, "v_values and v_factor"),
+        ):
+            if (at is None) != (factor is None):
+                raise ValueError(f"{what} are given together or not at all")
+            if at is not None and factor is not None:
+                if len(at) != len(factor) or len(at) < 2:
+                    raise ValueError(f"{what} have to be lists of the same length, of two values or more")
+                if any(b <= a for a, b in zip(at, at[1:], strict=False)):
+                    raise ValueError(f"{what.split()[0]} has to rise from one value to the next")
         return self
 
 
@@ -236,11 +247,6 @@ class Topology(str, Enum):
         """Switch positions sharing one case."""
         return {"discrete": 1, "half_bridge": 2, "h_bridge": 4, "six_pack": 6}[self.value]
 
-    @property
-    def chips_per_package(self) -> int:
-        """Switches and diodes together."""
-        return 2 * self.positions
-
 
 class Package(_Model):
     topology: Topology
@@ -248,7 +254,8 @@ class Package(_Model):
         default=None,
         ge=0,
         description="case to heatsink, whole package, K/W. Left out, it is computed for a "
-        "discrete package whose outline is given, and taken as zero otherwise",
+        "generic package of this kind on the layer named in `interface`; a discrete "
+        "package whose outline is not given has none counted",
     )
     rth_mutual: float | None = Field(
         default=None,

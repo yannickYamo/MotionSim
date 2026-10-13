@@ -2,7 +2,7 @@
 
 MotionSim is an exploratory tool. It estimates losses and temperatures in motor-drive power stages from datasheet values, stated assumptions and simplified models.
 
-**It can be wrong.** Datasheets are read partly by a language model. Missing data is filled with computed or assumed values. The models leave physics out; each result lists some of what it leaves out, not all. The tool has been compared with one vendor simulator on one part, and with no measurement.
+**It can be wrong.** Datasheets are read partly by a language model. Missing data is filled with computed or assumed values. The models leave physics out; each result lists some of what it leaves out, not all. The tool has been compared with one vendor simulator on one part, and with one published measurement of inverter loss; with no measurement of junction temperature.
 
 **It is not a substitute for engineering judgement, verification or testing.** Do not use its output alone to design, size, select, approve or certify any hardware. Before building or operating anything:
 

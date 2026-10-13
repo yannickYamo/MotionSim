@@ -138,3 +138,47 @@ def test_a_point_with_no_loss_at_all_still_gets_its_explanation() -> None:
     lossless.part_number = "IDEAL"
     text = explain(propose([lossless, igbt("REAL", 0.9)], MOTOR, 1000, 2.0, BASE))
     assert any("REAL loses" in line for line in text)
+
+
+def undecided(candidate):
+    from dataclasses import replace
+
+    held = guard.Check(guard.Level.undecided, "temperature", "the range crosses the rating")
+    return replace(candidate, checks=[*candidate.checks, held])
+
+
+def test_a_part_the_data_cannot_decide_is_never_said_to_pass() -> None:
+    efficient, lossy = propose([igbt("EFFICIENT", 0.7), igbt("LOSSY", 1.6)], MOTOR, 3000, 2.0, BASE)
+    # Every part undecided: none is among "the devices that pass".
+    lines = explain([undecided(efficient), undecided(lossy)])
+    text = " ".join(lines)
+    assert "that pass" not in text
+    assert lines[0] == "None of these devices is shown to pass every check at this operating point."
+    assert "EFFICIENT has the lowest power-stage loss among the devices this data cannot decide" in text
+    # The part that loses less is undecided and the other passes: the one that passes leads,
+    # and the two are not compared as equals.
+    lines = explain([lossy, undecided(efficient)])
+    text = " ".join(lines)
+    assert "LOSSY has the lowest power-stage loss among the devices that pass" in text
+    less = lossy.loss - efficient.loss
+    assert f"EFFICIENT is not decided by this data, and would lose {less:.1f} W less." in text
+    assert "more margin" not in text and "level" not in text
+
+
+def test_undecided_parts_level_on_loss_are_still_said_not_to_pass() -> None:
+    one, other = propose([igbt("ONE", 0.7), igbt("OTHER", 0.7)], MOTOR, 3000, 2.0, BASE)
+    lines = explain([undecided(one), undecided(other)])
+    assert lines[0] == "None of these devices is shown to pass every check at this operating point."
+    assert "on loss they are level" in lines[1] and "that pass" not in " ".join(lines)
+
+
+def test_a_part_not_decided_is_not_offered_for_its_built_in_drivers() -> None:
+    efficient, lossy = propose([igbt("EFFICIENT", 0.7), igbt("LOSSY", 1.6)], MOTOR, 3000, 2.0, BASE)
+    efficient.device.package.integrated_driver = True
+    text = " ".join(explain([lossy, undecided(efficient)]))
+    assert "has them built in" not in text and "for -" not in text
+    # Passing, and losing more than a leader that has none, it is offered for what it costs.
+    efficient.device.package.integrated_driver = False
+    lossy.device.package.integrated_driver = True
+    text = " ".join(explain([efficient, lossy]))
+    assert f"LOSSY has them built in, for {lossy.loss - efficient.loss:.1f} W more loss." in text
