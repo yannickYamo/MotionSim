@@ -150,6 +150,10 @@ TABS = {
     "TO-220": (10.0e-3, 12.5e-3, 1.27e-3),
     "TO-247": (15.9e-3, 17.0e-3, 2.0e-3),
     "TO-263": (10.0e-3, 9.0e-3, 1.27e-3),
+    # Surface-mount outlines cooled through their pad. The pad is taken from the published
+    # outline drawings, rounded: a maker's own drawing differs by a few tenths of a millimetre.
+    "TO-252": (5.2e-3, 5.5e-3, 0.5e-3),
+    "TOLL": (9.7e-3, 8.0e-3, 0.5e-3),
 }
 
 
@@ -160,9 +164,15 @@ def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, dio
     # A chip is no larger than the tab it sits on, whatever its rating would ask for.
     sw, d = min(sw, width, height), min(d, width, height)
     if diode:
+        # One above the other along the tab, a millimetre apart. Where the two with their
+        # gap are longer than the tab, both are made smaller by the same share until they fit.
+        gap = 1.0e-3
+        fit = min(1.0, (height - gap) / (sw + d))
+        sw, d = sw * fit, d * fit
+        low = max((height - (sw + gap + d)) / 2, 0.0)
         chips = (
-            ChipSite("switch", width / 2, height * 0.36, sw, sw),
-            ChipSite("diode", width / 2, min(height * 0.36 + sw / 2 + 1.0e-3 + d / 2, height - d / 2), d, d),
+            ChipSite("switch", width / 2, low + sw / 2, sw, sw),
+            ChipSite("diode", width / 2, low + sw + gap + d / 2, d, d),
         )
     else:
         chips = (ChipSite("switch", width / 2, height / 2, sw, sw),)
@@ -176,7 +186,7 @@ def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, dio
     )
 
 
-TEMPLATES = ("leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263")
+TEMPLATES = ("leadframe-module", "substrate-module", *TABS)
 
 
 def build(
@@ -267,7 +277,11 @@ def response_shape(
     plate = model.plates[0]
     index = next(k for k, c in enumerate(plate.chips) if chip in c.name)
     times = np.geomspace(2e-5, 20.0, 36)
-    z = step_response(plate, model.stack, index, times)
+    # Junction to the package's own face where the template has one (the modules): the layer
+    # under the package belongs to the mounting and has its own place in the result. A discrete
+    # outline's tab is its face, and its template carries the layer under it, so its shape
+    # is drawn with that layer in.
+    z = step_response(plate, model.case or model.stack, index, times)
     fit = fit_foster(times, z, max_order=3, target=0.05)
     total = sum(fit.r)
     return tuple((r / total, tau) for r, tau in zip(fit.r, fit.tau, strict=True))

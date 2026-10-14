@@ -1,6 +1,6 @@
 # Driving MotionSim from a terminal: a guide for coding agents
 
-MotionSim estimates what a three-phase motor inverter loses and how hot its transistors
+MotionSim estimates what a motor's power stage loses and how hot its transistors
 run, from a datasheet-level description of the part, the motor and the load. Everything
 the web page does can be done with these commands; nothing needs a browser, a server or
 an account. Only reading a datasheet PDF needs an API key, and you do not need that:
@@ -68,6 +68,9 @@ conditions:
 supply: one-way               # one-way (a power supply) | battery (takes braking energy back)
 # optional, with a load and profile:
 #   repeats: 1                # the motion run this many times back to back, 1 to 50
+#   start:                    # how the drive starts the motor: left out, with a position sensor
+#     method: open_loop       # sensor | injection | open_loop (sensorless, aligned then ramped)
+#     current: 10             # A rms held through an open-loop start; handover_rpm, align_time (s)
 #   c_link: 0.001             # F, the DC-link capacitance: what braking does to the link voltage
 #   heatsink: {capacity: 500} # J/K, with cooling: heatsink: it is followed as it warms from the air's temperature
 #   heatsink: {rth: 1.0, capacity: 500, t_ambient: 40}   # the same with cooling: held

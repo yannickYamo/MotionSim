@@ -115,6 +115,9 @@ class SwitchingEnergy(_Model):
     v_values: list[float] | None = None
     v_factor: list[float] | None = None
     voltage_scaling: VoltageScaling = VoltageScaling.linear
+    # What the energies are: the datasheet's own measured ones, or an estimate from its rise
+    # and fall times where it gives no energy and no charges to work from.
+    footing: Literal["measured", "times"] = "measured"
     basis: Basis = Basis.curve
     assumption: str | None = None
     source: Source
@@ -198,7 +201,11 @@ class ChargeModel(_Model):
     @model_validator(mode="after")
     def _check(self) -> ChargeModel:
         if self.q_g_th > self.q_gs:
-            raise ValueError("gate charge at threshold cannot exceed gate-source charge")
+            raise ValueError(
+                "gate charge at threshold cannot exceed gate-source charge. Some datasheets give the gate-source "
+                "charge from the threshold on (often written Qgs2): where this one does, the gate-source charge "
+                "is that plus the charge at threshold"
+            )
         if self.q_oss_scaling == "table":
             if not self.oss_voltage or not self.oss_charge or len(self.oss_voltage) != len(self.oss_charge):
                 raise ValueError("a tabulated output charge needs oss_voltage and oss_charge of equal length")
@@ -268,7 +275,7 @@ class Package(_Model):
         description="multi-chip packages. leadframe: fully moulded, chips on the leadframe; "
         "substrate: chips on a ceramic (DCB) or insulated metal substrate",
     )
-    outline: Literal["TO-220", "TO-247", "TO-263"] | None = Field(
+    outline: Literal["TO-220", "TO-247", "TO-263", "TO-252", "TOLL"] | None = Field(
         default=None, description="discrete packages: the standard outline"
     )
     interface: Literal["grease", "pad"] = Field(

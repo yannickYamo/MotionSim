@@ -503,3 +503,107 @@ def test_a_buried_magnet_motor_reaches_further_into_field_weakening_than_full_op
             break
     assert reached is not None and reached.i_d < -motor.flux_linkage / motor.ld
     assert reached.v_peak <= v_max * 1.0001
+
+
+def test_a_held_d_axis_current_keeps_the_torque_and_is_refused_where_the_voltage_runs_out() -> None:
+    from motionsim.motor import pmsm
+
+    motor = pmsm.Motor(pole_pairs=4, flux_linkage=0.05, ld=1e-3, lq=1e-3, rs=0.1)
+    rpm, torque = 1500.0, 3.0
+    free = pmsm.operating_state(motor, rpm, torque, 200.0)
+    assert free.i_d == 0.0  # magnets on the rotor face: least current has none
+    held = pmsm.operating_state(motor, rpm, torque, 200.0, i_d=-10.0)
+    # The torque of a non-salient motor is the q-axis current's alone, so that does not move.
+    assert held.i_d == -10.0 and held.i_q == pytest.approx(free.i_q)
+    assert held.p_shaft == pytest.approx(free.p_shaft)
+    assert held.p_copper == pytest.approx(1.5 * 0.1 * (10.0**2 + free.i_q**2))
+    # Less flux, so less voltage: the back-EMF term falls by w * Ld * 10 A.
+    w = 4 * 2 * math.pi * rpm / 60
+    assert free.v_q - held.v_q == pytest.approx(w * 1e-3 * 10.0)
+    with pytest.raises(Unreachable, match="held at"):
+        pmsm.operating_state(motor, rpm, torque, 0.8 * free.v_peak, i_d=0.0)
+    with pytest.raises(Unreachable, match="oppose the magnet"):
+        pmsm.operating_state(motor, rpm, torque, 200.0, i_d=-60.0)  # past -psi / Ld = -50 A
+
+
+def test_the_d_axis_current_that_loses_least_is_found_and_said_only_where_it_saves() -> None:
+    from motionsim import recommend
+
+    # Copper rises with the square of the current and iron falls as the field is weakened:
+    # 2 x^2 + 50 (1 + x / 20)^2 + 100, whose slope 4 x + 5 (1 + x / 20) is zero at x = -5 / 4.25.
+    loss = lambda x: 2.0 * x**2 + 50.0 * (1 + x / 20.0) ** 2 + 100.0
+    best = -5.0 / 4.25
+    found = recommend.d_axis_current(loss, 0.0, -20.0)
+    assert found.value["i_d"] == pytest.approx(best, abs=1e-3)
+    assert found.value["saving"] == pytest.approx(loss(0.0) - loss(best), rel=1e-4)
+    assert any("W less" in line for line in found.lines)
+    # Nothing to gain: copper alone, least at least current.
+    flat = recommend.d_axis_current(lambda x: 100.0 + 2.0 * x**2, 0.0, -20.0)
+    assert flat.value == {"saving": 0.0, "i_d": 0.0} and "least current is the one to run" in flat.lines[-1]
+    # Where the motor cannot run with the field weakened, those values are not chosen.
+    walled = recommend.d_axis_current(lambda x: loss(x) if x > -0.5 else None, 0.0, -20.0)
+    assert walled.value["i_d"] == pytest.approx(-0.5, abs=0.02)  # against the wall, short of -5 / 4.25
+    # Found against the end of the search, it is said to be where the search stopped.
+    falling = recommend.d_axis_current(loss, 0.0, -0.8)
+    assert falling.value["stopped"] == 1.0 and "as far as was tried" in falling.lines[1]
+    assert found.value["stopped"] == 0.0 and "as far as was tried" not in found.lines[1]
+
+
+def test_the_d_axis_advice_appears_for_a_motor_with_iron_loss_and_not_without() -> None:
+    from motionsim import recommend
+    from motionsim.motor.machines import Pmsm
+
+    device = igbt()
+    op = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
+    figures = dict(type="pmsm", pole_pairs=4, flux_linkage=0.2, ld=5e-3, lq=5e-3, rs=0.3)
+    plain = Pmsm(**figures)
+    assert recommend.least_loss_d_axis(device, plain, 1500.0, 3.0, op) is None
+
+    def together(motor: Pmsm, i_d: float) -> float:
+        held = motor.model_copy(update={"i_d_held": i_d})
+        least = motor.flux_share(motor.state(1500.0, 3.0, op.v_dc, op.pwm))
+        share = held.flux_share(held.state(1500.0, 3.0, op.v_dc, op.pwm)) / least
+        weighed = held.model_copy(update={"p_iron": motor.p_iron * share**2})
+        point = at_speed_and_torque(device, weighed, 1500.0, 3.0, op, spread=False)
+        return point.stage.p_motor_loss + point.result.p_inverter
+
+    # A little iron loss: the least is inside the range tried, and a little either side loses more.
+    mild = Pmsm(**figures, p_iron=40.0, n_iron=1500.0)
+    found = recommend.least_loss_d_axis(device, mild, 1500.0, 3.0, op)
+    assert found is not None and found.value["i_d"] < 0 and found.value["stopped"] == 0.0
+    at = found.value["i_d"]
+    assert together(mild, at) < together(mild, at - 0.3) and together(mild, at) < together(mild, at + 0.3)
+    assert together(mild, 0.0) - together(mild, at) == pytest.approx(found.value["saving"], rel=1e-3)
+    # At least current the loss it starts from is the one the results show, to the watt.
+    shown = at_speed_and_torque(device, mild, 1500.0, 3.0, op, spread=False)
+    assert together(mild, 0.0) == pytest.approx(shown.stage.p_motor_loss + shown.result.p_inverter, rel=1e-6)
+    assert f"{shown.stage.p_motor_loss + shown.result.p_inverter:.3g}"[:3] in found.lines[0]
+    # What it saves cannot be more than the iron loss the weaker field takes away: the flux
+    # falls from that of magnet and q-axis current together to the same with the magnet opposed.
+    state = mild.model_copy(update={"i_d_held": at}).state(1500.0, 3.0, op.v_dc, op.pwm)
+    before, after = math.hypot(0.2, 5e-3 * state.i_q), math.hypot(0.2 + 5e-3 * at, 5e-3 * state.i_q)
+    assert 0 < found.value["saving"] < 40.0 * (1 - (after / before) ** 2)
+    # A motor whose iron saturates is weighed with the inductances its point was solved with.
+    soft = Pmsm(**figures, i_sat=5.0)
+    point = soft.state(1500.0, 3.0, op.v_dc, op.pwm)
+    ld = 5e-3 / math.sqrt(1 + (point.i_d / 5.0) ** 2)
+    lq = 5e-3 / math.sqrt(1 + (point.i_q / 5.0) ** 2)
+    assert lq < 0.9 * 5e-3  # the q-axis is well into saturation at this torque
+    assert soft.flux_share(point) == pytest.approx(math.hypot(0.2 + ld * point.i_d, lq * point.i_q) / 0.2, rel=1e-6)
+    # A great deal of it: the loss is still falling where the search ends, at half as much
+    # current again as the torque needs, and the advice says that is where it stopped.
+    lossy = Pmsm(**figures, p_iron=150.0, n_iron=1500.0)
+    far = recommend.least_loss_d_axis(device, lossy, 1500.0, 3.0, op)
+    i_q = lossy.state(1500.0, 3.0, op.v_dc, op.pwm).i_q
+    assert far.value["stopped"] == 1.0
+    assert math.hypot(far.value["i_d"], i_q) == pytest.approx(1.5 * i_q, rel=0.01)
+    # With the motor's own limit given, the search stays inside it: the current held there,
+    # with what the iron loss adds to the torque, is one the motor is allowed.
+    limited = recommend.least_loss_d_axis(device, lossy.model_copy(update={"i_max": 3.0}), 1500.0, 3.0, op)
+    assert limited is not None and limited.value["i_d"] < 0
+    assert math.hypot(limited.value["i_d"], i_q) <= 3.0 * math.sqrt(2)
+    # In field weakening the voltage decides the d-axis current, and nothing is advised.
+    fast = lossy.state(6000.0, 1.0, op.v_dc, op.pwm)
+    assert fast.field_weakening and recommend.least_loss_d_axis(device, lossy, 6000.0, 1.0, op) is None
+    # At standstill, and for a motor with no d-axis to choose, nothing is said.
+    assert recommend.least_loss_d_axis(device, lossy, 0.0, 3.0, op) is None

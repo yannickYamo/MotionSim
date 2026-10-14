@@ -599,8 +599,8 @@ def _fit(tmp_path, kind="pmsm", **changes):
 def test_a_motor_that_suits_the_part_raises_nothing(tmp_path) -> None:
     out = _fit(tmp_path)
     assert out["level"] == "ok" and all(x["level"] == "ok" for x in out["lines"])
-    # The example's limit is 40 A rms: 56.6 A peak, under the part's 100 A.
-    assert out["i_peak"] == pytest.approx(40 * math.sqrt(2), rel=0.01) and out["i_rated"] == 100.0
+    # The example is made the size whose current limit sits just inside the part's 100 A.
+    assert out["i_peak"] == pytest.approx(0.9 * 100.0, rel=0.02) and out["i_rated"] == 100.0
 
 
 def test_a_motor_too_large_for_the_part_is_said_with_how_far_the_part_takes_it(tmp_path) -> None:
@@ -732,3 +732,35 @@ def test_a_dead_time_that_takes_half_the_period_is_refused_not_hidden() -> None:
     assert at_speed_and_torque(device, motor, 1500, 2, slow).result.p_inverter > 0  # 3% of the period: fine
     with pytest.raises(Unreachable, match="of each switching period at 300 kHz"):
         at_speed_and_torque(device, motor, 1500, 2, replace(slow, f_sw=300e3))  # 60% of it
+
+
+def test_the_starting_motor_is_the_size_of_the_part(tmp_path) -> None:
+    """A motor's current limit is put just inside the part's rating, so the part can use all
+    of the motor; its figures scale as a larger machine's do, and a part of half the rating
+    gets a motor half the size."""
+    from motionsim.page import STARTING, _motor, resized, rewound, setup, suggest
+    from motionsim.page import Workspace as W
+
+    ws = W(tmp_path)
+    base = rewound("pmsm", setup(ws)["motors"]["pmsm"]["values"], 48)
+    twice = resized(base, 2.0)
+    assert twice["i_max"] == 2 * base["i_max"] and twice["rs"] == base["rs"] / 2 and twice["l"] == base["l"] / 2
+    assert twice["kv"] == base["kv"] and twice["pole_pairs"] == base["pole_pairs"]
+    # Twice the size gives twice the torque on twice the current, at the same speed and supply.
+    at = STARTING["pmsm"]
+    one = _motor({"type": "pmsm", **base}).stage(
+        at["rpm"], at["torque"], 48, _motor({"type": "pmsm", **base}).default_pwm
+    )
+    two = _motor({"type": "pmsm", **twice}).stage(
+        at["rpm"], 2 * at["torque"], 48, _motor({"type": "pmsm", **twice}).default_pwm
+    )
+    assert two.i_peak == pytest.approx(2 * one.i_peak, rel=1e-3)
+    # For the made-up 100 A part every kind of motor's limit, where it has one, is within the rating.
+    part = ws.device("example-mosfet")
+    for kind, m in suggest({"device": "example-mosfet"}, ws)["motors"].items():
+        motor = _motor({"type": kind, **m["values"]})
+        limit = guard.current_limit(motor)
+        if limit is not None:
+            assert 0.8 * part.ratings.i_nominal <= limit <= part.ratings.i_nominal, kind
+        point = motor.stage(m["start"]["rpm"], m["start"]["torque"], m["start"]["v_dc"], motor.default_pwm)
+        assert point.i_peak <= part.ratings.i_nominal, kind

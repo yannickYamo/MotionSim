@@ -83,7 +83,7 @@ Also checked: steady-state temperatures, the self-consistent temperature for an 
 - Pictures drawn in the tests: a plot area and its eleven grid lines found to 0.3 pt; one curve followed through the grid to within its stroke; two crossing curves each ending where they should; a branch that inherits the shared rise; a label with a leader line ignored; a dense log grid that neither breaks nor multiplies the curve.
 - Plateau of a piecewise gate-charge curve found to 0.05 V and 1.5 nC.
 - Output charge of a capacitance falling as one over root voltage equals twice capacitance times voltage, within 2%.
-- Dead time from gate charge: the three intervals of turn-off written out by hand, a tenth longer, plus the mismatch between driver channels, times 1.2. For an IGBT, twice the tabulated delay plus fall time.
+- Dead time from gate charge: the three intervals of turn-off written out by hand, a tenth longer, plus the mismatch between driver channels, times 1.2. For an IGBT, the tabulated delay plus fall time, a tenth longer, plus the driver mismatch, times 2.
 - Gate resistors land on the slew-rate, overshoot or driver-current limit, whichever is largest, rounded up.
 - Heatsink resistance equals the temperature room over the loss for a device whose loss does not depend on temperature.
 
@@ -320,7 +320,7 @@ No vendor's device data ships with this project, only made-up parts, and it favo
 | GaN transistor, cascode | Nexperia GAN063-650WSA | 18 table values; thermal, on-resistance, capacitance and reverse-conduction curves | Read, but no model is built: the datasheet gives no gate plateau, threshold charge or transconductance to estimate switching from, and no switching energy. The tool says so and stops. |
 | Discrete IGBT with diode, second vendor | STMicroelectronics STGW40H65DFB | 25 table values; on-state, diode, switching-energy, energy-against-gate-resistance and thermal curves | 10 of 13 curves accepted, within 1.1% of the tables. The diode thermal-impedance figure is too cluttered to confirm, so the table value is used. |
 | Superjunction MOSFET | STMicroelectronics STW48N60M2 | 14 table values; gate-charge, capacitance, on-resistance, body-diode and thermal curves | Builds. The gate plateau is read from a figure that also draws the drain voltage. Switching loss is estimated from charge. |
-| IGBT module with built-in driver, second vendor | onsemi (Fairchild) FNB41560B2 | 7 table values; six switching-energy curves from two plots under one caption | Builds. The datasheet tabulates no switching energy, so the curves are identified by their colour in the legend and say so. |
+| IGBT module with built-in driver, second vendor | onsemi (Fairchild) FNB41560B2 | 7 to 8 table values; six switching-energy curves from two plots under one caption | Builds. The datasheet tabulates no switching energy, so the curves are identified by their colour in the legend and say so. |
 | Discrete IGBT, scanned datasheet | an older 600 V part whose datasheet is page images | 19 table values, read from page images | Builds from table values. Its figures are not read. Diode recovery energy is estimated from the tabulated recovery charge. |
 | Rectifier (diode) bridge | not supported | | |
 
@@ -338,8 +338,6 @@ The cooling, dead-time and typed-part code is held by tests whose expected value
 - The dead time chosen is never under the rule's own least. Its loss is the body diode's voltage times the current it carries for both edges of each period, within 1%.
 - A typed figure outside what a power transistor can have is refused with its unit; the page and the command line give the same loss for the same part with the dead time left open.
 - Whether a motor fits a part, before any design point: the current it draws at its limit against the part's rating, and the speed it reaches against the speed asked.
-
-How much the tests would notice was measured: 100 single faults were put into this code one at a time (a constant changed, a term dropped, a check removed) and the suite run on each. It catches all 100. This covers the code for cooling, dead time, typed parts and their paths through the page and the command line. The same was done for what an agent and the page ask through: the design file, the command line's cooling and dead-time flags, the page's routes, how numbers are written and the charts' scales. Of 122 single faults there the suite catches 110; the 12 it does not change no result that could be constructed (a clamp that cannot be reached, a second name for an error already caught, a guard no input gets to). The core is held the same way: the loss and temperature solver, the modulation, the motors, a motion followed through time, the DC link, the life estimate, the fitting of a device from what was read, the device schema and the advice. Of 614 single faults there the suite catches 612; the two it does not are in the counting of temperature swings and give the same count either way, checked on 150,000 random traces.
 
 A whole design run from one file (`motionsim design run`) gives the figures the page's own steps give, asked one by one (`tests/test_design.py`).
 

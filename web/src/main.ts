@@ -33,6 +33,7 @@ let advice: Advice | null = null;
 let proposal: Proposal | null = null;
 let blocked: Refused | null = null;
 let fault: string | null = null;
+let reportFault: string | null = null; // a report that could not be written: said beside its button, the engine being well
 let cycle: Cycle | Refused | null = null;
 let grid: MapGrid | Refused | null = null;
 let advised: Recommendation[] | Refused | null = null;
@@ -154,9 +155,9 @@ function applyPreset(p: LoadPreset): void {
   save(state);
 }
 
+let presetTries = 0;
 /** Fetch the loads usual for this motor at this design point. Until the user has picked or
  *  edited a load, the most usual one is theirs to start from. */
-let presetTries = 0;
 async function presetsFor(): Promise<void> {
   const c = state.conditions;
   const key = `${state.kind}|${c.rpm}|${c.torque}|${c.v_dc}`;
@@ -233,10 +234,11 @@ function fold(id: string, glyph: string, title: string, face: string, body: stri
 function coolingWords(): string {
   const k = state.conditions;
   const under = String(k.rth_case_sink ?? "").trim() !== "" ? `, ${k.rth_case_sink} K/W from each case to it` : k.interface === "pad" ? ", each package on a thermal pad" : "";
-  if (k.cooling === "heatsink") return `a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air${under}`;
+  // What the user typed is text until the engine has taken it: it is written out as text.
+  if (k.cooling === "heatsink") return escape(`a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air${under}`);
   if (k.cooling === "none") return `no heatsink, in ${sig(k.t_ambient)} °C air`;
-  if (k.cooling === "board") return `no heatsink, on a ${k.board_area || "?"} cm² board in ${sig(k.t_ambient)} °C air`;
-  return `a ${sig(k.t_sink)} °C heatsink${under}`;
+  if (k.cooling === "board") return escape(`no heatsink, on a ${k.board_area || "?"} cm² board in ${sig(k.t_ambient)} °C air`);
+  return escape(`a ${sig(k.t_sink)} °C heatsink${under}`);
 }
 
 /** A figure typed in a base unit, said the way it is spoken: 0.00833 H is "8.33 mH". Only
@@ -439,7 +441,7 @@ function motorPanel(): string {
   const kinds = Object.entries(setup.motors);
   const m = setup.motors[state.kind];
   const v = state.motors[state.kind];
-  const fits = suggestion && suggestion.id === state.devices[0] ? suggestion.data.motors : null;
+  const fits = suggestion && suggestion.id === underTest() ? suggestion.data.motors : null;
   const unusual = (k: string) => fits?.[k]?.fit === "unusual";
   const option = ([k, x]: (typeof kinds)[number]) => {
     const fit = fits?.[k];
@@ -455,7 +457,7 @@ function motorPanel(): string {
   const list = group(usual) + (rest.length
     ? `<details class="more other-kinds"${unusual(state.kind) ? " open" : ""}><summary>${icon("adjustments")}Other kinds of motor<span class="quiet">unusual with your device, each with the reason</span></summary>${group(rest)}</details>`
     : "");
-  const device = setup.devices.find((d) => d.id === state.devices[0]);
+  const device = setup.devices.find((d) => d.id === underTest());
   const suits = fits && device
     ? ` The example is wound for your ${Math.round(device.v_max)} V device, on about ${Math.round(suggestion!.data.v_supply)} V.`
     : "";
@@ -466,7 +468,6 @@ function motorPanel(): string {
 ${m.optional?.length ? `<details class="more"${m.optional.some((f) => v[f.key] !== undefined && v[f.key] !== "") ? " open" : ""}><summary>${icon("adjustments")}More about this motor<span class="quiet">optional: iron loss${m.optional.some((f) => f.key === "i_sat") ? " and saturation" : ""}. Left empty, they are left out and the result says so</span></summary><div class="fields">${m.optional.map((f) => field(`motors.${state.kind}.${f.key}`, f.label, v[f.key] ?? "", f.unit, f.help)).join("")}</div></details>` : ""}${nextButton(MOTOR)}`;
 }
 
-/** Whether a chosen device has no tabulated switching energy, so needs its gate drive described. */
 /** Every part under test has its gate drivers inside the package. */
 const driversBuiltIn = () => {
   const chosen = setup.devices.filter((d) => state.devices.includes(d.id));
@@ -498,7 +499,7 @@ function checksBlock(c: Candidate): string {
     : "";
   // Where the layer under the package is what leaves the answer open, the way to it is one press.
   const cond = state.conditions;
-  const mount = c.result?.range_lead === "mounting" && raised.some((x) => x.level === "undecided" && x.message.includes("how it is mounted"))
+  const mount = c.result?.range_lead === "mounting" && raised.some((x) => x.level === "undecided" && x.message.includes("case-to-heatsink resistance"))
     && (cond.cooling === "held" || cond.cooling === "heatsink") && String(cond.rth_case_sink ?? "").trim() === ""
     ? `<p><button type="button" class="ghost" data-step="${SUPPLY}" data-open-fold="mounting">${icon("adjustments")}Give the case-to-heatsink resistance</button></p>`
     : "";
@@ -519,6 +520,7 @@ function gateBlock(c: Candidate): string {
   return `<details class="more" data-fold="${escape(id)}"${openFolds.has(id) ? " open" : ""}><summary>${icon("adjustments")}Gate drive<span class="quiet">${head}${g.kind === "chosen" ? ", chosen for you" : g.kind === "given" ? ", yours" : ""}${g.t_dead ? `, ${eng(g.t_dead, "s", 2)} dead time` : ""}</span></summary><p class="gate-used"><b>${head}</b> ${tag}</p><ul class="plain small">${g.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul>${g.kind === "chosen" ? '<p class="quiet small">To use your own, give them under Supply and point, Gate drive.</p>' : ""}</details>`;
 }
 
+/** Whether a chosen device has no tabulated switching energy, so needs its gate drive described. */
 const needsGate = () => setup.devices.some((d) => state.devices.includes(d.id) && d.needs_gate_drive);
 
 /** What the gate fold says on its face: the drive in use, chosen or the user's own. */
@@ -596,8 +598,6 @@ const LOAD_FIELDS: Record<string, [string, string, string]> = {
   slope_percent: ["Slope", "%", "Uphill is positive."],
 };
 
-/** The whole result as a document to print or save as a PDF: what went in, what came out,
- *  what it rests on and the equations behind it. Built when asked for, from what is on screen. */
 let savingMd = false;
 
 /** The whole design as a Markdown file: the same report the command line writes. The device
@@ -605,7 +605,7 @@ let savingMd = false;
 async function saveMarkdown(): Promise<void> {
   const first = focused()?.id;
   const devices = [...new Set([...(first ? [first] : []), ...state.devices])];
-  savingMd = true; renderPanel(true);
+  savingMd = true; reportFault = null; renderPanel(true);
   try {
     const { markdown } = await api.report({ ...request(state), ...motionRequest(state), devices, follow: first });
     const link = document.createElement("a");
@@ -614,12 +614,14 @@ async function saveMarkdown(): Promise<void> {
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(link.href), 4000);
   } catch (e) {
-    fault = `The report could not be written: ${(e as Error).message}`;
+    reportFault = `The report could not be written: ${(e as Error).message}`;
   }
   savingMd = false; renderPanel(true);
   document.querySelector<HTMLElement>("[data-report-md]")?.focus();
 }
 
+/** The whole result as a document to print or save as a PDF: what went in, what came out,
+ *  what it rests on and the equations behind it. Built when asked for, from what is on screen. */
 async function printReport(): Promise<void> {
   const c = focused();
   const r = c?.result;
@@ -639,8 +641,8 @@ async function printReport(): Promise<void> {
     ? `<h2>Through the motion</h2>${rows([["Load", load], ["Lasts", `${sig(cycle.summary.duration!)} s`], ["Mean loss", watts(cycle.summary.mean_loss!)], ["Hottest junction reached", degrees(cycle.summary.peak!)], ["Energy lost", `${sig(cycle.summary.loss_energy!)} J`], ["Peak motor current", `${sig(Math.max(...cycle.i_peak.map((v) => v ?? 0)))} A`]])}<h3>Starting</h3>${list(cycle.start.lines)}${lifeBlock(cycle)}<h3>Checks over the motion</h3>${list(cycle.checks.map((x) => `${x.topic}: ${x.message}`))}`
     : "";
   const page = `<article class="report"><header><h1>${escape(c.name)}: power-stage estimate</h1><p>${new Date().toISOString().slice(0, 10)} · MotionSim, an exploratory tool. Results are estimates from datasheet values, stated assumptions and simplified models. Verify by measurement before building anything.</p></header>
-<h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", String(k.parallel || 1)], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`.trim()).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Cooling", sentence(coolingWords())], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
-<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Suits", caution: "Can do this, with cautions", undecided: "Undecided on this data", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["DC-to-shaft efficiency", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
+<h2>What was tested</h2>${rows([["Device", `${escape(c.name)}, ${escape(c.technology)}${device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : ""}`], ["Devices in parallel", escape(String(k.parallel || 1))], ["Motor", `${escape(m.label)}: ${m.fields.map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`.trim()).join("; ")}`], ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`], ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`], ["Switching", `${sig(k.f_khz)} kHz, ${escape(stage?.scheme ?? "")}`], ["Cooling", sentence(coolingWords())], ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))]])}
+<h2>Result at the design point</h2>${rows([["Verdict", { ok: "Passes every check", caution: "Passes, with cautions", undecided: "Undecided on this data", fail: "Does not pass" }[c.level] ?? c.level], ["Power-stage loss", watts(r.loss)], ["Conduction", `${watts(r.conduction)} (${percent(r.conduction / Math.max(r.loss, 1e-9), 0)})`], ["Switching", `${watts(r.switching)} (${percent(r.switching / Math.max(r.loss, 1e-9), 0)})`], ["Hottest junction", `${degrees(r.tj_peak)}${r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]) ? `, ${Math.round(r.tj_range[0])} to ${Math.round(r.tj_range[1])} °C across the thermal assumptions` : ""}; rating ${degrees(r.tj_max)}`], ["DC-to-shaft efficiency", c.efficiency != null ? percent(c.efficiency) : "n/a"]])}
 <h3>Checks</h3>${list(c.checks.map((x) => `${x.topic}: ${x.message}`))}
 <h3>What it needs around it</h3>${list(c.needs)}
 ${compared}${motion}
@@ -713,8 +715,10 @@ ${open ? field("start.current", "Start current", st.current, "A rms", "Held thro
 function missionBlock(): string {
   const m = state.mission;
   if (m) {
-    const top = Math.max(...m.rpm.map(Math.abs));
-    const peak = Math.max(...m.torque.map(Math.abs));
+    // A long log has more instants than a call takes arguments: the largest is found one by one.
+    const most = (values: number[]) => values.reduce((a, b) => Math.max(a, Math.abs(b)), 0);
+    const top = most(m.rpm);
+    const peak = most(m.torque);
     return `<div class="read-result" role="status"><p>${icon("circle-check")}<b>${escape(m.name)}</b> is the motion: ${m.time.length} instants over ${sig(m.time[m.time.length - 1] - m.time[0])} s, up to ${sig(top)} rpm and ${sig(peak)} N·m at the motor.</p><p class="quiet">The load figures below are not used while a mission profile is set.</p><p><button type="button" class="ghost" data-drop-mission>${icon("x")}Take the profile out</button></p></div>${missionFault ? refusal(missionFault) : ""}`;
   }
   return `<details class="more"${missionFault ? " open" : ""}><summary>${icon("upload")}Bring a mission profile<span class="quiet">measured or planned speed and torque, as a CSV file</span></summary><p class="quiet">Three columns, one row an instant: time in seconds, motor speed in rpm, motor torque in N·m. A first row of headings is fine. It takes the place of the load and the motion below.</p><label class="ghost add-part"><input type="file" data-mission-file accept=".csv,text/csv,.txt" class="sr"/>${icon("upload")}Choose a CSV file</label>${missionFault ? refusal(missionFault) : ""}</details>`;
@@ -762,7 +766,7 @@ ${fold("load-figures", "adjustments", "Change the load's figures", state.loadTou
 <h3>The motion</h3>
 <div id="motion-preview"></div>
 <details class="more" data-fold="motion"${openFolds.has("motion") || blocked?.field === "motion" ? " open" : ""}><summary>${icon("adjustments")}Change the motion<span class="quiet">${state.segments.length} stretches, ${sig(state.segments.reduce((n, x) => n + Number(x.duration || 0), 0))} s: load speed in straight lines between the values you give</span></summary>
-<table class="segments"><thead><tr><th scope="col">Lasts</th><th scope="col">From</th><th scope="col">To</th><th scope="col"><span class="sr">Remove</span></th></tr></thead><tbody>${state.segments.map((s, k) => `<tr><td><div class="control"><input aria-label="Stretch ${k + 1} duration in seconds" data-bind="segments.${k}.duration" inputmode="decimal" value="${s.duration}"/><span class="unit">s</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} starting speed" data-bind="segments.${k}.speed_start" inputmode="decimal" value="${s.speed_start}"/><span class="unit">rpm</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} ending speed" data-bind="segments.${k}.speed_end" inputmode="decimal" value="${s.speed_end}"/><span class="unit">rpm</span></div></td><td><button type="button" class="icon-button" data-remove="${k}" aria-label="Remove stretch ${k + 1}" ${state.segments.length < 2 ? "disabled" : ""}>${icon("trash")}</button></td></tr>`).join("")}</tbody></table>
+<table class="segments"><thead><tr><th scope="col">Lasts</th><th scope="col">From</th><th scope="col">To</th><th scope="col"><span class="sr">Remove</span></th></tr></thead><tbody>${state.segments.map((s, k) => `<tr><td><div class="control"><input aria-label="Stretch ${k + 1} duration in seconds" data-bind="segments.${k}.duration" inputmode="decimal" value="${escape(String(s.duration))}"/><span class="unit">s</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} starting speed" data-bind="segments.${k}.speed_start" inputmode="decimal" value="${s.speed_start}"/><span class="unit">rpm</span></div></td><td><div class="control"><input aria-label="Stretch ${k + 1} ending speed" data-bind="segments.${k}.speed_end" inputmode="decimal" value="${s.speed_end}"/><span class="unit">rpm</span></div></td><td><button type="button" class="icon-button" data-remove="${k}" aria-label="Remove stretch ${k + 1}" ${state.segments.length < 2 ? "disabled" : ""}>${icon("trash")}</button></td></tr>`).join("")}</tbody></table>
 <button type="button" class="ghost" data-add>${icon("plus")}Add a stretch</button></details>
 ${startBlock()}
 <details class="more"${state.sink.rth || state.sink.c_link_uf ? " open" : ""}><summary>${icon("temperature")}Heatsink and DC link<span class="quiet">optional</span></summary><div class="fields">
@@ -898,7 +902,7 @@ function devicesPanel(): string {
   const rows = parts
     .map((d) => {
       const on = state.devices.includes(d.id);
-      return `<li class="device${on ? " is-on" : ""}"><label><input type="checkbox" data-device="${escape(d.id)}" ${on ? "checked" : ""}/><span class="device-name">${escape(d.name)}${d.example ? ' <span class="tag">made-up part</span>' : ""}</span><span class="device-facts">${escape(d.technology)} · ${sig(d.v_max)} V · ${sig(d.i_nominal)} A</span><span class="device-facts kind-of-part">${packaging(d)}</span><span class="device-facts">Switching loss: ${escape(d.switching)}. Model built from ${escape(d.support)}.</span></label><button type="button" class="link review-link" data-forget-device="${escape(d.id)}">Take off this page</button><button type="button" class="link review-link" data-review="${escape(d.id)}" aria-expanded="${review?.id === d.id}">${review?.id === d.id ? "Hide what was read" : "Check what was read"}</button></li>`;
+      return `<li class="device${on ? " is-on" : ""}"><label><input type="checkbox" data-device="${escape(d.id)}" ${on ? "checked" : ""}/><span class="device-name">${escape(d.name)}${d.example ? ' <span class="tag">made-up part</span>' : ""}</span><span class="device-facts">${escape(d.technology)} · ${sig(d.v_max)} V · ${sig(d.i_nominal)} A</span><span class="device-facts kind-of-part">${packaging(d)}</span><span class="device-facts">Switching loss: ${escape(d.switching)}. Model built from ${escape(d.support)}.</span></label><button type="button" class="link review-link" data-forget-device="${escape(d.id)}" aria-label="Take ${escape(d.name)} off this page">Take off this page</button><button type="button" class="link review-link" data-review="${escape(d.id)}" aria-label="${review?.id === d.id ? "Hide" : "Check"} what was read for ${escape(d.name)}" aria-expanded="${review?.id === d.id}">${review?.id === d.id ? "Hide what was read" : "Check what was read"}</button></li>`;
     })
     .join("");
   const accepts = canRead ? "its datasheet (PDF), a device file (.yaml)" : "a device file (.device.yaml)";
@@ -971,12 +975,14 @@ function proposalTab(): string {
   const single = proposal.candidates.length === 1;
   const only = proposal.candidates[0];
   const headline = single
-    ? only.level === "ok" ? `${only.name} suits this motor and these conditions.`
+    ? only.level === "ok" ? `${only.name} passes every check at this design point.`
       : only.level === "caution" ? `${only.name} can do this, with cautions to read below.`
       : only.level === "undecided" ? `${only.name} is not decided by this data: what the datasheet leaves out could change the answer. The check below says what would settle it.`
-      : `${only.name} does not suit this motor and these conditions.`
+      : `${only.name} does not pass at this design point: see the checks below.`
     : null;
-  const lead = headline ? `<p>${escape(headline)}</p>` : proposal.explain.map((l) => `<p>${escape(l)}</p>`).join("");
+  // The order is by loss among the parts that pass, and a caution does not move a part down it.
+  const order = single ? "" : '<p class="quiet small">In order of modelled loss among the parts that pass. A caution does not change the order: read it before choosing.</p>';
+  const lead = headline ? `<p>${escape(headline)}</p>` : proposal.explain.map((l) => `<p>${escape(l)}</p>`).join("") + order;
   return `<div class="explain">${lead}</div>
 <div class="cand-head" aria-hidden="true"><span></span><span>Device</span><span class="num">Loss</span><span class="num">Junction</span><span class="num" title="The hottest junction holding the same torque at standstill">Standstill</span><span>Verdict</span></div>${rows}${adviceBlock()}`;
 }
@@ -1094,7 +1100,7 @@ function buildSpec(): string {
   ];
   const section = (title: string, glyph: string, head: string, lines: string[]) => `<section class="rec"><h4>${icon(glyph)}${title}<span class="rec-value">${escape(head)}</span></h4><ul class="plain small">${lines.map((l) => `<li>${escape(l)}</li>`).join("")}</ul></section>`;
   return `<h3>What to build</h3><p class="quiet">What this motor and load require of the power stage, with ${escape(c.name)} as the switch: requirements to start a design from, not a finished design.</p>
-${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It suits this design.", caution: "It can do this, with the cautions on the Verdict tab.", undecided: "Whether it can do this is not decided by the data: see the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
+${section("Power device", "cpu", c.needs[0] ? sentence(c.needs[0]) : c.name, [`${c.name}, ${c.technology}. ${{ ok: "It passes every check at this design point.", caution: "It can do this, with the cautions on the Verdict tab.", undecided: "Whether it can do this is not decided by the data: see the Verdict tab.", fail: "It does not pass: see the Verdict tab." }[c.level]}`, ...(advice ? [`Starting from scratch you would look for at least a ${sig(advice.v_minimum)} V part, ${sig(advice.v_comfortable)} V for margin, for a peak current of ${sig(advice.i_peak)} A.`] : [])])}
 ${section("Heatsink", "temperature", sinkRec?.value.rth_sink ? `${sig(sinkRec.value.rth_sink, 2)} K/W or lower` : "See below", [`${watts(r.loss)} to remove at the design point${motion ? `, ${watts(motion.summary.mean_loss!)} averaged over the motion` : ""}.`, ...(sinkRec ? [...sinkRec.lines.slice(0, 2), ...sinkRec.lines.filter((l) => l.startsWith("With no heatsink"))].map((l) => `${sentence(l)}.`) : [])])}
 ${section("DC-link capacitor", "bolt", rms > 0 ? `${sig(rms, 2)} A rms ripple` : "See below", cap)}
 ${section("Gate drive", "adjustments", c.gate.kind === "built in" ? "Built in" : `${state.conditions.parallel > 1 ? `${state.conditions.parallel} gates a channel` : "One gate a channel"}`, gate)}
@@ -1138,22 +1144,23 @@ function settingsTab(): string {
   if (!focused()?.result) return notReady();
   if (loading.has("recommend") || advised === null) return waiting("Working out starting values.");
   if (advised instanceof Refused) return refusal(advised);
-  const names: Record<string, string> = { "gate resistors": "Gate resistors", "dead time": "Dead time", modulation: "Modulation", heatsink: "Heatsink" };
-  const icons: Record<string, string> = { "gate resistors": "adjustments", "dead time": "ruler-measure", modulation: "wave-sine", heatsink: "temperature" };
+  const names: Record<string, string> = { "gate resistors": "Gate resistors", "dead time": "Dead time", modulation: "Modulation", heatsink: "Heatsink", "d-axis current": "Field current" };
+  const icons: Record<string, string> = { "gate resistors": "adjustments", "dead time": "ruler-measure", modulation: "wave-sine", heatsink: "temperature", "d-axis current": "engine" };
   const value = (r: Recommendation): string => {
     const v = r.value;
     if (r.topic === "gate resistors" && v.rg_on) return `${sig(v.rg_on, 2)} Ω on, ${sig(v.rg_off, 2)} Ω off`;
     if (r.topic === "dead time" && v.t_dead) return eng(v.t_dead, "s", 2);
     if (r.topic === "heatsink" && v.rth_sink) return `${sig(v.rth_sink, 2)} K/W or lower`;
     if (r.topic === "modulation") return v.saving ? `${sig(v.saving)} W to save` : "Keep the usual scheme";
+    if (r.topic === "d-axis current") return v.saving ? `${sig(v.saving)} W to save` : "Keep the least current";
     return "Needs more from you";
   };
   return `${buildSpec()}<h3>Starting values for ${escape(focused()!.name)}</h3><p class="quiet">For a first prototype. Settle them on the bench, with a probe on the switch.</p>
 ${advised.map((r) => `<section class="rec${Object.keys(r.value).length ? "" : " open-question"}"><h4>${icon(icons[r.topic] ?? "settings")}${names[r.topic] ?? sentence(r.topic)}<span class="rec-value">${escape(value(r))}</span></h4><ul class="plain small">${r.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul></section>`).join("")}`;
 }
 
-/** What is being compared: up to five devices on the load of step 4, or up to five loads
- *  on the device under test. One or the other; both at once is too much to read. */
+/** What is being compared: up to five devices, loads or motors, or one setting at up to
+ *  five values. One kind at a time; more at once is too much to read. */
 interface Series {
   key: string; name: string; candidate: Candidate | null; item: LoadItem | null;
   // For a motor or a setting compared: what differs from the request of the page.
@@ -1328,7 +1335,7 @@ function resultsPanel(): string {
   const body = { proposal: proposalTab, losses: lossesTab, motion: motionTab, map: mapTab, settings: settingsTab, capability: capabilityTab }[state.tab]();
   return `<h2 tabindex="-1">Results</h2>${compareBar()}<div class="tabs" role="tablist" aria-label="Results">${TABS.map(([t, name]) => `<button type="button" role="tab" id="tab-${t}" aria-selected="${state.tab === t}" aria-controls="tab-body" tabindex="${state.tab === t ? 0 : -1}" data-tab="${t}">${name}</button>`).join("")}</div>
 <div id="tab-body" role="tabpanel" aria-labelledby="tab-${state.tab}" tabindex="0">${body}</div>
-<div class="actions"><button type="button" class="ghost" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button><span class="save-as"><button type="button" class="ghost" data-report-md ${focused()?.result ? "" : "disabled"} title="The whole design as a Markdown file: for your notes, or to hand to a coding agent">${icon("file-text")}${savingMd ? "Writing" : "Report as .md"}</button><button type="button" class="ghost" data-report ${focused()?.result ? "" : "disabled"} title="Opens the print dialog: choose Save as PDF">${icon("file-text")}Report as PDF</button></span></div>`;
+<div class="actions"><button type="button" class="ghost" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button><span class="save-as"><button type="button" class="ghost" data-report-md ${focused()?.result ? "" : "disabled"} title="The whole design as a Markdown file: for your notes, or to hand to a coding agent">${icon("file-text")}${savingMd ? "Writing" : "Report as .md"}</button><button type="button" class="ghost" data-report ${focused()?.result ? "" : "disabled"} title="Opens the print dialog: choose Save as PDF">${icon("file-text")}Report as PDF</button></span></div>${reportFault ? `<p class="help said-wrong" role="alert">${escape(reportFault)}</p>` : ""}`;
 }
 
 function renderPanel(keepFocus = false): void {
@@ -1390,10 +1397,7 @@ function refreshOutputs(): void {
     face("more-settings", supplyFace());
   }
   if (state.step === RESULTS) {
-    const body = document.querySelector<HTMLElement>("#tab-body");
-    if (body && !body.contains(document.activeElement)) renderPanel(true);
-    else if (body && state.tab !== "map") renderPanel(true);
-    else if (body) { const m = document.querySelector<HTMLElement>("#map-body"); if (m && grid && !(grid instanceof Refused)) m.innerHTML = heatMap(grid, state.metric); else renderPanel(true); }
+    if (document.querySelector("#tab-body")) renderPanel(true);
   }
 }
 
@@ -1821,6 +1825,7 @@ function wire(): void {
       const id = el.dataset.forgetDevice;
       state.added = state.added.filter((d) => d !== id);
       state.devices = state.devices.filter((d) => d !== id);
+      api.forget(id!);
       if (review?.id === id) review = null;
       if (reading?.outcome?.device.id === id) reading = null;
       state.focusPicked = false;

@@ -43,8 +43,8 @@ e_rr where the datasheet tabulates them):
   - c_oss: output capacitance, with the drain voltage it is given at as voltage_v
   - g_fs: forward transconductance
   - v_plateau: gate plateau (Miller) voltage
-- t_d_off, t_f: turn-off delay time and fall time of the switch, with the test \
-current and voltage
+- t_d_off, t_f, t_r: turn-off delay time, fall time and rise time of the switch, with the \
+test current and voltage
 - v_rated: blocking voltage rating
 - i_rated: rated continuous output or collector current
 - tj_max: maximum operating junction temperature

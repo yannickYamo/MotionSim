@@ -14,10 +14,15 @@ about the width of its own stroke.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
+PALE = 220  # of 255: anything darker is ink, for a picture whose grid is drawn in grey
+COLOURED = 90  # of 255 between a pixel's strongest and weakest colour: a curve drawn in colour
+FRAME_EDGE = 0.02  # of the picture: a line this near its edge frames the picture, not the plot
+FRAME_SHARE = 0.9  # a frame runs the whole length of its side, where a grid line stops at the plot
+NOT_BLACK = 60  # of 255: the strongest colour of a pixel that counts as coloured
 LINE_SHARE = 0.7  # a grid or border line is dark along at least this share of the plot
 FIRST_PASS_SHARE = 0.4  # the same, against the whole picture, before the plot area is known
 MIN_PLOT = 0.3  # the plot area covers at least this share of the picture each way
@@ -333,8 +338,46 @@ def plots_on(page, taken: list[tuple[float, float, float, float]], min_size: flo
         if any(x0 < b and x1 > a and top < d and bottom > c for a, b, c, d in taken):
             continue
         picture = page.crop((x0, top, x1, bottom)).to_image(resolution=RESOLUTION).original
-        dark = np.asarray(picture.convert("L")) < DARK
-        raster = find_plot(dark, x0, top, 72.0 / RESOLUTION)
+        raster = plot_in(picture, x0, top, 72.0 / RESOLUTION)
         if raster is not None:
             found.append(raster)
     return found
+
+
+def plot_in(picture, x0: float, top: float, scale: float) -> Raster | None:
+    """The plot area of one picture: by its dark lines, or, where those give nothing more
+    than a frame, by a grid drawn in grey."""
+    dark = np.asarray(picture.convert("L")) < DARK
+    by_dark = find_plot(dark, x0, top, scale)
+    if by_dark is not None and len(by_dark.rows) + len(by_dark.columns) > 4:
+        return by_dark
+    return _pale_plot(picture, dark, x0, top, scale) or by_dark
+
+
+def _pale_plot(picture, dark: np.ndarray, x0: float, top: float, scale: float) -> Raster | None:
+    """The plot area of a picture whose grid and border are drawn in grey, with its curves
+    in colour. The grid is found by everything that is not paper; the curves are what is
+    dark or coloured, so the grey grid is not among them."""
+    colour = np.asarray(picture.convert("RGB")).astype(np.int16)
+    most, least = colour.max(axis=2), colour.min(axis=2)
+    inked = np.asarray(picture.convert("L")) < PALE
+    # Coloured, and not so dark that its colour is the noise of a black edge.
+    coloured = (most - least > COLOURED) & (most > NOT_BLACK)
+    # A frame drawn round the whole picture is not the plot's border: it is taken off first,
+    # or the axes would be read against it.
+    height, width = inked.shape
+    edge = max(int(FRAME_EDGE * min(height, width)), 2)
+    inked = inked.copy()
+    for first, last in _bands(inked.mean(axis=1) >= FRAME_SHARE):
+        if first < edge or last >= height - edge:
+            inked[first : last + 1, :] = False
+    for first, last in _bands(inked.mean(axis=0) >= FRAME_SHARE):
+        if first < edge or last >= width - edge:
+            inked[:, first : last + 1] = False
+    found = find_plot(inked, x0, top, scale)
+    if found is None:
+        return None
+    c0, r0 = round((found.x0 - x0) / scale), round((found.top - top) / scale)
+    rows, columns = found.dark.shape
+    curves = (dark | coloured)[r0 : r0 + rows, c0 : c0 + columns]
+    return replace(found, dark=curves)

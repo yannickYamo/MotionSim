@@ -66,7 +66,8 @@ async function journey(width, height) {
   await settled();
   await page.waitForSelector("#panel .verdict", { timeout: 240000 });
   const verdict = await text("#panel .verdict");
-  hold(/Passes|Cautions|Undecided|Ruled out/.test(verdict), `${at}: the journey ends in a verdict ("${verdict}")`);
+  // The made-up part on its own starting design is one the tool passes: any other word is a change to look at.
+  hold(/^Passes$/.test(verdict), `${at}: the made-up part passes on its starting design ("${verdict}")`);
   const loss = await text("#readouts");
   hold(/Power-stage loss\s*[\d.]+ ?W/.test(loss), `${at}: a loss is shown`);
   hold(await fits(), `${at}: the results fit the width`);

@@ -21,7 +21,7 @@ class Footing:
     """What a device's switching loss rests on, so that two devices can be seen to be like
     for like or not."""
 
-    kind: str  # "measured", "from charge" or "none"
+    kind: str  # "measured", "from times", "from charge" or "none"
     text: str  # one line: the test conditions, and how they were brought to these
     stretched: bool = False  # brought to a higher voltage than tested, in proportion
 
@@ -51,7 +51,9 @@ def switching_footing(device: Device, op: OperatingPoint) -> Footing:
         test.append(tested)
     if table.gate_voltage is not None:
         test.append(f"{table.gate_voltage:g} V gate")
-    text = "measured at " + ", ".join(test)
+    timed = table.footing == "times"
+    kind = "from times" if timed else "measured"
+    text = ("estimated from the datasheet's rise and fall times, at " if timed else "measured at ") + ", ".join(test)
     stretched = False
     if abs(op.v_dc - table.v_ref) > 0.01 * table.v_ref:
         if table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]:
@@ -60,13 +62,15 @@ def switching_footing(device: Device, op: OperatingPoint) -> Footing:
             stretched = op.v_dc > table.v_ref
             text += f"; brought to {op.v_dc:g} V in proportion"
     if device.package.integrated_driver:
-        return Footing("measured", text + "; gate drive built in", stretched)
+        return Footing(kind, text + "; gate drive built in", stretched)
+    if timed:
+        return Footing(kind, text + "; at the datasheet's own gate drive", stretched)
     if op.rg_on is not None and table.rg is not None and abs(op.rg_on - table.rg) > 0.01 * table.rg:
         if table.rg_values and table.rg_factor:
             text += f"; brought to {_ohms(op.rg_on, op.rg_off)} along the datasheet's figure"
         else:
             text += "; your gate resistor is not applied, for want of a figure against it"
-    return Footing("measured", text, stretched)
+    return Footing(kind, text, stretched)
 
 
 def _room(device: Device, point: MotorPoint | None) -> float | None:
@@ -178,7 +182,8 @@ def propose(
         checks: list[guard.Check] = []
         stall = None
         if design is not None:
-            checks += guard.check(device, base, design.result, design.stage.i_peak)
+            limit = guard.current_limit(motor, design.ripple_pp)
+            checks += guard.check(device, base, design.result, design.stage.i_peak, i_limit=limit)
             checks += guard.ripple_checks(design, base)
             tripped = guard.trip_check(motor, rpm, base.v_dc, device.ratings.v_max)
             if tripped is not None:
@@ -222,18 +227,22 @@ def _unlike(usable: list[Candidate]) -> list[str]:
     """Sentences on where the candidates' switching figures are not like for like."""
     lines = []
     kinds = {c.footing.kind for c in usable if c.footing is not None}
-    if {"measured", "from charge"} <= kinds:
-        measured = [c.name for c in usable if c.footing.kind == "measured"]
-        charge = [c.name for c in usable if c.footing.kind == "from charge"]
-        lines.append(
-            f"The switching loss of {_and(measured)} is measured and that of {_and(charge)} is "
-            "estimated from charge: the order between them rests on unlike data."
-        )
+    words = {
+        "measured": "measured",
+        "from times": "estimated from the datasheet's rise and fall times",
+        "from charge": "estimated from charge",
+    }
+    told = [k for k in words if k in kinds]
+    if len(told) > 1:
+        footed = [c for c in usable if c.footing is not None]
+        parts = [f"that of {_and([c.name for c in footed if c.footing.kind == k])} is {words[k]}" for k in told]
+        said = ", ".join(parts[:-1]) + " and " + parts[-1]
+        lines.append(f"The switching loss {said[5:]}: the order between them rests on unlike data.")
     stretched = [c.name for c in usable if c.footing is not None and c.footing.stretched]
     if stretched and len(stretched) < len(usable):
         lines.append(
             f"The switching loss of {_and(stretched)} is brought in proportion to a higher voltage "
-            "than it was measured at, and is likely stated low against the others."
+            "than its figures were taken at, and is likely stated low against the others."
         )
     return lines
 

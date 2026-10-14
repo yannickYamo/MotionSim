@@ -148,3 +148,37 @@ def test_a_sloped_plateau_is_found_and_the_slower_rise_after_it_is_not_taken_for
     level, start, end = plateau(q, v)
     assert level == pytest.approx(4.25, abs=0.15)
     assert start == pytest.approx(37e-9, abs=3e-9) and end == pytest.approx(54e-9, abs=3e-9)
+
+
+def test_a_grey_grid_with_coloured_curves_inside_a_framed_picture_is_read() -> None:
+    """Some datasheets draw the grid and the plot's border in grey, the curves in colour,
+    and a black frame round the whole picture. By darkness alone there is no grid to find."""
+    image = Image.new("RGB", (WIDTH, HEIGHT), (255, 255, 255))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle([0, 0, WIDTH - 1, HEIGHT - 1], outline=(0, 0, 0), width=3)  # round the picture
+    for k in range(11):
+        x = LEFT + k / 10 * (RIGHT - LEFT)
+        y = TOP + k / 10 * (BOTTOM - TOP)
+        draw.line([(x, TOP), (x, BOTTOM)], fill=(170, 170, 170), width=3)
+        draw.line([(LEFT, y), (RIGHT, y)], fill=(170, 170, 170), width=3)
+    xs = np.linspace(LEFT, RIGHT, 400)
+    rise = lambda f: BOTTOM - (BOTTOM - TOP) * (0.1 + 0.6 * f)
+    fall = lambda f: BOTTOM - (BOTTOM - TOP) * (0.9 - 0.3 * f)
+    for shape, colour in ((rise, (200, 0, 0)), (fall, (0, 112, 192))):
+        draw.line(list(zip(xs, shape((xs - LEFT) / (RIGHT - LEFT)), strict=True)), fill=colour, width=6)
+    dark = np.asarray(image.convert("L")) < raster.DARK
+    by_dark = raster.find_plot(dark, 0.0, 0.0, SCALE)
+    assert len(by_dark.rows) == 2 and len(by_dark.columns) == 2  # the frame, and no grid
+    plot = raster.plot_in(image, 10.0, 20.0, SCALE)
+    xs_found, ys_found = raster.positions(plot)
+    # The plot's own eleven lines each way: the frame round the picture is not one of them.
+    assert len(xs_found) == 11 and len(ys_found) == 11
+    assert xs_found[0] == pytest.approx(10.0 + LEFT * SCALE, abs=0.4)
+    assert ys_found[-1] == pytest.approx(20.0 + BOTTOM * SCALE, abs=0.4)
+    curves = raster.trace(plot)
+    assert len(curves) == 2
+    # Each curve ends where it was drawn: at the right edge, 70% and 60% of the way up.
+    ends = sorted(float(c[-1, 1]) / SCALE for c in curves)
+    assert ends[0] == pytest.approx(20.0 / SCALE + rise(1.0), abs=6) and ends[1] == pytest.approx(
+        20.0 / SCALE + fall(1.0), abs=6
+    )

@@ -31,19 +31,41 @@ class Check:
     message: str
 
 
-# What would narrow a temperature range, by the assumption that widens it most.
+# A temperature range in words: which assumption the largest part of it comes from, and what would narrow
+# it. Said with every range, so a result names its own weakest point.
+WIDENS = {
+    "mounting": "the layer under the package, which depends on how it is mounted",
+    "between chips": "how the chips of the package heat each other, which the datasheet does not give",
+    "transient": "the swing within one turn of the output, assumed for want of a transient thermal curve",
+}
+WORTH_SAYING = 5.0  # K of range from which the result says where it comes from
 NARROWS = {
-    "mounting": "Most of that range is the layer between the package and the heatsink, whose thickness "
-    "depends on how it is mounted. Its case-to-heatsink resistance, from the part's datasheet, the pad's "
-    "or a measurement, would narrow it",
-    "between chips": "Most of that range is how the chips of the package heat each other, which the "
-    "datasheet does not give. The maker's figure for it would narrow the range; so would a measurement",
-    "transient": "Most of that range is the temperature swing within one turn of the output, which is "
-    "assumed because the datasheet gives no transient thermal curve. That curve would narrow it; so "
-    "would a measurement",
+    "mounting": "Its case-to-heatsink resistance, from the part's datasheet, the pad's or a measurement, "
+    "would narrow it",
+    "between chips": "The maker's figure for it would narrow the range; so would a measurement",
+    "transient": "That curve would narrow it; so would a measurement",
     None: "A transient thermal curve, or how the chips of the package heat each other, would narrow it; "
     "so would a measurement",
 }
+
+
+# How far a current loop is taken to pass its reference for a millisecond or so on a step in
+# torque. Tuned with care it is less; this is common practice, and a parameter.
+OVERSHOOT = 0.15
+
+
+def current_limit(motor, ripple_pp: float | None = None) -> float | None:
+    """The most current the drive lets a switch position carry, A peak: the motor's own
+    limit, which a drive is set to, with half the switching ripple on top. None where the
+    motor gives no limit."""
+    limit = getattr(motor, "i_max", None)
+    if limit is None:
+        return None
+    # A sinusoidal motor's limit is given as rms. One that carries direct current through
+    # its switches (block-commutated, brushed) gives the current itself.
+    direct = getattr(motor, "type", "") in ("bldc", "dc", "dc_series")
+    peak = limit if direct else limit * math.sqrt(2)
+    return peak + (ripple_pp or 0.0) / 2
 
 
 def _coolest(op: OperatingPoint, result: Result) -> float:
@@ -162,11 +184,16 @@ def check(
     *,
     voltage_share: float = 0.8,
     junction_margin: float = 25.0,
+    overshoot: float = OVERSHOOT,
+    i_limit: float | None = None,
 ) -> list[Check]:
     """Checks on one solved operating point.
 
     voltage_share: largest share of the voltage rating the DC supply should use.
     junction_margin: smallest comfortable gap to the junction temperature rating, in K.
+    overshoot: how far a current loop is taken to pass its reference on a step, as a share.
+        Used only where no limit is given.
+    i_limit: the most the drive lets a switch position carry, A peak, where it is known.
     """
     out: list[Check] = []
     r = device.ratings
@@ -199,8 +226,11 @@ def check(
     low, high = result.tj_peak_range or (peak, peak)
     # A range whose ends read the same says nothing, and is left out.
     wide = bool(result.tj_peak_range) and f"{low:.0f}" != f"{high:.0f}"
-    spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions)" if wide else ""
-    if not math.isfinite(peak):
+    # A range of a few degrees needs no account of itself.
+    told = result.range_lead in WIDENS and high - low >= WORTH_SAYING
+    most = f", the largest part of it from {WIDENS[result.range_lead]}" if told else ""
+    spread = f" ({low:.0f} to {high:.0f} °C across the thermal assumptions{most})" if wide else ""
+    if not (math.isfinite(result.tj_switch_peak) and math.isfinite(result.tj_diode_peak)):
         # No comparison with a figure that is not a number holds, so none is left to pass it.
         out.append(Check(Level.fail, "temperature", "the junction temperature could not be worked out"))
     elif peak > r.tj_max:
@@ -219,7 +249,7 @@ def check(
                 Level.undecided,
                 "temperature",
                 f"junction peaks at {peak:.0f} °C{spread}: the range crosses the {r.tj_max:g} °C rating, so this "
-                f"data cannot say whether it passes. {NARROWS[result.range_lead]}",
+                f"data cannot say whether it passes. {NARROWS[result.range_lead if told else None]}",
             )
         )
     elif result.doubt > 0 and high + result.doubt * (high - _coolest(op, result)) > r.tj_max:
@@ -286,6 +316,34 @@ def check(
                 "current",
                 f"peak current {written(each, 3)} A a device is above its pulsed rating of {r.i_pulsed:g} A, "
                 "which nothing may exceed even briefly",
+            )
+        )
+    elif r.i_pulsed is not None and i_limit is not None:
+        # The drive's own limit is the most the current is let reach: in a hard acceleration
+        # or a stall it sits there, whatever the settled torque would need.
+        most = i_limit * hot_share(device, shared)
+        if most > r.i_pulsed:
+            out.append(
+                Check(
+                    Level.caution,
+                    "current",
+                    f"the drive's current limit lets {written(most, 3)} A through a device, above its pulsed "
+                    f"rating of {r.i_pulsed:g} A: a hard acceleration or a stall takes the current to the limit. "
+                    f"Set the drive's limit so that no more than {r.i_pulsed:g} A peak reaches a device, or take a "
+                    "part with a higher pulsed rating",
+                )
+            )
+    elif r.i_pulsed is not None and each * (1 + overshoot) > r.i_pulsed:
+        # No limit is known, so the settled current is all there is to check. On its way there
+        # a current loop passes its reference for a moment, and the rating has no moment to give.
+        out.append(
+            Check(
+                Level.caution,
+                "current",
+                f"peak current {written(each, 3)} A a device is within its pulsed rating of {r.i_pulsed:g} A once "
+                f"settled, with less room than the {overshoot:.0%} a current loop commonly overshoots by on a "
+                "step in torque, and no current limit is known for the drive. Hold the drive's limit under "
+                f"{written(r.i_pulsed / (1 + overshoot), 3)} A a device",
             )
         )
     if r.t_sc is not None:

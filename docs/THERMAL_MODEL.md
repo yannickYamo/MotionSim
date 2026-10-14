@@ -41,7 +41,7 @@ The solver is checked against two exact results: a chip covering its whole plate
 |---|---|---|
 | Moulded leadframe module | 0.5 mm copper-alloy leadframe; high-side chips share one area, each low-side pair has its own | conductive moulding compound, then the interface layer |
 | Ceramic-substrate module | 0.3 mm copper on the same layout | 0.38 mm alumina and its back copper, then the interface layer |
-| TO-220, TO-247, TO-263 | the package's own tab, at the standard outline's size | the interface layer |
+| TO-220, TO-247, TO-263, TO-252, TOLL | the package's own tab or pad, at the standard outline's size | the interface layer |
 
 Chip size follows from the rated current through a current density. The interface is grease or an insulating pad.
 
@@ -104,7 +104,8 @@ With that module's curves read from its datasheet and the construction left unkn
 - The generic layouts are plausible, not surveyed. A package with a different chip arrangement will differ.
 - Chips on separate pieces of copper are taken not to heat each other through the package. The heatsink surface is taken to be at one temperature.
 - Baseplate power modules, press-fit and double-sided cooled packages have no template.
-- Surface-mount packages cooled through a circuit board are represented only by the tab-to-interface model, which is wrong for them.
+- Surface-mount packages (TO-263, TO-252, TOLL) are represented by their pad and the layer under it. On a heatsink through a circuit board the board is most of the path, and it is not in this model: give the case-to-heatsink resistance of your own build, or use the cooling for parts soldered to one board.
+- No public library of package thermal data was found to draw on. The outlines here are the tool's own short table, from published outline drawings; a package not in it gets no computed default.
 - The transient response is that of the generic package, junction to heatsink, applied to a datasheet resistance defined junction to case. The two are not the same thing.
 - Through time, neighbour heating and the interface follow the loss as fast as the copper alone allows, and the heatsink has no gradient across it. A burst of seconds on a moulded module comes out warm.
 - One vendor's simulator, on one part, is the only external check on temperature.

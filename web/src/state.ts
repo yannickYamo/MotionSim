@@ -112,12 +112,30 @@ export function initial(setup: Setup): State {
   };
 }
 
+const TABS: Tab[] = ["proposal", "losses", "motion", "map", "settings", "capability"];
+const COMPARES: State["compare"][] = ["devices", "loads", "motors", "sweep"];
+
+/** What was saved, made safe to use: a setup file is a file from anywhere, and what the page
+ *  keeps can be edited by hand. Only text, finite numbers, yes and no, lists and plain
+ *  records are kept, and text loses the characters that would make it markup. */
+export function plain(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") return value.replace(/[<>"'`&]/g, "");
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  if (typeof value === "boolean" || value === null) return value;
+  if (depth > 8 || typeof value !== "object") return null;
+  if (Array.isArray(value)) return value.map((v) => plain(v, depth + 1));
+  return Object.fromEntries(Object.entries(value as object).map(([k, v]) => [plain(k), plain(v, depth + 1)]));
+}
+
+const whole = (value: unknown, low: number, high: number, otherwise: number) =>
+  typeof value === "number" && Number.isInteger(value) && value >= low && value <= high ? value : otherwise;
+
 /** `keepDevices`: the list of devices is not final yet, so the saved choice is kept as it is. */
 export function restore(setup: Setup, keepDevices = false): State {
   const fresh = initial(setup);
   try {
-    const saved = JSON.parse(localStorage.getItem(KEY) ?? "null") as State | null;
-    if (!saved || !setup.motors[saved.kind]) return fresh;
+    const saved = plain(JSON.parse(localStorage.getItem(KEY) ?? "null")) as State | null;
+    if (!saved || !setup.motors[saved.kind] || !Array.isArray(saved.devices)) return fresh;
     const known = new Set(setup.devices.map((d) => d.id));
     return {
       ...fresh, ...saved,
@@ -132,6 +150,13 @@ export function restore(setup: Setup, keepDevices = false): State {
       added: keepDevices ? saved.added ?? [] : (saved.added ?? []).filter((d) => known.has(d)),
       focus: saved.focus && (keepDevices || known.has(saved.focus)) ? saved.focus : null,
       focusPicked: Boolean(saved.focusPicked) && Boolean(saved.focus) && (keepDevices || known.has(saved.focus!)),
+      // A step or a tab the page does not have would leave it with nothing to draw.
+      step: whole(saved.step, 0, 4, fresh.step),
+      reached: whole(saved.reached, 0, 4, fresh.reached),
+      tab: TABS.includes(saved.tab) ? saved.tab : fresh.tab,
+      compare: COMPARES.includes(saved.compare) ? saved.compare : fresh.compare,
+      pwmPeriods: whole(saved.pwmPeriods, 1, 50, fresh.pwmPeriods),
+      segments: Array.isArray(saved.segments) ? saved.segments : fresh.segments,
     };
   } catch {
     return fresh;

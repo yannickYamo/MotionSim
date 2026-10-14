@@ -15,9 +15,11 @@ from motionsim.device.schema import (
     Ratings,
     ReviewStatus,
     Source,
+    SwitchingEnergy,
 )
 from motionsim.fit.sparse import (
     MissingData,
+    NoGateCharge,
     curve_source,
     digitised_curves,
     energy_of,
@@ -168,7 +170,10 @@ def _gain(obs: ObservationSet, allow: bool) -> tuple[float, bool] | None:
 def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) -> ChargeModel:
     """Gate and output charge. What the tables leave out is derived from what they give,
     and each derivation is written into the model."""
-    q_gs = single_value(obs, Quantity.q_gs, "gate-source charge", allow)
+    try:
+        q_gs = single_value(obs, Quantity.q_gs, "gate-source charge", allow)
+    except MissingData as none:
+        raise NoGateCharge(str(none)) from None
     q_gd = single_value(obs, Quantity.q_gd, "gate-drain charge", allow)
     v_th = single_value(obs, Quantity.v_th, "threshold voltage", allow)
     q_th = _optional(obs, Quantity.q_g_th, allow)
@@ -257,6 +262,52 @@ def _measured(obs: ObservationSet, allow: bool):
     return e_on, e_off, recovery_energy_of(obs, allow, e_on.v_ref)
 
 
+TIMES_ASSUMPTION = (
+    "estimated from the datasheet's rise and fall times and its output charge, at the gate drive "
+    "the datasheet tested with: not measured energy, and not adjustable with a gate resistor"
+)
+
+
+def _from_times(obs: ObservationSet, allow: bool, i_rated: float) -> tuple[SwitchingEnergy, SwitchingEnergy]:
+    """Turn-on and turn-off energy from the datasheet's own rise and fall times.
+
+    While the voltage and the current cross, the switch loses about half their product for
+    as long as the crossing lasts: the rise time at turn-on, the fall time at turn-off. At
+    turn-on in a half bridge it also takes the output charge of the pair through the full
+    voltage. The times are the datasheet's, at its own gate drive, and are taken not to
+    move with the current.
+    """
+    try:
+        rise = single_value(obs, Quantity.t_r, "rise time", allow)
+        fall = single_value(obs, Quantity.t_f, "fall time", allow)
+        q_oss = single_value(obs, Quantity.q_oss, "output charge", allow)
+    except MissingData:
+        raise MissingData(
+            "the datasheet gives no switching energy, no gate-source charge to estimate it from, and no "
+            "rise and fall times with an output charge, as for a part with its gate drive built in. A model "
+            "needs one of the three: bring your own double-pulse measurements, or ask the maker for the "
+            "switching energy"
+        ) from None
+    v_ref = fall.voltage_v or rise.voltage_v or q_oss.voltage_v
+    if not v_ref:
+        raise MissingData("the rise and fall times have no test voltage with them")
+    tj = fall.tj_c or 25.0
+    charged = q_oss.typ * v_ref * (v_ref / q_oss.voltage_v) ** 0.5 if q_oss.voltage_v else q_oss.typ * v_ref
+    printed = f"rise {_printed(rise)}, fall {_printed(fall)}, output charge {_printed(q_oss)}, at {v_ref:g} V"
+
+    def table(at_zero: float, time: float) -> SwitchingEnergy:
+        return SwitchingEnergy(
+            curves=[Curve(tj=tj, current=[0.0, i_rated], value=[at_zero, at_zero + 0.5 * v_ref * i_rated * time])],
+            v_ref=v_ref,
+            footing="times",
+            basis=Basis.point,
+            assumption=TIMES_ASSUMPTION,
+            source=_source(obs, [rise, fall, q_oss], printed),
+        )
+
+    return table(charged, rise.typ), table(0.0, fall.typ)
+
+
 def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
     """Measured switching energy is used where the datasheet tabulates it; the charge model
     is built as well when the tables allow, and is required when there is no energy."""
@@ -266,10 +317,16 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
     e_on, e_off, e_rr = _measured(obs, a)
     try:
         charge = _charge(obs, a, i_rated, v_rated)
-    except MissingData:
-        if e_on is None:
-            raise
+    except MissingData as missing:
         charge = None
+        if e_on is None:
+            # No energy and no charges to estimate from: the last footing a datasheet can
+            # give is its own switching times, which is all a part with its gate drive
+            # built in has to offer. Charges that are there and faulty are another matter:
+            # what is wrong with them is what the user is told.
+            if not isinstance(missing, NoGateCharge):
+                raise
+            e_on, e_off = _from_times(obs, a, i_rated)
     return Device(
         vendor=obs.vendor,
         part_number=obs.part_number,

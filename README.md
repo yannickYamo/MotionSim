@@ -1,6 +1,10 @@
 # MotionSim
 
-Bring a power transistor's datasheet, or nine figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, and whether the part suits the job.
+[![ci](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml/badge.svg)](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml)
+
+Bring a power transistor's datasheet, or nine figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, whether the part passes, and how far the data behind that answer can be trusted.
+
+**It does not only calculate an answer. It says whether the evidence supports the decision, and what to collect next.**
 
 MotionSim is a web page with a loss and temperature engine behind it. It needs no vendor's model library: the device model is built from the part's own datasheet, whichever vendor's, where the datasheet gives enough ([docs/LIMITS.md](docs/LIMITS.md) says what the reader cannot read yet). It shows the equations it uses, and says in every result what the data supports and what it leaves out. It answers two questions: what power stage a load needs, and what load a device can drive.
 
@@ -16,7 +20,7 @@ The live page runs the engine in your browser. Type in a transistor from its dat
 
 ## Who it is for
 
-People with a motor to drive and a power stage to choose, who are not power-electronics specialists: hobbyists, and early-stage teams in robotics and similar fields.
+Robotics, mechatronics and hardware engineers who have a motor to drive and a power stage to choose, without first becoming power-electronics modelling specialists. Hobbyists can use it too.
 
 ## Why
 
@@ -38,7 +42,7 @@ Five steps on one page, with the power stage drawn on screen the whole time:
 
 A part passes, with any cautions listed, is ruled out, or is "undecided on this data" where the datasheet leaves the answer open, with what would settle it. An input that cannot work is refused with the reason and what to change. The equations behind every figure are one press away.
 
-![The first step: a transistor typed in from its datasheet figures, with the made-up parts and the device file drop beside it](docs/images/device.png)
+![The first step on the live page: try a made-up part, type in your own part's figures, or bring a device file](docs/images/device.png)
 
 ![What to build: the device, the heatsink, the DC-link capacitor with its ripple current, the gate drive and the protection, on one sheet](docs/images/build.png)
 
@@ -98,6 +102,17 @@ Everything the page does is also a command, one file runs every step (`motionsim
 
 A language model copies the datasheet's values as printed and produces no model values. Deterministic code checks them, reads the curves and builds the device model, setting aside whatever fails a check. One engine averages conduction and switching loss over an output period and iterates until the junction temperatures agree with the losses; motors are solved from their steady-state equations, and a motion is followed through the thermal network in time. The page and the command line show what that engine gives and have no model of their own.
 
+## For power-electronics and drives engineers
+
+The same tool, in the terms you would use.
+
+- **Device models.** IGBT, Si, SiC and GaN MOSFET, discrete or module. On-state from V_CE(I, T_j) or R_DS(on)(T_j) curves. Switching from E_on, E_off and E_rr against current and temperature, scaled with voltage, and E_on and E_off with gate resistance, along the datasheet's own figures where it has them; or, where only charges are given, from a gate-charge model through the Miller plateau with the Q_oss loss at hard turn-on; or, for a part with its gate drive built in that gives neither, from its rise and fall times. Double-pulse measurements replace the datasheet's switching energy. Thermal from Z_th(j-c) fitted as a Foster network; with no transient curve, a response computed from the package's copper and die heat capacity, as a low, typical and high range.
+- **Loss engine.** Averaged over the output period for each switch and diode under sinusoidal, third-harmonic, space-vector and discontinuous PWM, block commutation and H-bridge drive. Dead-time and reverse conduction, recovery, and switching-frequency current ripple from the motor's inductance. Junction temperatures solved self-consistently with temperature-dependent loss, thermal runaway detected. Coupling between chips in a module and between packages on one board; case to heatsink as its own term.
+- **Motors.** Steady-state dq models for surface, inset and interior PMSM with MTPA and field weakening; SynRM; induction under rotor-flux orientation; BLDC with 120° block commutation; brushed DC with a magnet or a series field; hybrid stepper with microstepping. Iron loss and saturation where given; magnet and copper temperature.
+- **Control.** The operating point field-oriented control settles to, not a simulated loop. Alignment and I/f start. The pulsed rating checked at the drive's current limit, or with an allowance for current-loop overshoot where none is given; the lowest sensorless speed from the dead-time and device-drop voltage error; a loss-minimising d-axis current with inverter loss included. Imported phase currents and duty cycles for anything a loop does beyond that.
+- **Motion and reliability.** Load models (inertia, friction, fan law, gravity, vehicle drag and slope) behind a gear; junction temperature followed in time over a mission profile; rainflow counting and a LESIT-based power-cycling estimate; braking energy into the DC link; DC-link capacitor ripple current.
+- **Validation.** Closed-form loss integrals, an independent numerical integration, datasheet curves against their own tables, one vendor simulator, one published measured inverter loss. [docs/VALIDATION.md](docs/VALIDATION.md).
+
 ## How it compares
 
 | | Vendor web tools | General circuit simulators | MotionSim |
@@ -116,11 +131,13 @@ The vendors' tools and the circuit simulators are ahead on accuracy and breadth.
 ## More
 
 - [docs/GUIDE.md](docs/GUIDE.md): every step, every result, the command line and coding agents.
+- [docs/CASE_STUDY.md](docs/CASE_STUDY.md): four real datasheets from four makers, from PDF to verdict, with what was refused and why.
 - [docs/DESIGN_DECISIONS.md](docs/DESIGN_DECISIONS.md): the problems it starts from, the decisions and their trade-offs.
 - [docs/THERMAL_MODEL.md](docs/THERMAL_MODEL.md): what a datasheet's thermal resistance means and how the rest is computed.
 - [docs/VALIDATION.md](docs/VALIDATION.md): every check, including the ones that fail, and the datasheets the reader has been tried on.
 - [docs/LIMITS.md](docs/LIMITS.md): what it does not do, in order of importance.
 - [docs/ROADMAP.md](docs/ROADMAP.md): what is planned.
+- [CHANGELOG.md](CHANGELOG.md): what each version added. [SECURITY.md](SECURITY.md): what the tool handles of yours, and how to report a fault in it.
 
 To work on the code: `pip install -e ".[dev]"`, then `pytest`; [AGENTS.md](AGENTS.md) has the rest.
 

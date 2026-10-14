@@ -359,3 +359,28 @@ def test_what_a_device_can_drive_and_how_much_heavier_the_load_could_be(workspac
         except server.Refused:
             failing = ["refused"]
         assert failing
+
+
+def test_an_open_loop_start_says_how_slowly_this_device_lets_the_rotor_be_read(workspace) -> None:
+    motors = server.setup(workspace)["motors"]
+    start = page.STARTING["pmsm"]
+    fan = next(p for p in page.load_presets("pmsm", start["rpm"], start["torque"]) if p["id"] == "fan")
+    request_ = {
+        "motor": {"type": "pmsm", **motors["pmsm"]["values"]},
+        "conditions": {**start, "t_sink": 60},
+        "supply": "battery",
+        "device": "example",
+        "load": fan["load"],
+        "profile": {"start_angle_deg": 0, "segments": fan["segments"]},
+    }
+    sensed = server.cycle(request_, workspace)["start"]
+    assert "sensorless_rpm" not in sensed and not any("reads the back-EMF" in line for line in sensed["lines"])
+    late = server.cycle({**request_, "start": {"method": "open_loop", "handover_rpm": 1e5}}, workspace)["start"]
+    floor = late["sensorless_rpm"]
+    assert floor > 0
+    said = late["lines"][-1]
+    assert said.startswith("an estimate") and "reads the back-EMF only from about" in said
+    assert "relies on firmware" not in said
+    early = server.cycle({**request_, "start": {"method": "open_loop", "handover_rpm": floor / 2}}, workspace)["start"]
+    assert early["sensorless_rpm"] == pytest.approx(floor, rel=0.05)
+    assert "relies on firmware that corrects for it" in early["lines"][-1]

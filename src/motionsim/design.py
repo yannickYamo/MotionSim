@@ -24,7 +24,7 @@ import yaml
 
 from motionsim import __version__, page
 from motionsim.engine import ThermalRunaway
-from motionsim.text import written
+from motionsim.text import capital, written
 
 log = logging.getLogger("motionsim")
 
@@ -43,6 +43,7 @@ KNOWN = {
     "repeats",
     "t_ambient",
     "follow",
+    "start",
 }
 CONDITIONS = {
     "v_dc", "rpm", "torque", "f_sw", "parallel", "pwm", "cooling", "t_sink", "t_ambient", "rth_sink", "rth_ja", "board_area",
@@ -61,6 +62,8 @@ SETUP_HEAD = """\
 #               On a heatsink, interface (grease or pad) is the layer under each package and
 #               rth_case_sink its resistance where you know it; left out, they are worked out.
 #   load, profile   what the motor moves and how: leave out to judge the design point alone
+#   start       how the drive starts the motor: method is sensor (the default), injection or
+#               open_loop, with current (A rms), handover_rpm and align_time (s) where known
 """
 
 
@@ -266,6 +269,7 @@ def run(
                     "heatsink": setup.get("heatsink"),
                     "c_link": setup.get("c_link"),
                     "repeats": setup.get("repeats", 1),
+                    "start": setup.get("start"),
                 },
                 workspace,
             ),
@@ -487,7 +491,7 @@ def _cooling(c: dict) -> str:
 
 def _said(text: str) -> str:
     text = str(text).strip()
-    return text[:1].upper() + text[1:] + ("" if text.endswith((".", ":", "?")) else ".")
+    return capital(text) + ("" if text.endswith((".", ":", "?")) else ".")
 
 
 def _refused(step: dict) -> list[str]:
@@ -582,7 +586,7 @@ def markdown(result: dict) -> str:
         if alone is not None and alone["result"] is not None:
             add(
                 {
-                    "ok": f"{alone['name']} suits this motor and these conditions.",
+                    "ok": f"{alone['name']} passes every check at this design point.",
                     "caution": f"{alone['name']} can do this, with cautions to read below.",
                     "undecided": f"{alone['name']} is not decided by this data: what the datasheet leaves out "
                     "could change the answer. The check below says what would settle it.",

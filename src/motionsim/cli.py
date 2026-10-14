@@ -217,7 +217,8 @@ def _motor(args: argparse.Namespace) -> int:
     _print_result(device, point.result)
     from motionsim import guard
 
-    _print_checks(guard.check(device, _operating_point(args, 0.0, device), point.result, st.i_peak))
+    limit = guard.current_limit(motor, point.ripple_pp)
+    _print_checks(guard.check(device, _operating_point(args, 0.0, device), point.result, st.i_peak, i_limit=limit))
     return 0
 
 
@@ -439,6 +440,8 @@ def _recommend(args: argparse.Namespace) -> int:
             except (Unreachable, ThermalRunaway, ValueError):
                 continue
     _print_recommendation(recommend.modulation(losses, motor.default_pwm.value))
+    if (d_axis := recommend.least_loss_d_axis(device, motor, args.rpm, args.torque, base)) is not None:
+        _print_recommendation(d_axis)
 
     if args.tambient is None:
         print("heatsink")
@@ -702,7 +705,13 @@ def _cycle(args: argparse.Namespace) -> int:
         tj_diode_peak=result.tj_diode_peak + shift,
         tj_peak_range=None if span is None else (span[0] + shift, span[1] + shift),
     )
-    checks = guard.check(device, base, reached, max(s.point.stage.i_peak for s in cycle.solved))
+    checks = guard.check(
+        device,
+        base,
+        reached,
+        max(s.point.stage.i_peak for s in cycle.solved),
+        i_limit=guard.current_limit(motor, max((s.point.ripple_pp or 0.0) for s in cycle.solved)),
+    )
     link = dclink.returned(cycle, base.v_dc, device.ratings.v_max, capacitance=args.clink)
     checks += dclink.check(link, base.v_dc, device.ratings.v_max, supply=args.supply)
     if failed:
@@ -1293,7 +1302,9 @@ def main(argv: list[str] | None = None) -> int:
     cyc.set_defaults(func=_cycle)
 
     pkg = sub.add_parser("package", help="thermal resistances computed for a generic package construction")
-    pkg.add_argument("template", choices=["leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263"])
+    pkg.add_argument(
+        "template", choices=["leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263", "TO-252", "TOLL"]
+    )
     pkg.add_argument("--irated", type=_above_zero, required=True, help="rated current of the switch, A")
     pkg.add_argument("--interface", default="grease", choices=["grease", "pad"])
     pkg.add_argument("--no-diode", action="store_true", help="discrete package with no diode chip")

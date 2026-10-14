@@ -408,7 +408,7 @@ def test_switching_loss_stretched_to_a_higher_voltage_is_pointed_out_only_beside
     assert [c.footing.stretched for c in one] == [True, False]
     assert (
         "The switching loss of synthetic FIRST is brought in proportion to a higher voltage "
-        "than it was measured at, and is likely stated low against the others."
+        "than its figures were taken at, and is likely stated low against the others."
     ) in explain(one)
 
 

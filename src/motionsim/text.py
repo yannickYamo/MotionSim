@@ -16,3 +16,12 @@ def written(value: float, digits: int = 3) -> str:
     # Ten figures hold anything already rounded to fewer; below a ten-thousandth the format
     # turns to a power of ten by itself.
     return f"{x:.10g}"
+
+
+def capital(text: str) -> str:
+    """A sentence with its first letter raised, unless its first word is a name that mixes
+    its cases on purpose (iDEAL, eGaN), which is left as it is written."""
+    first = text.split(" ", 1)[0]
+    if any(c.isupper() for c in first[1:]):
+        return text
+    return text[:1].upper() + text[1:]

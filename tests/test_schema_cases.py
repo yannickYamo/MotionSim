@@ -340,3 +340,54 @@ def test_a_chip_is_no_larger_than_the_tab_it_sits_on() -> None:
     for rated in (20.0, 250.0, 1000.0):
         for chip in build("TO-220", rated, diode=False).plates[0].chips:
             assert chip.width <= min(width, height) and chip.height <= min(width, height)
+
+
+def test_a_name_that_mixes_its_cases_is_left_as_it_is_written() -> None:
+    from motionsim.text import capital
+
+    assert capital("the part passes") == "The part passes"
+    assert capital("iDEAL Semiconductor iS20M loses 3 W more") == "iDEAL Semiconductor iS20M loses 3 W more"
+    assert capital("eGaN parts") == "eGaN parts"
+    assert capital("") == ""
+
+
+def test_a_gate_source_charge_given_from_the_threshold_on_is_refused_with_what_it_is() -> None:
+    """Some datasheets print the charge from the threshold to the plateau as the gate-source
+    charge. It is smaller than the charge at threshold, which cannot be, and the refusal says
+    what the figure probably is and how to put it right."""
+    device = load_device("src/motionsim/example_mosfet.yaml")
+    charge = device.switch.charge.model_dump()
+    kind = type(device.switch.charge)
+    with pytest.raises(ValidationError, match="from the threshold on"):
+        kind.model_validate({**charge, "q_g_th": 25.5e-9, "q_gs": 4.3e-9})
+    kind.model_validate({**charge, "q_g_th": 25.5e-9, "q_gs": 29.8e-9, "q_gd": 4.0e-9})
+
+
+def test_every_outline_the_model_names_has_a_template_and_a_smaller_pad_is_a_worse_path() -> None:
+    from typing import get_args
+
+    from motionsim.device.schema import Package
+    from motionsim.package.templates import TABS, TEMPLATES
+
+    named = [o for o in get_args(get_args(Package.model_fields["outline"].annotation)[0]) if o]
+    assert set(named) == set(TABS) and set(TABS) < set(TEMPLATES)
+    # The layer under a package is its thickness over its conductivity and the pad's area.
+    by_area = sorted(TABS, key=lambda o: TABS[o][0] * TABS[o][1])
+    resistances = [build(o, 30.0).interface_resistance for o in by_area]
+    assert resistances == sorted(resistances, reverse=True)
+    width, height, _ = TABS["TOLL"]
+    assert build("TOLL", 30.0).footprint == pytest.approx(width * height)
+
+
+def test_the_chips_of_a_discrete_part_lie_on_its_tab_and_apart() -> None:
+    from motionsim.package.templates import TABS
+
+    for outline, (width, height, _) in TABS.items():
+        for rated in (5.0, 30.0, 120.0, 400.0):
+            for variant in ("low", "typical", "high"):
+                switch, diode = build(outline, rated, variant).plates[0].chips
+                for chip in (switch, diode):
+                    assert chip.x - chip.width / 2 >= -1e-9 and chip.x + chip.width / 2 <= width + 1e-9
+                    assert chip.y - chip.height / 2 >= -1e-9 and chip.y + chip.height / 2 <= height + 1e-9
+                # The diode starts where the switch has ended, with their gap between.
+                assert diode.y - diode.height / 2 >= switch.y + switch.height / 2 + 0.9e-3, (outline, rated, variant)

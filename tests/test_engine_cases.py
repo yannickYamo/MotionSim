@@ -598,6 +598,7 @@ def test_a_temperature_range_names_the_assumption_that_widens_it_most() -> None:
     # A discrete part with its transient curve given: only the layer under it is assumed.
     lead, said = held(igbt(outline="TO-247"), point())
     assert lead == "mounting" and "case-to-heatsink resistance" in said
+    assert "the largest part of it from the layer under the package" in said
     # The same part with the layer given leaves nothing assumed, and no range.
     assert solve(igbt(outline="TO-247"), point(rth_case_sink=0.2)).tj_peak_range is None
     # A module of two positions: each chip is heated by the three others through the coupling,
@@ -706,6 +707,10 @@ def test_a_temperature_that_is_not_a_number_does_not_pass() -> None:
     broken = replace(r, tj_switch_peak=float("nan"), tj_diode_peak=float("nan"), tj_peak_range=None)
     check = next(c for c in guard.check(device, op, broken, 20.0) if c.topic == "temperature")
     assert check.level is guard.Level.fail and "could not be worked out" in check.message
+    # One peak that is not a number is enough: the larger of a number and none is the number.
+    half = replace(r, tj_diode_peak=float("nan"), tj_peak_range=None)
+    check = next(c for c in guard.check(device, op, half, 20.0) if c.topic == "temperature")
+    assert check.level is guard.Level.fail
 
 
 def test_a_range_whose_top_runs_away_is_closed_at_a_figure_and_says_so() -> None:
@@ -733,3 +738,77 @@ def test_a_range_whose_top_runs_away_is_closed_at_a_figure_and_says_so() -> None
     )
     assert "inf" not in check.message and check.level in (guard.Level.undecided, guard.Level.fail)
     assert found.range_lead in ("mounting", "between chips")
+
+
+def test_a_peak_current_with_no_room_for_the_current_loop_to_overshoot_is_a_caution() -> None:
+    """The currents worked out are the ones the control settles to. A loop passes its
+    reference for a moment on a step in torque, and a pulsed rating has no moment to give."""
+    from motionsim import guard
+
+    device = igbt()
+    op = point()
+    r = solve(device, op)
+
+    def current(i_peak: float, **more) -> list[guard.Check]:
+        return [c for c in guard.check(device, op, r, i_peak, **more) if c.topic == "current"]
+
+    device.ratings.i_pulsed = 100.0
+    # 15% over 86 A is 98.9 A, under the rating; 15% over 88 A is 101.2 A, past it.
+    assert len(current(86.0)) == 1  # the one line on the continuous rating, and nothing on the pulsed
+    held = current(88.0)[-1]
+    assert held.level is guard.Level.caution and "overshoots" in held.message and "no current limit" in held.message
+    assert "under 87 A" in held.message  # 100 A / 1.15
+    # Settled above the rating it fails, as before, and says nothing of overshoot.
+    over = current(101.0)[-1]
+    assert over.level is guard.Level.fail and "overshoot" not in over.message
+    # A drive known to overshoot less is held to less.
+    assert len(current(88.0, overshoot=0.10)) == 1
+    # With the drive's own limit known, that is what is checked, and the allowance is not used:
+    # a limit under the rating says nothing, one over it says what to set.
+    assert len(current(88.0, i_limit=95.0)) == 1
+    over_limit = current(40.0, i_limit=120.0)[-1]
+    assert over_limit.level is guard.Level.caution and "current limit lets 120 A" in over_limit.message
+    assert "no more than 100 A peak reaches a device" in over_limit.message
+    # A motor's limit is rms, a block-commutated one's the current itself; ripple rides on top.
+    from motionsim.motor.machines import Pmsm
+
+    motor = Pmsm(type="pmsm", pole_pairs=4, flux_linkage=0.1, ld=1e-3, lq=1e-3, rs=0.1, i_max=50.0)
+    assert guard.current_limit(motor) == pytest.approx(50.0 * math.sqrt(2))
+    assert guard.current_limit(motor, ripple_pp=4.0) == pytest.approx(50.0 * math.sqrt(2) + 2.0)
+    assert guard.current_limit(motor.model_copy(update={"i_max": None})) is None
+    # A brushed or block-commutated motor's limit is the current through the switch itself.
+    from types import SimpleNamespace
+
+    for kind in ("dc", "dc_series", "bldc"):
+        assert guard.current_limit(SimpleNamespace(type=kind, i_max=20.0)) == 20.0
+    assert guard.current_limit(SimpleNamespace(type="stepper")) is None
+
+
+def test_a_narrow_range_that_crosses_the_rating_does_not_point_at_something_it_never_named() -> None:
+    """Under 5 K a range is not said to come from anywhere, so the advice on narrowing it
+    cannot open with "its" or "that curve"."""
+    from dataclasses import replace
+
+    from motionsim import guard
+
+    device = igbt(outline="TO-247")
+    op = point()
+    r = solve(device, op)
+    top = max(r.tj_switch_peak, r.tj_diode_peak)
+    narrow = replace(r, tj_peak_range=(top - 1.0, top + 3.0), range_lead="mounting")
+    device.ratings.tj_max = top + 1.0
+    said = next(c for c in guard.check(device, op, narrow, 20.0, junction_margin=0.0) if c.topic == "temperature")
+    assert said.level is guard.Level.undecided
+    assert "largest part" not in said.message and "Its case-to-heatsink" not in said.message
+    assert "A transient thermal curve, or how the chips" in said.message
+
+
+def test_an_assumed_thermal_shape_stops_at_the_package_face_where_the_template_has_one() -> None:
+    """What lies under a module belongs to the mounting: the shape assumed for a chip's own
+    path does not move with it. A discrete part's template has no face of its own."""
+    from motionsim.package.templates import response_shape
+
+    assert response_shape("leadframe-module", 15.0, "typical", "grease") == response_shape(
+        "leadframe-module", 15.0, "typical", "pad"
+    )
+    assert response_shape("TO-247", 15.0, "typical", "grease") != response_shape("TO-247", 15.0, "typical", "pad")

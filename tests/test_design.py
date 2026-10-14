@@ -65,7 +65,7 @@ def test_the_report_says_what_was_tested_the_verdict_and_what_it_rests_on(tmp_pa
         "## What this rests on",
     ):
         assert heading in text, heading
-    assert "**Outcome: passes.**" in text and "2000 rpm, 1 N·m" in text and "e+0" not in text
+    assert "**Outcome: passes.**" in text and "2000 rpm, 1.6 N·m" in text and "e+0" not in text
     assert "| synthetic MOSFET-100V-100A | passes |" in text and "Verify by measurement" in text
 
 
@@ -340,3 +340,12 @@ def test_the_page_can_ask_for_a_report_with_everything_it_sends(tmp_path) -> Non
     assert answer["status"] == 200 and "## Verdict at the design point" in answer["body"]["markdown"]
     with pytest.raises(page.Refused):
         design.run(sent, ws)  # the same, as a file: `mission`, `start` and `precharge` are not names of a design
+
+
+def test_a_start_that_is_not_a_record_is_refused_in_words(tmp_path, capsys) -> None:
+    setup = yaml.safe_load(started(tmp_path).read_text())
+    file = tmp_path / "start.yaml"
+    file.write_text(yaml.safe_dump({**setup, "start": "open_loop"}))
+    assert cli.main(["design", "run", str(file), "--json"]) in (0, 2, 3, 4)
+    said = capsys.readouterr()
+    assert "start: {method: open_loop}" in said.out + said.err and "Traceback" not in said.out + said.err

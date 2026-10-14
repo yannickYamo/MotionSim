@@ -5,6 +5,7 @@ __pycache__/
 dist/
 datasheets/
 .env
+.DS_Store
 runs/
 measurements/
 

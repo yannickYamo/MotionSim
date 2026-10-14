@@ -77,33 +77,39 @@ def _voltages(motor: Motor, w: float, i_d: float, i_q: float) -> tuple[float, fl
     return v_d, v_q
 
 
-def operating_state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
+def operating_state(motor: Motor, rpm: float, torque: float, v_max: float, i_d: float | None = None) -> DriveState:
     """Currents and voltages for a speed and torque, within a peak phase voltage v_max.
 
     With a saturation current given, each axis's inductance follows its own current,
     L = L0 / sqrt(1 + (i / i_sat)^2), and the point is found again until it settles.
+    i_d holds the d-axis current at a value of the caller's, where the voltage allows it,
+    in place of the one that needs least current.
     """
     if not motor.i_sat:
-        return _state(motor, rpm, torque, v_max)
+        return _state(motor, rpm, torque, v_max, i_d)
     now = motor
     for _ in range(12):
-        s = _state(now.model_copy(update={"i_max": None}), rpm, torque, v_max)
+        s = _state(now.model_copy(update={"i_max": None}), rpm, torque, v_max, i_d)
         now = motor.model_copy(
             update={
                 "ld": motor.ld / float(np.sqrt(1 + (s.i_d / motor.i_sat) ** 2)),
                 "lq": motor.lq / float(np.sqrt(1 + (s.i_q / motor.i_sat) ** 2)),
             }
         )
-    return _state(now, rpm, torque, v_max)
+    return _state(now, rpm, torque, v_max, i_d)
 
 
-def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
+def _state(motor: Motor, rpm: float, torque: float, v_max: float, held: float | None = None) -> DriveState:
     """The point for inductances taken as they stand."""
     w = motor.pole_pairs * 2 * np.pi * rpm / 60
     # Most negative id that keeps flux positive: beyond it the magnet is fully opposed.
     floor = -0.999 * motor.flux_linkage / motor.ld
 
-    if motor.ld == motor.lq or torque == 0:
+    if held is not None:
+        if not floor <= held:
+            raise Unreachable(f"a d-axis current of {written(held, 3)} A would oppose the magnet in full")
+        i_d = held
+    elif motor.ld == motor.lq or torque == 0:
         i_d = 0.0
     else:
         span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
@@ -114,6 +120,11 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float) -> DriveState:
     v_d, v_q = _voltages(motor, w, i_d, i_q)
     weakening = False
 
+    if held is not None and np.hypot(v_d, v_q) > v_max:
+        raise Unreachable(
+            f"with the d-axis current held at {written(held, 3)} A, {written(torque, 3)} N·m at "
+            f"{written(rpm, 4)} rpm needs more than {written(v_max, 4)} V peak"
+        )
     if np.hypot(v_d, v_q) > v_max:
         weakening = True
 

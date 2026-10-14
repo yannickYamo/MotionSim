@@ -328,3 +328,25 @@ def test_the_gate_resistor_the_energies_were_measured_with_is_kept():
     ]
     device = build_device(check(read_result(points), DOC, [PAGE], reader="test"))
     assert device.switch.e_on.rg == 15.0 and device.switch.e_off.rg is None
+
+
+def test_surface_mount_outlines_are_recognised_by_the_names_datasheets_use() -> None:
+    from motionsim.observe.verify import find_outline
+
+    assert find_outline(["5.5mΩ, 151A, TOLL"]) == "TOLL"
+    assert find_outline(["TO-Leadless package"]) == "TOLL"
+    assert find_outline(["PG-HSOF-8"]) == "TOLL"
+    assert find_outline(["available in DPAK"]) == "TO-252"
+    assert find_outline(["TO-252"]) == "TO-252"
+    assert find_outline(["D2PAK"]) == "TO-263"  # not taken for a DPAK
+    assert find_outline(["tolling"]) is None
+
+
+def test_every_quantity_the_reader_may_return_can_be_checked() -> None:
+    """A quantity with no unit to check it in stops the reading of any datasheet that has it."""
+    from motionsim.observe import verify
+    from motionsim.observe.schema import Quantity
+
+    scalar = [q for q in Quantity if not q.value.endswith("_curve") and not q.value.startswith("zth")]
+    without = [q.value for q in scalar if q not in verify._DIMENSION]
+    assert without == []

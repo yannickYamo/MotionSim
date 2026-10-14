@@ -247,10 +247,12 @@ class _Notes(list):
         super().__init__()
         self.outside: list[tuple[str, str, float]] = []
         self.off: dict[str, float] = {}
+        self.reach: dict[str, float] = {}  # by note: the most its term could be off by
 
     def leaves(self, term: str, text: str, doubt: float = 1.0, off: float | None = None) -> None:
         self.append(text)
         self.outside.append((term, text, min(doubt, 1.0)))
+        self.reach[text] = min(doubt if off is None else off, 1.0)
         self.off[term] = max(self.off.get(term, 0.0), min(doubt if off is None else off, 1.0))
 
 
@@ -264,8 +266,8 @@ def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: 
         tables.append(("turn-off energy", sw.e_off, tj_switch, sw.e_off.v_ref))
     else:
         notes.append(
-            "switching loss: estimated from gate and output charge, not from measured energy; "
-            + (sw.charge.assumption or "")
+            "switching loss: estimated from gate and output charge, not from measured energy"
+            + (f"; {sw.charge.assumption}" if sw.charge.assumption else "")
         )
         if abs(op.v_dc - sw.charge.v_ref) > 0.01 * sw.charge.v_ref:
             scaling = sw.charge.q_oss_scaling
@@ -336,10 +338,10 @@ def _envelope_notes(device: Device, op: OperatingPoint, i_pk: float, tj_switch: 
             notes.leaves(
                 name,
                 f"{name}: {tj:.0f} °C is outside the data ({t_min:.0f} to {t_max:.0f} °C)",
-                off=DRIFT * beyond,
+                DRIFT * beyond,
             )
         if v_ref is not None and abs(op.v_dc - v_ref) > 0.01 * v_ref:
-            followed = table is not None and table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]
+            followed = table.v_values and table.v_values[0] <= op.v_dc <= table.v_values[-1]
             if followed:
                 notes.append(
                     f"{name}: taken from {v_ref:.0f} V to {op.v_dc:.0f} V along the datasheet's own "
@@ -429,18 +431,19 @@ def _outside(marks: _Notes, roles: list[RoleResult]) -> list[str]:
     stage's loss by enough to matter. Each counts for its term's share of the loss, times how
     much of the term is in doubt. A table measured at one temperature and used a little way
     from it, or a term that carries next to none of the loss, is still noted and decides
-    nothing. The heaviest comes first."""
+    nothing. The one that could move the loss most comes first."""
     share = _shares(roles)
-    weighed = sorted(
-        ((share.get(term, 1.0) * doubt, text) for term, text, doubt in marks.outside),
-        key=lambda pair: -pair[0],
-    )
+    weighed = [(share.get(term, 1.0) * doubt, text) for term, text, doubt in marks.outside]
     by_term: dict[str, float] = {}
     for term, _, doubt in marks.outside:
         by_term[term] = max(by_term.get(term, 0.0), share.get(term, 1.0) * doubt)
     if sum(by_term.values()) < MINOR_SHARE:
         return []
-    return [text for weight, text in weighed if weight >= MINOR_SHARE / 10]
+    kept = [text for weight, text in weighed if weight >= MINOR_SHARE / 10]
+    # Which notes count is settled above. The one read first is the one that could move the
+    # loss most: a table used a hair beyond its test voltage does not lead.
+    term_of = {text: term for term, text, _ in marks.outside}
+    return sorted(kept, key=lambda text: -share.get(term_of[text], 1.0) * marks.reach.get(text, 1.0))
 
 
 def _validity(device: Device, outside: list[str]) -> Validity:
@@ -515,6 +518,8 @@ def _model_limits(device: Device, peak_basis: PeakBasis, op: OperatingPoint | No
     if device.switch.kind is ChipKind.mosfet and device.switch.reverse is None:
         limits.append("dead-time loss is left out: no reverse-conduction data for this device")
     sw = device.switch
+    if sw.kind is ChipKind.mosfet and sw.e_on is not None and sw.e_on.footing == "times" and sw.e_rr is None:
+        limits.append("recovery of the reverse path is left out: an estimate from switching times has none to count")
     if sw.kind is ChipKind.mosfet and (sw.e_on is None or sw.e_off is None) and not sw.charge.q_oss:
         limits.append("output-capacitance loss is left out: the datasheet gives no output charge")
     if device.diode is not None and device.diode.e_rr is None:

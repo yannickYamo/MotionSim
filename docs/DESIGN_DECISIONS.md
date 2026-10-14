@@ -35,7 +35,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 
 **Motor drives only.** No power supplies, no power-factor correction. A tool that covers every converter covers each one thinly. A motor drive has its own questions (standstill, starting, braking, the load's motion) and they deserve to be answered properly.
 
-**For people who are not power-electronics specialists.** Hobbyists and early teams, typically in robotics, who have a motor and need to choose what drives it. Three things follow, and they shape the whole product:
+**For engineers who are not power-electronics specialists.** Robotics, mechatronics and hardware engineers, and the hobbyists among them, who have a motor and need to choose what drives it without first learning to model a power stage. Three things follow, and they shape the whole product:
 
 - The user starts from what they have: a part they are considering, a motor, a supply, a load.
 - Margins a specialist applies without thinking are checked and explained: voltage against the supply, junction temperature, peak and stall current, dead time, results that rest on assumed data.
@@ -57,7 +57,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 
 **Your measurement outranks the datasheet.** Double-pulse data you supply replaces the datasheet's switching energy, and the model records it as measured.
 
-**Two tiers of switching loss.** Measured turn-on and turn-off energy is used where a datasheet gives it. Many MOSFET datasheets give only charges, so the loss is then estimated from gate and output charge with a hard-switching model. That estimate is rough and it is labelled in every result that uses it. Refusing those parts would exclude most low-voltage MOSFETs, which are exactly what this tool's users choose from.
+**Three footings for switching loss, each said.** Measured turn-on and turn-off energy is used where a datasheet gives it. Many MOSFET datasheets give only charges, so the loss is then estimated from gate and output charge with a hard-switching model. A part with its gate drive built in may give neither, and then the datasheet's own rise and fall times with its output charge are what is left. Each is rougher than the one before, and every result says which it stands on; a comparison across them is said to rest on unlike data. Refusing the second would exclude most low-voltage MOSFETs, and refusing the third the newer integrated parts, which are exactly what this tool's users choose from. A datasheet with none of the three is refused.
 
 ## The engine
 
@@ -65,7 +65,17 @@ The rest of this page goes through the decisions behind that right-hand column.
 
 **A power stage is a set of roles.** The engine works on kinds of switch position, each with its current and its conduction pattern. A three-phase inverter, an H-bridge and a pair of H-bridges are then the same calculation with different roles. This is what makes seven kinds of motor possible without seven engines.
 
-**The motor is solved in steady state.** Speed and torque become phase current, voltage, power factor and frequency through the machine's steady-state equations. There is no control loop. A point the motor cannot reach from that supply is refused with the reason. A controller simulation would be a second product, and every drive's controller differs: where a control loop's behaviour matters, its currents and duty cycles can be imported from another simulator or a drive's log.
+**The control is modelled by what it settles to.** Field-oriented control is the base of a modern drive, and it is here: for each speed and torque the motor's equations give the d- and q-axis currents such a drive commands, least current for the torque and then field weakening when the voltage runs out. A working current loop converges to exactly those currents. What is not here is the loop itself, running in time.
+
+That is a choice about time scales. A transistor's loss and temperature follow from the current it carries, the voltage it switches and how often. A current loop settles in about a millisecond; a chip's temperature answers to loss averaged over milliseconds to seconds; a motion lasts seconds. For the question this tool answers, which power stage a load needs, the settled current at each instant carries almost all of the answer, and the loop's transient is a correction on top.
+
+The cost is real and it is stated. The tool cannot say whether your control will hold, and it does not see the moment a current loop passes its reference. Three things are taken from control theory where they bear on the semiconductor, and each is closed form or a search over the same engine, so none needs a simulated controller:
+
+- the check on a part's pulsed current rating is made at the drive's own current limit where the motor gives one, since that is where the current sits in a hard acceleration or a stall, and leaves room for a current loop's overshoot where none is given;
+- a sensorless start is told the speed below which the rotor cannot be read through the voltage this device and its dead time get wrong, so the choice of transistor shows up in how slowly the drive can run;
+- where the motor's iron loss is known, the advice gives the d-axis current that loses least in motor and power stage together.
+
+A simulated controller would be a second product, larger than this one, answering a different question (will my control work), and every figure it gave would be a claim with no measurement behind it yet. Where a control loop's behaviour does decide the answer, its currents and duty cycles can be imported from another simulator or a drive's log. A point the motor cannot reach from the supply is refused with the reason. [LIMITS.md](LIMITS.md) lists what this leaves out.
 
 **Each kind of motor has its own equations.** A reluctance motor's torque comes from the difference between two inductances, a series-wound motor's from current squared. A recommendation is only as good as the motor model behind it, so a machine that behaves differently is modelled differently.
 
@@ -137,7 +147,7 @@ Tj = T_heatsink + R_case-to-heatsink · P_package + R_junction-to-case · P_chip
 | Language model reads, code decides | A wrong reading is caught or flagged, not used | A paid call per datasheet; some values are set aside for the user to check |
 | Tables over fitted coefficients | Interpolation and extrapolation can be told apart | Larger device files; no smoothing of noisy curves |
 | One engine for every mode | One thing to verify; modes cannot disagree | Maps and motions are slower than a dedicated approximation |
-| Steady-state motor, no control loop | Works from catalogue figures; no controller to tune | No fast transients; a trajectory must be imported for those |
+| Control as its settled result, no simulated loop | Works from catalogue figures; nothing to tune; every figure checkable in closed form | Cannot say whether the control holds; a loop's transient is an allowance, not a result |
 | Thermal defaults from first principles | Vendor-neutral; every default traceable | Wider ranges than calibrated figures |
 | A range and "undecided" | Honest where the data is thin | Some answers are "this data cannot say" |
 | No part database | No vendor bias; no redistributed data | The user has to bring a part first |

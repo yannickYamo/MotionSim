@@ -27,7 +27,7 @@ from motionsim.engine import OperatingPoint, Pwm, ThermalRunaway
 from motionsim.engine.limits import hottest
 from motionsim.load import LOAD_TEMPLATE, PROFILE_TEMPLATE, Load, Profile
 from motionsim.motor import TEMPLATES, Unreachable
-from motionsim.motor.machines import ADAPTER
+from motionsim.motor.machines import ADAPTER, Pmsm
 from motionsim.text import written
 
 # Faults and timings only: never a device file, a datasheet's content or a key.
@@ -653,7 +653,11 @@ class Workspace:
             "positions": device.package.topology.positions,
             "integrated_driver": device.package.integrated_driver,
             "example": key in EXAMPLES,
-            "switching": "measured energy from the datasheet" if measured else "estimated from gate and output charge",
+            "switching": "estimated from the datasheet's rise and fall times"
+            if measured and sw.e_on.footing == "times"
+            else "measured energy from the datasheet"
+            if measured
+            else "estimated from gate and output charge",
             "support": "table points and assumed shapes" if point else "curves",
             "needs_gate_drive": not measured,
         }
@@ -752,27 +756,66 @@ def rewound(kind: str, values: dict, v_supply: float) -> dict:
     return out
 
 
+# How each catalogue value changes when a motor is made s times as large for the same
+# supply and speed: torque and currents go up by s, resistances and inductances down by s,
+# and the voltage constants stay.
+RESIZE = {
+    **dict.fromkeys(("i_max", "i_magnetising", "i_phase", "i_sat", "holding_torque"), 1),
+    **dict.fromkeys(("k", "l", "ld", "lq", "lm", "lls", "llr", "rs", "rr", "r"), -1),
+}
+LIMIT_AT = 0.9  # of the part's rated current: where the starting motor's own current limit is put
+WORKED_AT = 0.3  # of it: where the design point's peak current is put, for a motor with no limit
+
+
+def resized(values: dict, s: float) -> dict:
+    """The same kind of motor, s times as large: for the same supply and speed it gives s
+    times the torque on s times the current."""
+    return {
+        key: float(f"{written(value * s ** RESIZE[key], 4)}")
+        if key in RESIZE and isinstance(value, (int, float)) and not isinstance(value, bool)
+        else value
+        for key, value in values.items()
+    }
+
+
+def _sized_to(device: Device, kind: str, values: dict, start: dict) -> tuple[dict, dict]:
+    """The example motor and its design point made the size that belongs with the part: its
+    current limit just inside what the part is rated for, so the part can use all of the
+    motor and the first verdict says something about the part. A motor that gives no limit
+    is sized by its design point. One the size cannot be worked out for is left as it is."""
+    from motionsim import guard
+
+    try:
+        motor = _motor({"type": kind, **values})
+        i_peak = motor.stage(start["rpm"], start["torque"], start["v_dc"], motor.default_pwm).i_peak
+    except (Refused, Unreachable, ValueError):
+        return values, start
+    if not i_peak > 0:
+        return values, start
+    limit = guard.current_limit(motor)
+    rated = device.ratings.i_nominal
+    s = float(f"{(LIMIT_AT * rated / limit if limit else WORKED_AT * rated / i_peak):.2g}")
+    if not 0.01 <= s <= 1000 or s == 1:
+        return values, start
+    return resized(values, s), {**start, "torque": float(f"{written(start['torque'] * s, 3)}")}
+
+
 def suggest(data: dict, workspace: Workspace) -> dict:
     """For the device under test: the supply it suits, how each kind of motor fits it, and
-    each example motor wound for that supply, so the first numbers the user sees belong
-    with their device."""
+    each example motor wound for that supply and sized to the part's current, so the first
+    numbers the user sees belong with their device."""
     from motionsim.advise import motors_for
 
     device = workspace.device(data["device"])
     bus, fits = motors_for(device.ratings.v_max, device.package.topology.positions)
     base = setup(workspace)["motors"]
-    return {
-        "v_supply": bus,
-        "motors": {
-            kind: {
-                "fit": fit.fit,
-                "why": fit.why,
-                "values": rewound(kind, base[kind]["values"], bus),
-                "start": {**STARTING[kind], "v_dc": bus},
-            }
-            for kind, fit in fits.items()
-        },
-    }
+    motors = {}
+    for kind, fit in fits.items():
+        values, start = _sized_to(
+            device, kind, rewound(kind, base[kind]["values"], bus), {**STARTING[kind], "v_dc": bus}
+        )
+        motors[kind] = {"fit": fit.fit, "why": fit.why, "values": values, "start": start}
+    return {"v_supply": bus, "motors": motors}
 
 
 def _reach(motor, v_dc: float, *, rpm: float | None = None, torque: float | None = None) -> tuple[float, object | None]:
@@ -1259,6 +1302,8 @@ def _start(data: dict, motor, op: OperatingPoint):
     from motionsim.starting import Start
 
     given = data.get("start") or {}
+    if not isinstance(given, dict):
+        raise Refused("how the drive starts is given as a record", "write it as start: {method: open_loop}", "start")
     kind = data["motor"].get("type", "pmsm")
     c = data["conditions"]
     lines: list[str] = []
@@ -1324,6 +1369,35 @@ def _start(data: dict, motor, op: OperatingPoint):
     }
 
 
+def _sensorless(starting: dict, device: Device, motor, op: OperatingPoint, conditions: dict) -> None:
+    """Adds to the description of an open-loop start how slowly this device lets the drive
+    read the rotor, and whether the handover asked for is above that."""
+    from motionsim import recommend
+
+    if starting.get("method") != "open_loop" or not isinstance(motor, Pmsm):
+        return
+    try:
+        i_peak = motor.stage(
+            _number(conditions.get("rpm"), "speed"), _number(conditions.get("torque"), "torque"), op.v_dc, op.pwm
+        ).i_peak
+    except Unreachable:
+        return
+    floor = recommend.sensorless_floor(
+        device, op, max(i_peak, starting["current"] * math.sqrt(2)), motor.flux_linkage, motor.pole_pairs
+    )
+    rpm, handover = floor.value["rpm"], starting["handover_rpm"]
+    starting["sensorless_rpm"] = rpm
+    relies = (
+        f"; the handover at {written(handover, 3)} rpm relies on firmware that corrects for it"
+        if handover < rpm
+        else ""
+    )
+    starting["lines"] = starting["lines"] + [
+        f"an estimate: with this device, firmware that does not correct for dead time reads the back-EMF only "
+        f"from about {written(rpm, 2)} rpm{relies}"
+    ]
+
+
 def cycle(data: dict, workspace: Workspace) -> dict:
     from motionsim import dclink
     from motionsim.transient import Heatsink, follow
@@ -1359,6 +1433,7 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         )
     repeats = _count(data.get("repeats", 1), "repeats", low=1, high=50, field="repeats")
     start, starting = _start(data, motor, op)
+    _sensorless(starting, device, motor, op, data["conditions"])
     try:
         run, trace = follow(
             device,
@@ -1395,7 +1470,13 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         tj_diode_peak=result.tj_diode_peak + shift,
         tj_peak_range=None if span is None else (span[0] + shift, span[1] + shift),
     )
-    checks = guard.check(device, op, reached, max(s.point.stage.i_peak for s in run.solved))
+    checks = guard.check(
+        device,
+        op,
+        reached,
+        max(s.point.stage.i_peak for s in run.solved),
+        i_limit=guard.current_limit(motor, max((s.point.ripple_pp or 0.0) for s in run.solved)),
+    )
     c_link = data.get("c_link")
     link = dclink.returned(
         run,
@@ -1708,6 +1789,8 @@ def recommendations(data: dict, workspace: Workspace) -> dict:
             except (Unreachable, ThermalRunaway, ValueError):
                 continue
     out.append(recommend.modulation(losses, motor.default_pwm.value))
+    if (d_axis := recommend.least_loss_d_axis(device, motor, rpm, torque, op)) is not None:
+        out.append(d_axis)
 
     def evaluate(t_sink: float) -> tuple[float, float]:
         worst, loss = float("-inf"), 0.0

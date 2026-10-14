@@ -37,6 +37,9 @@ from motionsim.text import written
 from motionsim.transient import ChipState, Lag, shared_time
 
 LEGS = "abcd"
+# The most instants a trajectory is solved at. A longer trace is put on this many evenly
+# spaced instants: enough for an output period at a few hundred switching periods, and a
+# solve that stays under a second.
 MAX_SAMPLES = 8192
 
 
@@ -60,6 +63,10 @@ class Trajectory:
 
 
 def load_trajectory(path: str | Path) -> Trajectory:
+    """A trajectory from a CSV file: a header row naming time_s and, for each leg, its
+    current i_a and duty cycle d_a (then b, c, d), and one row an instant. Lines starting
+    with # are comments. The instants are put on an even grid, as the engine works on one;
+    a trace longer than MAX_SAMPLES is thinned to that many."""
     # utf-8-sig: a spreadsheet's export starts with a byte-order mark, which is not part of a name.
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = [row for row in csv.reader(f) if row and not row[0].lstrip().startswith("#")]

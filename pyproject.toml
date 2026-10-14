@@ -4,18 +4,19 @@ build-backend = "hatchling.build"
 
 [project]
 name = "motionsim"
-version = "0.3.5"
+dynamic = ["version"]
 description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
 readme = "README.md"
 license = "Apache-2.0"
 authors = [{ name = "Yannick Maurice" }]
 requires-python = ">=3.11"
-keywords = ["power electronics", "inverter", "motor drive", "IGBT", "MOSFET", "SiC", "GaN", "thermal", "datasheet"]
+keywords = ["power electronics", "inverter", "motor drive", "motor control", "PMSM", "BLDC", "IGBT", "MOSFET", "SiC", "GaN", "loss model", "thermal model", "power cycling", "datasheet"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
 ]
 dependencies = [
@@ -32,12 +33,17 @@ dependencies = [
 [project.urls]
 Homepage = "https://yannickyamo.github.io/MotionSim/"
 Repository = "https://github.com/yannickYamo/MotionSim"
+Issues = "https://github.com/yannickYamo/MotionSim/issues"
+Changelog = "https://github.com/yannickYamo/MotionSim/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov", "hypothesis", "ruff==0.17.0", "mypy", "types-PyYAML", "pre-commit"]
+dev = ["pytest>=8.0", "pytest-cov", "hypothesis", "ruff==0.17.0", "pre-commit"]
 
 [project.scripts]
 motionsim = "motionsim.cli:main"
+
+[tool.hatch.version]
+path = "src/motionsim/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/motionsim"]

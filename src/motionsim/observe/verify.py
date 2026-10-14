@@ -81,6 +81,7 @@ _DIMENSION = {
     Quantity.v_plateau: "V",
     Quantity.t_d_off: "s",
     Quantity.t_f: "s",
+    Quantity.t_r: "s",
 }
 
 # Wide physical ranges in SI. A value outside is almost certainly a unit or
@@ -114,6 +115,7 @@ _RANGE = {
     Quantity.v_plateau: (0.5, 15.0),
     Quantity.t_d_off: (1e-10, 1e-4),
     Quantity.t_f: (1e-10, 1e-4),
+    Quantity.t_r: (1e-10, 1e-4),
 }
 
 _NEEDS_CURRENT = {
@@ -275,7 +277,10 @@ def recheck(obs: ObservationSet, pages: list[str]) -> ObservationSet:
     return obs.model_copy(update={"observations": fresh})
 
 
-_OUTLINE = re.compile(r"\bTO[-−–\s]?(220|247|263)|\bD\s?[2²]\s?PAK", re.IGNORECASE)
+_OUTLINE = re.compile(
+    r"\bTO[-−–\s]?(220|247|263|252)|\b(D\s?[2²]\s?PAK)|\b(DPAK)\b|\b(TOLL|TO[-−–\s]?LL|TO[-−–\s]?Leadless|HSOF[-−–\s]?8)\b",
+    re.IGNORECASE,
+)
 
 
 def find_outline(pages: list[str]) -> str | None:
@@ -283,7 +288,8 @@ def find_outline(pages: list[str]) -> str | None:
     found = set()
     for text in pages:
         for match in _OUTLINE.finditer(text):
-            found.add(f"TO-{match.group(1)}" if match.group(1) else "TO-263")
+            number, d2pak, dpak, _ = match.groups()
+            found.add(f"TO-{number}" if number else "TO-263" if d2pak else "TO-252" if dpak else "TOLL")
     return found.pop() if len(found) == 1 else None
 
 

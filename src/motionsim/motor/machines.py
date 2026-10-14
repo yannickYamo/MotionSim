@@ -160,6 +160,9 @@ class Pmsm(_Machine):
         gt=0,
         description="current at which an inductance has fallen to 71% of its value, A peak; optional",
     )
+    # A d-axis current to hold in place of the one that needs least current, A peak. Set by
+    # the advice that looks for the value losing least; a motor file does not carry it.
+    i_d_held: float | None = Field(default=None, exclude=True)
 
     @model_validator(mode="before")
     @classmethod
@@ -203,11 +206,25 @@ class Pmsm(_Machine):
             raise ValueError("with inset or interior magnets Lq is at least as large as Ld")
         return self
 
-    def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
+    def state(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> pmsm.DriveState:
+        """The d- and q-axis currents and voltages the control settles to at a speed and torque."""
         motor = pmsm.Motor(
             **self.model_dump(exclude={"type", "magnets", "usable_voltage", "p_iron", "n_iron", "temperature_note"})
         )
-        s = pmsm.operating_state(motor, rpm, torque, self.usable_voltage * pwm.max_modulation_index * v_dc / 2)
+        v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
+        return pmsm.operating_state(motor, rpm, torque, v_max, self.i_d_held)
+
+    def flux_share(self, state: pmsm.DriveState) -> float:
+        """The stator's flux linkage at a point, as a share of the magnet's own. Each
+        inductance is the one the point was solved with: lower where the iron saturates."""
+        ld, lq = self.ld, self.lq
+        if self.i_sat:
+            ld /= float(np.sqrt(1 + (state.i_d / self.i_sat) ** 2))
+            lq /= float(np.sqrt(1 + (state.i_q / self.i_sat) ** 2))
+        return float(np.hypot(self.flux_linkage + ld * state.i_d, lq * state.i_q) / self.flux_linkage)
+
+    def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
+        s = self.state(rpm, torque, v_dc, pwm)
         return _sinusoidal_stage(
             i_rms=s.i_rms,
             v_peak=s.v_peak,

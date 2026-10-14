@@ -51,7 +51,7 @@ export interface Candidate {
   /** °C left to the junction limit, at the design point and holding the torque at standstill. */
   margin: number | null; stall_margin: number | null;
   /** What the switching loss rests on, so that two devices can be seen to be like for like. */
-  switching: { kind: "measured" | "from charge" | "none"; text: string } | null;
+  switching: { kind: "measured" | "from times" | "from charge" | "none"; text: string } | null;
 }
 /** level: losses closer than this share of the lowest are not told apart. */
 export interface Proposal { candidates: Candidate[]; explain: string[]; level: number }
@@ -94,7 +94,7 @@ let ready: Promise<void> = Promise.resolve();
 let next = 1;
 const waiting = new Map<number, (answer: { status: number; body: any }) => void>();
 
-function storedDevices(): { name: string; text: string }[] {
+function storedDevices(): { name: string; text: string; id?: string }[] {
   try {
     return JSON.parse(localStorage.getItem(STORED) ?? "[]");
   } catch {
@@ -223,6 +223,10 @@ export async function boot(onProgress: (text: string) => void): Promise<{ mode: 
 }
 
 export const api = {
+  /** Take a part's file out of what this browser keeps, so it is not brought back on the next visit. */
+  forget: (id: string) => {
+    try { localStorage.setItem(STORED, JSON.stringify(storedDevices().filter((d) => d.id !== id))); } catch { /* nothing was kept */ }
+  },
   mode: () => mode,
   setup: () => send<Setup>("/api/setup", {}, undefined, "GET"),
   stage: (d: unknown, s?: AbortSignal) => send<{ stage: Stage; advice: Advice }>("/api/stage", d, s),
@@ -236,7 +240,7 @@ export const api = {
     const answer = await send<{ device: DeviceSummary }>("/api/device", device);
     if (mode === "browser") {
       const kept = storedDevices().filter((d) => d.name !== device.name);
-      try { localStorage.setItem(STORED, JSON.stringify([...kept, device])); } catch { /* it lasts this visit only */ }
+      try { localStorage.setItem(STORED, JSON.stringify([...kept, { ...device, id: answer.device.id }])); } catch { /* it lasts this visit only */ }
     }
     return answer;
   },
@@ -245,7 +249,7 @@ export const api = {
     const answer = await send<{ device: DeviceSummary; name: string; text: string }>("/api/typed", { figures });
     if (mode === "browser") {
       const kept = storedDevices().filter((d) => d.name !== answer.name);
-      try { localStorage.setItem(STORED, JSON.stringify([...kept, { name: answer.name, text: answer.text }])); } catch { /* it lasts this visit only */ }
+      try { localStorage.setItem(STORED, JSON.stringify([...kept, { name: answer.name, text: answer.text, id: answer.device.id }])); } catch { /* it lasts this visit only */ }
     }
     return answer;
   },
@@ -254,7 +258,6 @@ export const api = {
     const answer = await send<{ device: DeviceSummary }>("/api/measure", { device: deviceId, name: file.name, text: await file.text() });
     return answer;
   },
-  /** Read a datasheet PDF. Only where a local server holds the user's key. */
   loads: (kind: string, rpm: number, torque: number, v_dc: number) => send<{ loads: LoadPreset[] }>("/api/loads", { kind, rpm, torque, v_dc }),
   capability: (d: unknown) => send<Capability>("/api/capability", d),
   largest: (d: unknown) => send<Largest>("/api/largest", d),
@@ -264,6 +267,7 @@ export const api = {
   /** Whether a motor as described fits a device, before any design point is set. */
   fit: (d: unknown) => send<{ level: string; lines: { level: string; text: string }[] }>("/api/fit", d),
   reading: (id: string) => send<Reading>(`/api/device/${encodeURIComponent(id)}`, null, undefined, "GET"),
+  /** Read a datasheet PDF. Only where a local server holds the user's key. */
   read: async (file: File) => {
     const response = await fetch(`api/read?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
     return answerOf<ReadOutcome>(response.status, await bodyOf(response));

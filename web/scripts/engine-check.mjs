@@ -35,7 +35,7 @@ result = json.dumps(out)
 `;
 
 // The native engine: this checkout's own environment, or the Python named (as in CI, where there is none here).
-const python = process.env.PYTHON ?? join(root, ".venv", "bin", "python");
+const python = process.env.PYTHON ?? "python";
 const native = JSON.parse(execFileSync(python, ["-c", `${QUESTIONS}\nprint(result)`], { encoding: "utf8" }));
 
 const py = await loadPyodide();

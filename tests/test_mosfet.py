@@ -176,3 +176,40 @@ def test_recovery_charge_is_nothing_at_no_current_and_follows_the_current_below_
     scaled = chip.model_copy(update={"charge": charge.model_copy(update={"q_rr_current": 20.0})})
     e_scaled, _ = charge_energies(scaled, np.array([0.0, 5.0, 40.0]), drive)
     assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.25e-6 * drive.v_dc, 1e-6 * drive.v_dc])
+
+
+def test_the_lowest_sensorless_speed_follows_from_the_voltage_the_stage_gets_wrong() -> None:
+    """Dead time takes t·f·V from a phase and the channel drops R·I. A back-EMF four times
+    their sum is taken as readable: the electrical speed is that over the flux linkage."""
+    import math
+
+    from motionsim import recommend
+
+    device = fet()
+    flux, pairs, amps = 0.01, 7, 30.0
+    at = op(t_dead=500e-9, f_sw=20_000.0, v_dc=48.0)
+    found = recommend.sensorless_floor(device, at, amps, flux, pairs)
+    wrong = 500e-9 * 20_000.0 * 48.0 + R_ON * amps
+    assert found.value["voltage_error"] == pytest.approx(wrong, rel=1e-9)
+    assert found.value["rpm"] == pytest.approx(4.0 * wrong / flux / pairs * 60 / (2 * math.pi), rel=1e-9)
+    # A shorter dead time, or two devices sharing the current, lets the drive read the rotor sooner.
+    shorter = recommend.sensorless_floor(device, op(t_dead=100e-9, f_sw=20_000.0, v_dc=48.0), amps, flux, pairs)
+    shared = recommend.sensorless_floor(
+        device, op(t_dead=500e-9, f_sw=20_000.0, v_dc=48.0, parallel=2), amps, flux, pairs
+    )
+    assert shorter.value["rpm"] < found.value["rpm"] and shared.value["rpm"] < found.value["rpm"]
+    assert shared.value["voltage_error"] == pytest.approx(500e-9 * 20_000.0 * 48.0 + R_ON * amps / 2, rel=1e-9)
+
+
+def test_the_drop_counted_against_a_sensorless_drive_is_the_mean_of_switch_and_diode() -> None:
+    from conftest import linear_device
+
+    from motionsim import recommend
+
+    device = linear_device(sw_curves=[line(25.0, 0.9, 0.03)], d_curves=[line(25.0, 1.0, 0.025)])
+    at = OperatingPoint(v_dc=300.0, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=25.0)
+    found = recommend.sensorless_floor(device, at, 10.0, 0.1, 4, margin=3.0)
+    # No dead time given: the drop is all there is. Switch 0.9 + 0.3 V, diode 1.0 + 0.25 V.
+    assert found.value["voltage_error"] == pytest.approx((1.2 + 1.25) / 2)
+    assert found.value["rpm"] == pytest.approx(3.0 * 1.225 / 0.1 / 4 * 60 / (2 * math.pi))
+    assert "an estimate" in found.lines[-1] and "3 times" in found.lines[-1]

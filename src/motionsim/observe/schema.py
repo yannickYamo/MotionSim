@@ -61,6 +61,7 @@ class Quantity(str, Enum):
     c_oss_curve = "c_oss_curve"
     t_d_off = "t_d_off"
     t_f = "t_f"
+    t_r = "t_r"
 
 
 class ReadPoint(_Model):

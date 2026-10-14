@@ -15,11 +15,39 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 - It uses a language model, and its output can differ between runs. Every value is checked against the page it was cited from; what fails is set aside and shown, never silently used.
 - Quantities spread over several figures, and curves drawn against gate voltage, are not read.
 - Scanned datasheets are read from page images: their tables only, not their figures, and the check on them is weaker.
+- Figures stored as pictures are read where they have a grid to find them by, drawn dark or in grey. A picture with no grid is not read.
+- Where a datasheet gives no switching energy and no gate charges, switching loss is estimated from its rise and fall times and output charge: two printed times from a clean test, taken not to move with current. It is the weakest of the three footings and is named in every result that uses it.
 - A datasheet that gives too little to model a device is refused with what is missing.
 
-## 4. Simplifications in the model
+## 4. The control is its settled result, not a loop
 
-- Motors are solved from steady-state equations at each instant. There is no control loop.
+A modern drive runs field-oriented control: a current loop, a speed or position loop, and an estimate of where the rotor is. MotionSim does not simulate those loops. It works out the currents they settle to, at every instant of the motion, and gives those to the loss and temperature engine. For a permanent-magnet motor that is the d- and q-axis current making the torque with least current, and field weakening where the voltage runs out. [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) says why.
+
+What that covers, and how:
+
+| What a drive does | How it is represented |
+|---|---|
+| Steady running at a speed and torque | The currents and voltages field-oriented control settles to, exactly |
+| A motion, second by second | Each instant solved as settled; junction temperature followed through time |
+| Standstill and stall | The same torque at zero speed, with the rotor where the hottest chip is loaded most |
+| A sensored start | Only the current the torque needs, from the first instant |
+| A sensorless start | Open loop: alignment at a held current, a ramp at that current, then handover. With signal injection: only the current the torque needs. The current is set; the loop is not simulated |
+| Braking | The energy returned to the DC link and the voltage it reaches, as a worst case |
+| Ripple at the switching frequency | Worked out from the switching sequence and the motor's inductance |
+
+What it leaves out, and what each could cost you:
+
+- **The current loop's transient.** A step in torque makes the current pass its reference for about a millisecond. That is too short to move a junction temperature much, but a pulsed current rating has no moment to give. Where the motor's current limit is given, the check on that rating is made at the limit, which is where a drive's current sits in a hard acceleration or a stall. Where none is given, it is made at the settled current with 15% allowed for overshoot: a common figure and not your drive's, and a loop tuned for speed overshoots more. How far a loop really overshoots has not been worked out here.
+- **Whether the control holds.** That the rotor follows an open-loop ramp under the load, that an observer keeps the rotor, that the loops are stable: all taken as given. A start against full load can fail in ways this tool will not show.
+- **Low speed without a sensor.** The tool gives the speed below which the back-EMF cannot be read through the voltage this device and dead time get wrong. It is a closed-form figure for firmware that corrects for neither, with the back-EMF taken as readable at four times the error. Firmware that corrects for dead time reads lower; an observer in a noisy drive may need more, and a winding hotter than the drive was set for adds an error that is not counted. It is an estimate with nothing independent behind it yet. Permanent-magnet motors under sinusoidal control only.
+- **What the drive does to protect itself.** A real drive brakes more slowly to hold the link voltage and cuts its current when hot. The tool reports what happens without either, which is the harder case.
+- **Torque ripple.** From the back-EMF's harmonics, cogging and dead time. Not modelled, so neither is its heating.
+- **The d-axis current that loses least.** Advised at the design point where the motor's iron loss is given, with iron loss taken to follow the square of the flux. The results themselves stay on least current, which is what a drive runs unless it is told otherwise.
+
+Where the loop's own behaviour decides the answer (a fault, a hard reversal, an aggressive tuning), bring its currents and duty cycles from a control simulation or a drive's log: `motionsim trajectory` takes them as they are.
+
+## 5. Simplifications in the model
+
 - Iron loss and saturation are modelled only if you give them: a no-load loss at a speed, split evenly between its two kinds and taken at full flux; and one saturation current for both axes. Without them the result says they are left out.
 - Current ripple at the switching frequency is worked out where the motor's inductance is known. It adds to conduction loss and moves the current at the switching instants. The distortion dead time adds to the current at low speed is not modelled.
 - Motor inverters only: no DC-DC, power-factor correction, three-level or soft-switching stages.
@@ -27,7 +55,6 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 - Measured switching energy follows the supply voltage along the datasheet's own figure where it has one. Without one it is scaled in proportion to voltage, which above the test voltage is the least a real device does; the result says how much more it could be. It follows your gate resistor only where the datasheet has a figure for that. Either figure, measured at one current, is applied at every current.
 - Gate resistors chosen by the tool are totals. Where the datasheet gives the transistor's own gate resistance the choice is never below it; where it does not, a very small chosen value may not be reachable.
 - Devices in parallel share as unevenly as the datasheet's maximum over typical allows, with the typical part among maximum ones carrying the most. That ignores how a hot transistor's rising resistance pushes current back to the others, so it is on the cautious side. Where the datasheet gives no maximum, sharing is taken as equal.
-- An open-loop start is modelled by raising the current, not by simulating the controller.
 - The usable voltage loses dead time, the shortest pulse you give, and the devices' drop at the peak current, taken at the heatsink temperature. Every kind of motor is held to it, a block-commutated or brushed one included, though such a drive can sometimes go to full duty and lose only the drop.
 - A motor's working temperature is used only if you give it. The magnet coefficient is that of neodymium.
 - The trip check assumes nothing shorts the motor or burns the energy. Short-circuit behaviour itself is not modelled: the withstand time is passed on where the datasheet gives it.
@@ -36,13 +63,13 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 - An imported trajectory, and a load that comes and goes in a reference file, have their losses worked at each chip's mean temperature over the whole pattern. With long pauses between bursts the junction is far hotter than that while it works, and the loss reads low: about a tenth on a silicon IGBT whose junction swings 100 °C.
 - Above the last current a datasheet's table gives, an on-state voltage is drawn midway between staying where it is and rising in proportion. The result says how far off that can be, and a pass that would not survive it is reported as undecided.
 
-## 5. Life under thermal cycling is generic
+## 6. Life under thermal cycling is generic
 
 The life estimate counts each chip's own temperature swings, those of every turn of the motor included, and uses a model fitted to modules with aluminium bond wires. It is applied to discrete parts too, which it was not fitted on. A real part may last several times longer or shorter. Use the manufacturer's power-cycling data where there is any.
 
-## 6. The page
+## 7. The page
 
-- The example motor keeps its size when it is wound for your device's voltage: on a large device it draws a small share of the rating until you enter your own motor.
+- The example motor is wound for your device's voltage and made the size whose current limit is 90% of the part's rated current (for a motor with no limit, a design point at 30% of it). It is a starting size, not your motor.
 - On a phone the drawing is wider than the screen and slides sideways.
 - The report is laid out by your browser's print function.
 - The Markdown report covers the devices, the motion, what to build and what the device can drive. What is set beside them on screen (loads, motors, the values of a setting) is in the printed report only.
@@ -50,7 +77,7 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - Trying a setting holds two to five values. Once a value is added, the starting ones no longer follow the design point.
 - What the page holds is kept in your browser. Open in two tabs, the one you return to takes up what the other changed.
 
-## 7. A part typed in by hand, and cooling by air
+## 8. A part typed in by hand, and cooling by air
 
 - A typed part is a transistor only (silicon, SiC or GaN), one to a package. Its switching loss is estimated from its charges, never measured energy; its output charge is one figure carried to other voltages as a junction's charge goes; its thermal path is one resistance with no response in time. An IGBT or a module still needs its datasheet read, or a device file.
 - The figures are checked for slips, not for truth: nothing compares them with the datasheet.
@@ -63,14 +90,14 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - Through a motion, a heatsink in air sits where the motion's mean loss puts it, and with no heatsink each package sits where its own mean loss puts it (at standstill, the loss of the rotor position that works it hardest), as if the motion repeated without end. The motion is then followed from the hottest package, so the others are shown a little warm. A heatsink given with its heat capacity is followed as it warms instead.
 - The junction-to-air figure the heatsink advice gives for doing without a heatsink is worked out for a package alone in the air, running and held still; on a shared board it is the upper bound.
 
-## 8. Comparing parts from different datasheets
+## 9. Comparing parts from different datasheets
 
 - Each part's switching energy was measured by its own vendor, on that vendor's fixture, at its own gate resistor, gate voltage and test voltage. The comparison shows those conditions beside each part and says when one part's figure is measured and another's is estimated from charge, or when one is brought in proportion to a higher voltage than it was measured at. It cannot remove the difference.
 - Losses within 5% of each other are marked level: the model does not tell them apart. There is no range on loss beyond that.
 - A caution on the data is raised when the operating point is outside what the datasheet gives for a loss term, and that could move the stage's loss by 5% or more: the term's share of the loss, times how much of the term is in doubt. A table measured at one temperature is taken to drift by up to 0.5% a kelvin away from it. Below that the note is still listed and the verdict does not change.
 - Table points with an assumed shape between them, and switching loss estimated from charge, are stated under data support and are not a caution by themselves.
 
-## 9. Not yet
+## 10. Not yet
 
 - Export of a device model to other simulators.
 - Reading a datasheet on the hosted page. That needs your own key and a local install.

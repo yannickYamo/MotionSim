@@ -15,7 +15,7 @@ from motionsim.text import written
 
 TYPED = "typed in by hand"
 TECHNOLOGIES = ("Si MOSFET", "SiC MOSFET", "GaN HEMT")
-OUTLINES = ("TO-220", "TO-247", "TO-263")
+OUTLINES = ("TO-220", "TO-247", "TO-263", "TO-252", "TOLL")
 
 # key, label, unit as printed, what one unit is in SI, required, where to find it.
 FIGURES: list[tuple[str, str, str, float, bool, str]] = [
@@ -100,7 +100,7 @@ TEMPLATE = """\
 vendor: Made-up Semiconductor
 part_number: MU100N04
 technology: Si MOSFET        # Si MOSFET, SiC MOSFET or GaN HEMT
-outline: TO-220              # TO-220, TO-247, TO-263, or delete for any other package
+outline: TO-220              # TO-220, TO-247, TO-263, TO-252, TOLL, or delete for any other package
 v_rated: 100                 # V, required
 i_rated: 100                 # A, required: continuous drain current at 25 °C case
 tj_max: 175                  # °C, required

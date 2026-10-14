@@ -767,3 +767,37 @@ def test_an_impedance_axis_in_volts_is_flagged() -> None:
     obs = read_thermal(thermal_page(), rth(0.6), thermal_axes().model_copy(update={"y_unit": "V"}))
     assert obs.flags == ["impedance axis unit 'V' is not a thermal resistance"]
     assert obs.status is ReviewStatus.flagged
+
+
+def test_a_part_with_no_energy_and_no_gate_charges_is_built_from_its_switching_times() -> None:
+    """A transistor with its gate drive built in gives no switching energy and no gate
+    charges. Its rise and fall times and its output charge give an estimate, said as one:
+    half the voltage times the current for as long as they cross, and the output charge
+    taken through the full voltage at turn-on."""
+    from motionsim.engine import OperatingPoint, solve
+    from motionsim.propose import switching_footing
+
+    bare = dict(without=(Q.q_gs, Q.q_gd, Q.v_plateau))
+    fall = row(Q.t_f, 7e-9, i=10.0, v=50.0, tj=25.0)
+    with pytest.raises(MissingData, match="one of the three"):
+        build_device(fet(fall, **bare))
+    device = build_device(fet(fall, row(Q.t_r, 9e-9, i=10.0, v=50.0, tj=25.0), **bare))
+    e_on, e_off = device.switch.e_on, device.switch.e_off
+    assert device.switch.charge is None and e_on.footing == "times" and e_on.v_ref == 50.0
+    assert e_on.curves[0].current == [0.0, 100.0]
+    # At no current only the output charge is paid for: 150 nC through 50 V. At the rated
+    # 100 A, half of 50 V times 100 A for the 9 ns of the rise comes on top.
+    assert e_on.curves[0].value == pytest.approx([150e-9 * 50.0, 150e-9 * 50.0 + 0.5 * 50.0 * 100.0 * 9e-9])
+    assert e_off.curves[0].value == pytest.approx([0.0, 0.5 * 50.0 * 100.0 * 7e-9])
+    # It is never called measured.
+    op = OperatingPoint(v_dc=50.0, i_rms=20.0, modulation_index=0.8, power_factor=0.9, f_sw=20000.0, t_sink=60.0)
+    footing = switching_footing(device, op)
+    assert footing.kind == "from times" and "rise and fall times" in footing.text and "measured" not in footing.text
+    assert "rise and fall times" in " ".join(solve(device, op).notes)
+    # What an estimate from two times cannot count is said, and no gate resistor is offered
+    # for a loss that would not follow one.
+    from motionsim import recommend
+
+    assert any("recovery of the reverse path is left out" in line for line in solve(device, op).limits)
+    drive = recommend.choose_gate_drive(device, op, 20.0)
+    assert drive.kind == "datasheet" and drive.rg_on is None and "does not move them" in drive.lines[0]

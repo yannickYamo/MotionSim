@@ -15,16 +15,17 @@
 ## Next, in order
 
 1. **Accuracy, shown.** One public measured loss is compared today. Next: the other published reference designs for parts already read (a six-step 54 V stage, two GaN motor boards with measured temperature rise), then public datasheets through their vendors' own calculators at the same operating points, part by part.
-2. **Export of device models** to the formats circuit simulators read, so a model built from a datasheet can be used elsewhere.
-3. **Typing in, further.** An IGBT with its diode from typed figures, and switching energy typed in where the datasheet tabulates it.
-4. **The reader, further.** Quantities spread over several figures, curves drawn against gate voltage, and the figures of scanned datasheets.
-5. **The page, further.** The datasheet's own page shown beside what was read from it; the printed report laid out by the tool; the Markdown report carrying what is compared on screen; a setting drawn as a curve against its values.
-6. **The model, further.** Copper layers and spacing on a board. A braking resistor, iron loss that follows the flux, saturation curves instead of one figure, thermal rebalancing between devices in parallel.
+2. **The settled-current assumption, tested.** One current loop for a permanent-magnet motor, from the command line only: a synchronous-frame controller with its delays, run over a step in torque and a short window of a motion. It is a check and not a feature: that the loop settles to the operating point the tool uses, how far losses and peak temperature from the loop's own currents differ from the settled ones, how far a current loop overshoots, and whether the sensorless-speed estimate holds.
+3. **Export of device models** to the formats circuit simulators read, so a model built from a datasheet can be used elsewhere.
+4. **Typing in, further.** An IGBT with its diode from typed figures, and switching energy typed in where the datasheet tabulates it.
+5. **The reader, further.** Quantities spread over several figures, curves drawn against gate voltage, and the figures of scanned datasheets.
+6. **The page, further.** The datasheet's own page shown beside what was read from it; the printed report laid out by the tool; the Markdown report carrying what is compared on screen; a setting drawn as a curve against its values.
+7. **The model, further.** Copper layers and spacing on a board. A braking resistor, iron loss that follows the flux, saturation curves instead of one figure, thermal rebalancing between devices in parallel.
 
 ## Not planned
 
 - Topologies other than motor inverters.
 - A built-in device database. You bring the datasheets.
-- A simulation of the control loop. Currents and duty cycles from another simulator or a drive's log can be imported from the command line instead.
+- A control-loop simulation as a feature of the tool (item 2 above is a one-off check from the command line). The control is modelled by the currents it settles to; currents and duty cycles from a control simulation or a drive's log can be imported from the command line.
 
 [LIMITS.md](LIMITS.md) lists what the present version leaves out.

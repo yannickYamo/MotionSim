@@ -39,7 +39,11 @@ ENERGY_ASSUMPTION = "energy assumed linear between table points and down to zero
 
 
 class MissingData(ValueError):
-    pass
+    """The datasheet does not give what a model needs."""
+
+
+class NoGateCharge(MissingData):
+    """No gate-source charge at all, as distinct from gate charges that are there and faulty."""
 
 
 def usable_rows(obs: ObservationSet, quantity: Quantity, *, allow_flagged: bool) -> list[Observation]:

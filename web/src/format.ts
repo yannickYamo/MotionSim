@@ -30,5 +30,10 @@ export function escape(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-/** First letter up, for sentences the engine writes in lower case. */
-export const sentence = (text: string) => (text ? text[0].toUpperCase() + text.slice(1) : text);
+/** A sentence with its first letter raised, unless its first word is a name that mixes its
+ *  cases on purpose (iDEAL, eGaN), which is left as it is written. */
+export const sentence = (text: string) => {
+  if (!text) return text;
+  const first = text.split(" ", 1)[0];
+  return /[A-Z]/.test(first.slice(1)) ? text : text[0].toUpperCase() + text.slice(1);
+};

@@ -44,7 +44,6 @@ function heat(position: Position | null, result: Result | null, tSink: number): 
   return Math.min(Math.max((position.tj - tSink) / span, 0), 1.15);
 }
 
-/** A transistor with its reverse diode, as the standard symbol, centred on (x, y). */
 /** How the part is packaged: what is drawn around the switches and at their gates. */
 export interface Packaging { positions: number; driver: boolean }
 
