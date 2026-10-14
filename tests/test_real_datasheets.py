@@ -39,20 +39,20 @@ def spanning(curves, frame, share=0.4):
     ]
 
 
-ONSEMI = "onsemi_FGHL40T65MQD.pdf"
-EPC = "epc_EPC2302.pdf"
+IGBT = "igbt_650v_40a.pdf"
+GAN = "gan_100v.pdf"
 MODULE_C = "module_c.pdf"
 
 
 @pytest.mark.parametrize(
     ("name", "number", "count"),
     [
-        (ONSEMI, 4, 6),
-        (ONSEMI, 6, 6),
-        (ONSEMI, 7, 2),
-        (EPC, 3, 6),
-        (EPC, 4, 6),
-        (EPC, 5, 2),
+        (IGBT, 4, 6),
+        (IGBT, 6, 6),
+        (IGBT, 7, 2),
+        (GAN, 3, 6),
+        (GAN, 4, 6),
+        (GAN, 5, 2),
         (MODULE_C, 14, 12),
     ],
 )
@@ -60,8 +60,8 @@ def test_plot_areas_found(name: str, number: int, count: int) -> None:
     assert len(find_frames(page(name, number))) == count
 
 
-def test_onsemi_saturation_voltage_curves() -> None:
-    p = page(ONSEMI, 4)
+def test_igbt_saturation_voltage_curves() -> None:
+    p = page(IGBT, 4)
     frame = find_frames(p)[2]
     curves = spanning(curves_in(p, frame), frame)
     assert len(curves) == 2
@@ -69,8 +69,8 @@ def test_onsemi_saturation_voltage_curves() -> None:
     assert volts == pytest.approx([1.45, 1.77], rel=0.03)  # table: 25 °C and 175 °C at 40 A
 
 
-def test_onsemi_switching_energy_curves() -> None:
-    p = page(ONSEMI, 6)
+def test_igbt_switching_energy_curves() -> None:
+    p = page(IGBT, 6)
     frame = find_frames(p)[1]
     curves = spanning(curves_in(p, frame), frame)
     assert len(curves) == 4
@@ -78,14 +78,14 @@ def test_onsemi_switching_energy_curves() -> None:
     assert at_40 == pytest.approx([520, 770, 860, 1280], rel=0.04)  # table, in µJ
 
 
-def test_onsemi_diode_forward_curves() -> None:
-    p = page(ONSEMI, 6)
+def test_igbt_diode_forward_curves() -> None:
+    p = page(IGBT, 6)
     frame = find_frames(p)[2]
     assert len(spanning(curves_in(p, frame), frame)) == 3
 
 
-def test_onsemi_thermal_impedance_plateaus() -> None:
-    p = page(ONSEMI, 7)
+def test_igbt_thermal_impedance_plateaus() -> None:
+    p = page(IGBT, 7)
     for frame, y_axis, table in zip(
         find_frames(p), (Axis(0.01, 1, True), Axis(0.001, 2, True)), (0.63, 1.6), strict=True
     ):
@@ -96,7 +96,7 @@ def test_onsemi_thermal_impedance_plateaus() -> None:
 
 
 def test_epc_normalised_resistance_curve() -> None:
-    p = page(EPC, 4)
+    p = page(GAN, 4)
     frame = match_frames(p, find_frames(p), ["Figure 9"])["Figure 9"]
     curves = spanning(curves_in(p, frame), frame)
     assert len(curves) == 1
@@ -105,7 +105,7 @@ def test_epc_normalised_resistance_curve() -> None:
 
 
 def test_captions_locate_their_plot_areas() -> None:
-    p = page(ONSEMI, 6)
+    p = page(IGBT, 6)
     frames = find_frames(p)
     found = match_frames(p, frames, [f"Figure {n}." for n in range(13, 19)])
     assert [frames.index(found[f"Figure {n}."]) for n in range(13, 19)] == [0, 1, 2, 3, 4, 5]

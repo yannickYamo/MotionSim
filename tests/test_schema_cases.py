@@ -346,7 +346,7 @@ def test_a_name_that_mixes_its_cases_is_left_as_it_is_written() -> None:
     from motionsim.text import capital
 
     assert capital("the part passes") == "The part passes"
-    assert capital("iDEAL Semiconductor iS20M loses 3 W more") == "iDEAL Semiconductor iS20M loses 3 W more"
+    assert capital("xFET Devices xF200 loses 3 W more") == "xFET Devices xF200 loses 3 W more"
     assert capital("eGaN parts") == "eGaN parts"
     assert capital("") == ""
 

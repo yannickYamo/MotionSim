@@ -179,7 +179,7 @@ One real 100 V transistor, typed in with the same table figures its read model h
 
 A curve and a table are two statements of the same quantity in one document. Agreement confirms the axis reading, the digitising and the curve matching. It does not confirm the device data itself, and the table values were used to choose which curve is which, so these are consistency checks, not independent ones.
 
-**onsemi FGHL40T65MQD (discrete IGBT with diode), vector figures.**
+**A 650 V discrete IGBT with its diode, vector figures.**
 
 | Check | Digitised | Tabulated | Difference |
 |---|---|---|---|
@@ -194,7 +194,7 @@ A curve and a table are two statements of the same quantity in one document. Agr
 | Diode forward voltage at 40 A, 25 °C | 2.501 V | 2.55 V | −1.9% |
 | Diode forward voltage at 40 A, 175 °C | 2.384 V | 2.3 V | +3.6% |
 
-**EPC2302 (GaN transistor).**
+**A 100 V GaN transistor.**
 
 | Check | Result |
 |---|---|
@@ -203,9 +203,9 @@ A curve and a table are two statements of the same quantity in one document. Agr
 
 The charge-based switching loss for this part has no reference of any kind.
 
-**Vishay IRF540 (silicon MOSFET), vector figures.** On-resistance against temperature reads 1.0 at 25 °C as a normalised curve must. The single-pulse thermal curve, followed along the line the family merges into, reaches 0.94 K/W against a tabulated maximum of 1.0. The body-diode curve at 25 °C stays under the tabulated maximum. The gate-charge plateau starts at the tabulated gate-source charge. Output capacitance at 25 V is within 1.6% of the table.
+**A 100 V silicon MOSFET, vector figures.** On-resistance against temperature reads 1.0 at 25 °C as a normalised curve must. The single-pulse thermal curve, followed along the line the family merges into, reaches 0.94 K/W against a tabulated maximum of 1.0. The body-diode curve at 25 °C stays under the tabulated maximum. The gate-charge plateau starts at the tabulated gate-source charge. Output capacitance at 25 V is within 1.6% of the table.
 
-**onsemi NVXK2TR80WDT (SiC module), figures stored as images.** Every table value was found on the page it was cited from. Every figure is a picture. Eleven plot areas found; curve counts are right on all eleven (7, 6, 1, 2, 3, 3, 3, 3, 2, 1, 1).
+**A 1200 V SiC module, figures stored as images.** Every table value was found on the page it was cited from. Every figure is a picture. Eleven plot areas found; curve counts are right on all eleven (7, 6, 1, 2, 3, 3, 3, 3, 2, 1, 1).
 
 | Figure | Read | Datasheet says | Difference |
 |---|---|---|---|
@@ -280,9 +280,9 @@ Modules A and B could not be run in the same simulator. One part, one vendor, an
 
 ## Level D: one public measurement, and what it does and does not show
 
-A measured inverter loss, from a published reference design: Texas Instruments TIDA-00364, design guide TIDUCB6, tables 7 and 8. A 48 V three-phase inverter with five CSD19536KTT in parallel at each switch (30 in all) on a heatsink, sinusoidal PWM into an induction motor on a dynamometer, loss measured with a power analyzer from DC input to motor terminals at 8 and at 10 kHz, from 27 to 131 A rms.
+A measured inverter loss, from a reference design a semiconductor maker publishes with its design guide. A 48 V three-phase inverter with five 100 V MOSFETs in parallel at each switch (30 in all) on a heatsink, sinusoidal PWM into an induction motor on a dynamometer, loss measured with a power analyzer from DC input to motor terminals at 8 and at 10 kHz, from 27 to 131 A rms.
 
-The model: the CSD19536KCS as read from its datasheet (the same die in another package), with its on-resistance scaled to the 2 mΩ the guide gives for the KTT; five in parallel; 12 V gate drive; turn-on through the guide's shared 24 Ω and 8.2 Ω a device, turn-off through 8.2 Ω; modulation index and power factor worked out from the table's own voltage, current and power at each row. The guide does not give the heatsink temperature or the dead time, so the model was run across 30 to 60 °C and 100 to 500 ns; that moves the result by 4% either way.
+The model: the same transistor as read from its datasheet in another package (the same die), with its on-resistance scaled to the 2 mΩ the guide gives for the one on the board; five in parallel; 12 V gate drive; turn-on through the guide's shared 24 Ω and 8.2 Ω a device, turn-off through 8.2 Ω; modulation index and power factor worked out from the table's own voltage, current and power at each row. The guide does not give the heatsink temperature or the dead time, so the model was run across 30 to 60 °C and 100 to 500 ns; that moves the result by 4% either way.
 
 | Phase current | Measured, 8 kHz | Model | Model over measured | Measured, 10 kHz | Model | Model over measured |
 |---|---|---|---|---|---|---|
@@ -301,7 +301,7 @@ What it shows:
 - The measurement is of the whole inverter: board copper, connectors and snubbers are in it, and they are not in the model. The part of the measured loss that does not change with frequency is about three times the transistors' own conduction loss at 131 A, and grows with the square of the current: about 0.8 mΩ a phase of resistance outside the transistors would account for it. The guide gives no figure to check that against, so the conduction model is neither confirmed nor refuted by this.
 - The part that changes with frequency can be separated, from the two rows measured at the same current. At 27 A the measured loss rises by 1.6 W for each kHz and the model's by 1.1 W; at 131 A, 3.7 W against 4.8 W. So the switching estimate from gate and output charge is about 30% low at low current and 30% high at high current on this board. The snubbers, which lose the same at any current, are part of the first.
 
-What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same source's companion (TIDA-010056, TIDUEQ9, the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
+What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same maker's companion design (the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
 
 `motionsim validate` takes a file of measurements, for anyone with their own. A point can give each loss term on its own, how the stage was mounted, and a load that comes and goes with the junction's lowest and highest temperature once it repeats.
 
@@ -312,15 +312,15 @@ No vendor's device data ships with this project, only made-up parts, and it favo
 | Kind of device | Datasheet tried | What was read | Outcome |
 |---|---|---|---|
 | IGBT module with built-in driver | three 600 V, 15 A modules from one vendor | 15 to 16 table values each; on one, on-state, diode, switching-energy, recovery and thermal curves | All table values match the page. Two have no curves at all. On the third, 10 of 11 curves agree with its tables within 8%; its hot turn-off curve disagrees with its table by 17%, so the table is used there. That one was compared with its vendor's simulator. |
-| Discrete IGBT with diode | onsemi FGHL40T65MQD | 26 table values, on-state, diode, switching-energy and thermal curves | Curves agree with the datasheet's own tables within 4%. |
-| GaN transistor | EPC EPC2302 | 12 table values, on-resistance against temperature, thermal curve | All match. Switching loss is estimated from charge. |
-| Silicon MOSFET | Vishay IRF540, TI CSD19536KCS, Nexperia PSMN1R0-40YLD, Alpha and Omega AOT66916L | 14 to 17 table values each; on-resistance against temperature, body-diode, gate-charge, capacitance and thermal curves | Table values match the page. 19 of 25 curves accepted, within 11% of the tables and most within 3%. The first of the four gives maximums only, so its model is on the high side. Switching loss is estimated from charge. |
-| SiC MOSFET, discrete | Wolfspeed C3M0075120K, ROHM SCT3040KL | 17 and 20 table values; thermal, capacitance, gate-charge and switching-energy curves | Table values match. 7 of 14 curves accepted. On the first, the switching-energy and body-diode figures are laid out in ways the reader does not handle (several figures a quantity, curves by gate voltage). |
-| SiC MOSFET module | onsemi NVXK2TR80WDT (H-bridge) | 19 table values; five curves, from figures stored as images | Curves agree with the tables within 4%. Switching and recovery energy are tabulated at one current only, so their shape away from it is assumed. |
-| GaN transistor, cascode | Nexperia GAN063-650WSA | 18 table values; thermal, on-resistance, capacitance and reverse-conduction curves | Read, but no model is built: the datasheet gives no gate plateau, threshold charge or transconductance to estimate switching from, and no switching energy. The tool says so and stops. |
-| Discrete IGBT with diode, second vendor | STMicroelectronics STGW40H65DFB | 25 table values; on-state, diode, switching-energy, energy-against-gate-resistance and thermal curves | 10 of 13 curves accepted, within 1.1% of the tables. The diode thermal-impedance figure is too cluttered to confirm, so the table value is used. |
-| Superjunction MOSFET | STMicroelectronics STW48N60M2 | 14 table values; gate-charge, capacitance, on-resistance, body-diode and thermal curves | Builds. The gate plateau is read from a figure that also draws the drain voltage. Switching loss is estimated from charge. |
-| IGBT module with built-in driver, second vendor | onsemi (Fairchild) FNB41560B2 | 7 to 8 table values; six switching-energy curves from two plots under one caption | Builds. The datasheet tabulates no switching energy, so the curves are identified by their colour in the legend and say so. |
+| Discrete IGBT with diode | a 650 V, 40 A part | 26 table values, on-state, diode, switching-energy and thermal curves | Curves agree with the datasheet's own tables within 4%. |
+| GaN transistor | a 100 V part | 12 table values, on-resistance against temperature, thermal curve | All match. Switching loss is estimated from charge. |
+| Silicon MOSFET | four parts from 40 V to 100 V, from four makers | 14 to 17 table values each; on-resistance against temperature, body-diode, gate-charge, capacitance and thermal curves | Table values match the page. 19 of 25 curves accepted, within 11% of the tables and most within 3%. The first of the four gives maximums only, so its model is on the high side. Switching loss is estimated from charge. |
+| SiC MOSFET, discrete | two 1200 V parts from two makers | 17 and 20 table values; thermal, capacitance, gate-charge and switching-energy curves | Table values match. 7 of 14 curves accepted. On the first, the switching-energy and body-diode figures are laid out in ways the reader does not handle (several figures a quantity, curves by gate voltage). |
+| SiC MOSFET module | a 1200 V H-bridge | 19 table values; five curves, from figures stored as images | Curves agree with the tables within 4%. Switching and recovery energy are tabulated at one current only, so their shape away from it is assumed. |
+| GaN transistor, cascode | a 650 V part | 18 table values; thermal, on-resistance, capacitance and reverse-conduction curves | Read, but no model is built: the datasheet gives no gate plateau, threshold charge or transconductance to estimate switching from, and no switching energy. The tool says so and stops. |
+| Discrete IGBT with diode, second maker | a 650 V, 40 A part | 25 table values; on-state, diode, switching-energy, energy-against-gate-resistance and thermal curves | 10 of 13 curves accepted, within 1.1% of the tables. The diode thermal-impedance figure is too cluttered to confirm, so the table value is used. |
+| Superjunction MOSFET | a 600 V part | 14 table values; gate-charge, capacitance, on-resistance, body-diode and thermal curves | Builds. The gate plateau is read from a figure that also draws the drain voltage. Switching loss is estimated from charge. |
+| IGBT module with built-in driver, second maker | a 600 V, 15 A module | 7 to 8 table values; six switching-energy curves from two plots under one caption | Builds. The datasheet tabulates no switching energy, so the curves are identified by their colour in the legend and say so. |
 | Discrete IGBT, scanned datasheet | an older 600 V part whose datasheet is page images | 19 table values, read from page images | Builds from table values. Its figures are not read. Diode recovery energy is estimated from the tabulated recovery charge. |
 | Rectifier (diode) bridge | not supported | | |
 

@@ -27,7 +27,7 @@ describe("what a setup file or the browser's store hands back", () => {
 describe("a sentence the engine writes", () => {
   it("starts with a capital, unless it starts with a name that mixes its cases", () => {
     expect(sentence("the part passes")).toBe("The part passes");
-    expect(sentence("iDEAL Semiconductor iS20M loses 3 W more")).toBe("iDEAL Semiconductor iS20M loses 3 W more");
+    expect(sentence("xFET Devices xF200 loses 3 W more")).toBe("xFET Devices xF200 loses 3 W more");
     expect(sentence("")).toBe("");
   });
 });

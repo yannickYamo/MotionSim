@@ -31,7 +31,7 @@ export function escape(text: string): string {
 }
 
 /** A sentence with its first letter raised, unless its first word is a name that mixes its
- *  cases on purpose (iDEAL, eGaN), which is left as it is written. */
+ *  cases on purpose (eGaN, xFET), which is left as it is written. */
 export const sentence = (text: string) => {
   if (!text) return text;
   const first = text.split(" ", 1)[0];

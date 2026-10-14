@@ -1,17 +1,17 @@
-# Case study: four datasheets from four makers
+# Case study: four datasheets from four makers, unnamed
 
 What happens when MotionSim is given four real parts whose datasheets differ in what they give. Four public datasheets, one journey each from PDF to verdict, and what the tool could and could not say.
 
-This is a demonstration of the method and not a ranking of makers. No device data ships with the project: the datasheets are their makers' property, and what was read from them stays with whoever read them. The figures below are estimates, with the limits of [LIMITS.md](LIMITS.md).
+This is a demonstration of the method and not a ranking of makers, so neither the makers nor the part numbers are named: each part is called by a letter and described by what it is. No device data ships with the project: the datasheets are their makers' property, and what was read from them stays with whoever read them. The figures below are estimates, with the limits of [LIMITS.md](LIMITS.md).
 
 ## The parts
 
-| Part | Maker | What it is |
-|---|---|---|
-| EPC2215 | EPC | 200 V GaN transistor, 8 mΩ, chip-scale |
-| iS20M5R5S1T | iDEAL Semiconductor | 200 V silicon MOSFET, 5.5 mΩ |
-| CGD65A055S2 | Cambridge GaN Devices | 650 V GaN transistor, 55 mΩ, gate interface built in |
-| FNB41560B2 | onsemi | 600 V, 15 A IGBT module with drivers, six switches |
+| Part | What it is |
+|---|---|
+| A | 200 V GaN transistor, 8 mΩ, chip-scale |
+| B | 200 V silicon MOSFET, 5.5 mΩ, TOLL package |
+| C | 650 V GaN transistor, 55 mΩ, gate interface built in |
+| D | 600 V, 15 A IGBT module with drivers, six switches |
 
 Two jobs, because no one voltage suits all four: a 96 V robot joint for the two 200 V parts, and a 310 V fan drive for the two 600 V-class parts.
 
@@ -21,10 +21,10 @@ Each PDF was read (`motionsim extract`), then built into a device model (`motion
 
 | Part | Read | Built? |
 |---|---|---|
-| EPC2215 | 15 table values, 7 curves | Yes |
-| iS20M5R5S1T | 22 table values, 6 curves; the thermal curve set aside | Not at first: refused, then built after one correction by a person |
-| CGD65A055S2 | 16 table values, 3 curves | Yes, on its switching times, with its rise time entered by hand: it gives no switching energy and no gate charges |
-| FNB41560B2 | 8 table values, 6 switching-energy curves; 2 pages read from their image | Yes |
+| A | 15 table values, 7 curves | Yes |
+| B | 22 table values, 6 curves; the thermal curve set aside | Not at first: refused, then built after one correction by a person |
+| C | 16 table values, 3 curves | Yes, on its switching times, with its rise time entered by hand: it gives no switching energy and no gate charges |
+| D | 8 table values, 6 switching-energy curves; 2 pages read from their image | Yes |
 
 Two of the four are the useful part of this study: one that was refused until a person settled a definition, and one that gives so little about its switching that the model stands on a third, weaker footing and says so.
 
@@ -38,7 +38,7 @@ This datasheet's figures are pictures with a grey grid and coloured curves. On-r
 
 One design file, both parts: a surface-magnet motor (7 pole pairs, 50 rpm/V, 0.48 mH, 0.18 Ω, 20 A rms limit), 96 V, 2000 rpm and 3 N·m at the design point, a 50:1 joint lifting 26 kg on a 0.25 m arm, on a heatsink held at 60 °C. Gate drive and dead time left open, so the tool chose them for each part.
 
-| | EPC2215 (GaN) | iS20M5R5S1T (Si) |
+| | A (GaN) | B (Si) |
 |---|---|---|
 | **At 20 kHz** | | |
 | Verdict | passes | passes |
@@ -70,7 +70,7 @@ Through the joint's own motion the two differ less than at the design point: 2.1
 
 The tool's own starting motor for the module, sized so that the motor's current limit sits just inside the module's 15 A rating: 2000 rpm and 2 N·m at the design point, 310 V, a heatsink held at 60 °C.
 
-| | FNB41560B2 (IGBT module) | CGD65A055S2 (GaN) |
+| | D (IGBT module) | C (GaN) |
 |---|---|---|
 | Switching loss rests on | measured energy, from the datasheet's curves | an estimate from rise and fall times |
 | **At 6 kHz** | | |
@@ -95,11 +95,11 @@ The tool's own starting motor for the module, sized so that the motor's current 
 
 ## To reproduce
 
-With the four datasheets from their makers' sites and your own key. For each part:
+With the four datasheets of parts like these and your own key. For each part:
 
 ```
-motionsim extract EPC2215_datasheet.pdf -o epc2215.observations.yaml
-motionsim build epc2215.observations.yaml -o epc2215.device.yaml
+motionsim extract part_a.pdf -o part_a.observations.yaml
+motionsim build part_a.observations.yaml -o part_a.device.yaml
 ```
 
 Two of the four need a hand before they build. For the silicon MOSFET, set the gate-source charge in its observations file to the charge at threshold plus the figure printed, and mark it verified. For the GaN part with its gate interface built in, check that the rise time printed in its table is among the observations, and add it if it is not.
@@ -107,7 +107,7 @@ Two of the four need a hand before they build. For the silicon MOSFET, set the g
 The 96 V joint:
 
 ```
-motionsim design init --device epc2215.device.yaml -o joint.yaml
+motionsim design init --device part_a.device.yaml -o joint.yaml
 # in joint.yaml: add the second device file under devices, set torque: 3.0, and give the
 # load an inertia of 1.6, a friction_coulomb of 7.5 and a gravity mass of 26
 motionsim design run joint.yaml --md joint.md
@@ -118,7 +118,7 @@ For the 100 kHz rows set `f_sw: 100000`. For the sensorless figures add `start: 
 The 310 V fan:
 
 ```
-motionsim design init --device fnb41560b2.device.yaml -o fan.yaml
+motionsim design init --device part_d.device.yaml -o fan.yaml
 # in fan.yaml: add the second device file under devices, set v_dc: 310, and f_sw: 6000 or 16000
 motionsim design run fan.yaml --md fan.md
 ```

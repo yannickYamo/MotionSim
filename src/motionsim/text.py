@@ -20,7 +20,7 @@ def written(value: float, digits: int = 3) -> str:
 
 def capital(text: str) -> str:
     """A sentence with its first letter raised, unless its first word is a name that mixes
-    its cases on purpose (iDEAL, eGaN), which is left as it is written."""
+    its cases on purpose (eGaN, xFET), which is left as it is written."""
     first = text.split(" ", 1)[0]
     if any(c.isupper() for c in first[1:]):
         return text

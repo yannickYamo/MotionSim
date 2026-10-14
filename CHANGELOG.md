@@ -2,6 +2,10 @@
 
 What each published version added for someone using the tool.
 
+## 0.4.2
+
+- The documents describe the parts they were checked on by kind and rating: no semiconductor maker or part number is named.
+
 ## 0.4.1
 
 - A datasheet can be read with OpenAI, Gemini, Grok or a model you host, as well as Anthropic.
