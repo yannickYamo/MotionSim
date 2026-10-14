@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import tempfile
 from http import HTTPStatus
@@ -62,17 +61,18 @@ MIME = {
 
 def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
     """Read a datasheet PDF and build its device model. A paid language-model call."""
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise Refused(
-            "reading a datasheet needs a language-model key, and none is set",
-            "set ANTHROPIC_API_KEY in the shell that runs `motionsim serve`, then start it again",
-        )
+    from motionsim.observe import provider
+
+    try:
+        provider.chosen()
+    except provider.NoReader as none:
+        raise Refused(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
     if not body.startswith(b"%PDF"):
         raise Refused("that file is not a PDF", "drop the datasheet's PDF file")
     from motionsim.fit import MissingData, build_device
     from motionsim.observe import save_observations
     from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
-    from motionsim.observe.reader import MODEL, ReaderRefused, read_document, read_tables
+    from motionsim.observe.reader import ReaderRefused, read_document, read_tables, reader_name
     from motionsim.observe.verify import check
 
     key = re.sub(r"[^a-z0-9]+", "-", Path(name).stem.lower()).strip("-") or "datasheet"
@@ -81,7 +81,7 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
         pdf.write_bytes(body)
         try:
             document, pages = read_document(pdf)
-            obs = check(read_tables(pages), document, pages, reader=MODEL)
+            obs = check(read_tables(pages), document, pages, reader=reader_name())
             obs.curves = digitise_curves(str(pdf), obs)
         except ReaderRefused as exc:
             raise Refused(str(exc), "try another datasheet") from None

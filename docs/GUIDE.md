@@ -39,16 +39,36 @@ The page opens at `http://127.0.0.1:4310/`. It answers only requests from your o
 
 The same install gives the `motionsim` command: `motionsim --help` lists what it does, and `motionsim design init` followed by `motionsim design run` takes a part from datasheet figures to a verdict without opening the page.
 
-### Reading datasheets needs your own API key, and that is why it is local
+### Reading datasheets needs your own model, and that is why it is local
 
-Reading a datasheet PDF is done by a language model, and that is a paid call. MotionSim makes it from your machine, with your own Anthropic API key, straight to Anthropic. The project has no server of its own, keeps no key and sees none of your files.
+Reading a datasheet PDF is done by a language model: a maker's, with your own key, or one you run yourself. MotionSim makes the call from your machine, straight to it. The project has no server of its own, keeps no key and sees none of your files.
 
 ```
 export ANTHROPIC_API_KEY=your-key
 motionsim serve
 ```
 
-- The key is read from your environment each time the page starts. It is never written to disk, never sent to the page, and never leaves your machine except in the call to Anthropic.
+- The key is read from your environment each time the page starts. It is never written to disk, never sent to the page, and never leaves your machine except in the call to the model.
+- Other models read too:
+
+  | Model | What to set |
+  |---|---|
+  | Anthropic (the one this tool was built and checked on) | `ANTHROPIC_API_KEY` |
+  | OpenAI | `OPENAI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+  | Google Gemini | `GEMINI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+  | xAI Grok | `XAI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+  | A model you host (Ollama, vLLM, llama.cpp, or any chat-completions service) | `MOTIONSIM_LLM_URL` and `MOTIONSIM_LLM_MODEL`, with `MOTIONSIM_LLM_KEY` if it wants one |
+
+  `MOTIONSIM_LLM_MODEL` is the name the service knows the model by. The model has to read pictures, for figures and scanned pages, and to answer in a set form. The first of these that is set is used, a service of your own before any maker's key.
+
+  ```
+  export MOTIONSIM_LLM_URL=http://localhost:11434/v1      # a model on your own machine: nothing leaves it
+  export MOTIONSIM_LLM_MODEL=the-name-of-your-model
+  motionsim serve
+  ```
+
+  Whatever reads, the same checks hold every value to the page it was cited from, so a weaker reader has more set aside, not more believed. Only Anthropic's model has been run on real datasheets here: the others are held to the interface they share, by a test that stands in for the service.
+
 - A datasheet takes a minute or two and costs about what a long chat message does. The page says so before it starts.
 - What was read is saved beside the device model, value by value with its page number, so you can check it against the datasheet. Open "Check what was read" on any part.
 - Without a key everything else works: a transistor typed in from its datasheet, device files, your own measurements, and the made-up parts.

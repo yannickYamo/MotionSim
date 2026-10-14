@@ -108,8 +108,9 @@ def test_a_motion_nothing_can_follow_is_refused(workspace) -> None:
 
 
 def test_reading_needs_a_key_and_a_pdf(workspace, monkeypatch) -> None:
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    with pytest.raises(server.Refused, match="needs a language-model key"):
+    for name in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "XAI_API_KEY", "MOTIONSIM_LLM_URL"):
+        monkeypatch.delenv(name, raising=False)
+    with pytest.raises(server.Refused, match="needs a language model, and none is set up"):
         server.read_datasheet("part.pdf", b"%PDF-1.7", workspace)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "not-a-real-key")
     with pytest.raises(server.Refused, match="not a PDF"):

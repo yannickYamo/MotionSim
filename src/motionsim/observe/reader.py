@@ -8,11 +8,8 @@ from __future__ import annotations
 
 import base64
 
-import anthropic
-
+from motionsim.observe import provider
 from motionsim.observe.schema import Document, ReadPageAxes, ReadResult
-
-MODEL = "claude-opus-5-5"
 
 SYSTEM = """\
 You transcribe electrical and thermal parameters from power-semiconductor \
@@ -132,11 +129,23 @@ class ReaderRefused(RuntimeError):
     pass
 
 
-def read_tables(pages: list[str], client: anthropic.Anthropic | None = None) -> ReadResult:
-    client = client or anthropic.Anthropic()
+def reader_name() -> str:
+    """The model that reads, as recorded beside what it read."""
+    return provider.chosen().name
+
+
+def read_tables(pages: list[str], client=None) -> ReadResult:
+    """The tabulated values of a datasheet, from the text of its pages. `client` is an
+    Anthropic client to use in place of a new one."""
     body = "\n\n".join(f"=== page {n} ===\n{text}" for n, text in enumerate(pages, start=1))
+    reader = provider.chosen()
+    if reader.kind != "anthropic":
+        return provider.ask(reader, SYSTEM, body, shape=ReadResult)
+    import anthropic
+
+    client = client or anthropic.Anthropic()
     response = client.messages.parse(
-        model=MODEL,
+        model=reader.model,
         max_tokens=16000,
         thinking={"type": "adaptive"},
         system=SYSTEM,
@@ -159,12 +168,17 @@ caption and axis titles only. Output the text and nothing else.
 """
 
 
-def transcribe(page_png: bytes, client: anthropic.Anthropic | None = None) -> str:
+def transcribe(page_png: bytes, client=None) -> str:
     """The text of a page that has none of its own, read from its image."""
+    reader = provider.chosen()
+    if reader.kind != "anthropic":
+        return provider.ask(reader, TRANSCRIBE_SYSTEM, "Transcribe this page.", page_png)
+    import anthropic
+
     client = client or anthropic.Anthropic()
     image = base64.standard_b64encode(page_png).decode("ascii")
     response = client.messages.create(
-        model=MODEL,
+        model=reader.model,
         max_tokens=8000,
         system=TRANSCRIBE_SYSTEM,
         messages=[
@@ -204,12 +218,18 @@ def read_document(path) -> tuple[Document, list[str]]:
     return document, pages
 
 
-def read_axes(page_png: bytes, labels: list[str], client: anthropic.Anthropic | None = None) -> ReadPageAxes:
+def read_axes(page_png: bytes, labels: list[str], client=None) -> ReadPageAxes:
     """Axis limits of the named figures on one rendered page."""
+    asked = "Figures, top to bottom: " + "; ".join(labels)
+    reader = provider.chosen()
+    if reader.kind != "anthropic":
+        return provider.ask(reader, AXES_SYSTEM, asked, page_png, shape=ReadPageAxes)
+    import anthropic
+
     client = client or anthropic.Anthropic()
     image = base64.standard_b64encode(page_png).decode("ascii")
     response = client.messages.parse(
-        model=MODEL,
+        model=reader.model,
         max_tokens=16000,
         thinking={"type": "adaptive"},
         system=AXES_SYSTEM,
@@ -221,7 +241,7 @@ def read_axes(page_png: bytes, labels: list[str], client: anthropic.Anthropic | 
                         "type": "image",
                         "source": {"type": "base64", "media_type": "image/png", "data": image},
                     },
-                    {"type": "text", "text": "Figures, top to bottom: " + "; ".join(labels)},
+                    {"type": "text", "text": asked},
                 ],
             }
         ],

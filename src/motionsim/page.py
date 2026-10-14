@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 import math
-import os
 from dataclasses import replace
 from pathlib import Path
 
@@ -714,8 +713,18 @@ def setup(workspace: Workspace) -> dict:
         "profile": yaml.safe_load(PROFILE_TEMPLATE),
         "devices": workspace.listing(),
         "typed": typed_form(),
-        "can_read": bool(os.environ.get("ANTHROPIC_API_KEY")),
+        "can_read": _can_read(),
     }
+
+
+def _can_read() -> bool:
+    """Whether a language model is set up to read a datasheet with. Where the reader's own
+    libraries are not there, as in the browser, there is none."""
+    try:
+        from motionsim.observe import provider
+    except ImportError:
+        return False
+    return provider.available()
 
 
 # How each catalogue value changes when the same motor is wound for k times the voltage:

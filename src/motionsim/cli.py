@@ -839,15 +839,19 @@ def _compare(args: argparse.Namespace) -> int:
 
 
 def _extract(args: argparse.Namespace) -> int:
-    from motionsim.observe import save_observations
-    from motionsim.observe.reader import MODEL, read_document, read_tables
+    from motionsim.observe import provider, save_observations
+    from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
+    from motionsim.observe.reader import read_document, read_tables, reader_name
     from motionsim.observe.verify import check
 
-    document, pages = read_document(args.pdf)
-    obs = check(read_tables(pages), document, pages, reader=MODEL)
-    from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
-
-    obs.curves = digitise_curves(args.pdf, obs)
+    try:
+        name = reader_name()
+        document, pages = read_document(args.pdf)
+        obs = check(read_tables(pages), document, pages, reader=name)
+        obs.curves = digitise_curves(args.pdf, obs)
+    except (provider.NoReader, provider.ReaderFailed) as stopped:
+        print(f"cannot read: {stopped}", file=sys.stderr)
+        return 2
     save_observations(obs, args.output)
     flagged = [o for o in obs.observations if o.flags]
     print(f"{obs.vendor} {obs.part_number} ({obs.technology}, {obs.topology.value})")

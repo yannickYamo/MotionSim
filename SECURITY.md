@@ -4,7 +4,7 @@ MotionSim runs on your own machine or in your own browser. There is no service o
 
 What it does handle that is worth protecting:
 
-- **Your API key.** Reading a datasheet uses your own Anthropic API key, read from the environment when the local page starts. It is never written to disk, never sent to the page, and leaves your machine only in the call to Anthropic.
+- **Your API key.** Reading a datasheet uses your own key for the model you choose, read from the environment when the local page starts. It is never written to disk, never sent to the page, and leaves your machine only in the call to that model. With a model you host, nothing leaves your machine at all.
 - **The local page.** `motionsim serve` listens on 127.0.0.1 only and answers only requests whose Host and Origin are its own, so another site open in your browser cannot make it spend your key.
 - **Files you open.** Device files, setup files and mission profiles are data from wherever you got them. They are checked when read; what a setup file holds is reduced to plain values before the page uses it.
 

@@ -2,6 +2,11 @@
 
 What each published version added for someone using the tool.
 
+## 0.4.1
+
+- A datasheet can be read with OpenAI, Gemini, Grok or a model you host, as well as Anthropic.
+- The README says in one table how each kind of part is brought and where a language model comes in.
+
 ## 0.4.0
 
 - The control is said as what it is: the operating point a field-oriented drive settles to. A part's pulsed current rating is checked at the drive's current limit; a sensorless start is told the speed the rotor can be read from with the part in use; where a motor's iron loss is given, the d-axis current that loses least is advised.

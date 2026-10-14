@@ -12,7 +12,7 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 
 ## 3. The datasheet reader misses things
 
-- It uses a language model, and its output can differ between runs. Every value is checked against the page it was cited from; what fails is set aside and shown, never silently used.
+- It uses a language model, and its output can differ between runs. Anthropic's is the one every figure in these documents was read with. OpenAI's, Gemini's, Grok's and a model you host can be set in its place and have not been run on real datasheets here: expect more values set aside with a weaker model, and check what was read. Every value is checked against the page it was cited from; what fails is set aside and shown, never silently used.
 - Quantities spread over several figures, and curves drawn against gate voltage, are not read.
 - Scanned datasheets are read from page images: their tables only, not their figures, and the check on them is weaker.
 - Figures stored as pictures are read where they have a grid to find them by, drawn dark or in grey. A picture with no grid is not read.

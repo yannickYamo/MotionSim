@@ -62,7 +62,57 @@ motionsim serve
 
 The page opens at `http://127.0.0.1:4310/`. It needs Python 3.11 or later.
 
-Reading a datasheet PDF is done by a language model, and that is a paid call. It is made from your machine with your own Anthropic API key (`export ANTHROPIC_API_KEY=your-key`), straight to Anthropic: the project has no server, keeps no key and sees none of your files. Without a key everything else works. Datasheets are their vendors' property: none is distributed here, and no vendor's device data ships with the project.
+## Bringing your part, and where a language model comes in
+
+Every kind of part simulates the same way once it is a device model: IGBT, silicon, SiC or GaN MOSFET, discrete or module. What differs is how the model gets made, and only one way needs a language model.
+
+| Way to bring a part | On the live page | Needs a key | Parts it covers |
+|---|---|---|---|
+| A made-up part | Yes | No | A 100 V MOSFET and a 600 V IGBT module, to see what the tool does |
+| Nine figures typed from the datasheet | Yes | No | MOSFET, SiC and GaN transistors |
+| A device file (`.device.yaml`) | Yes | No | Any part: made once, kept, shared, dropped onto the page |
+| A datasheet PDF, read for you | No: on your own machine | Yes, your own | Any supported part, IGBTs and modules included |
+
+**Reading a PDF with your own model.** The reading is done by a language model: yours, with your own key, or one you run yourself. The call goes from your machine straight to it: the project has no server, keeps no key and sees none of your files. That is why the live page cannot do it. With a maker's model it is a paid call, about what a long chat message costs.
+
+```
+export ANTHROPIC_API_KEY=your-key
+motionsim serve                 # then drop the PDF onto the page
+```
+
+or from the terminal, which leaves you a device file you can also drop onto the live page:
+
+```
+motionsim extract my_part.pdf -o my_part.observations.yaml
+motionsim build my_part.observations.yaml -o my_part.device.yaml
+```
+
+The model only copies what the datasheet prints; ordinary code checks every value against its page and builds the model. Open "Check what was read" on any part to see it value by value.
+
+Any of these reads a datasheet:
+
+| Model | What to set |
+|---|---|
+| Anthropic (the one this tool was built and checked on) | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+| Google Gemini | `GEMINI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+| xAI Grok | `XAI_API_KEY` and `MOTIONSIM_LLM_MODEL` |
+| A model you host (Ollama, vLLM, llama.cpp, or any chat-completions service) | `MOTIONSIM_LLM_URL` and `MOTIONSIM_LLM_MODEL`, with `MOTIONSIM_LLM_KEY` if it wants one |
+
+`MOTIONSIM_LLM_MODEL` is the name the service knows the model by. The model has to read pictures, for figures and scanned pages, and to answer in a set form. The first of these that is set is used, a service of your own before any maker's key.
+
+```
+export MOTIONSIM_LLM_URL=http://localhost:11434/v1      # a model on your own machine: nothing leaves it
+export MOTIONSIM_LLM_MODEL=the-name-of-your-model
+motionsim serve
+```
+
+Whatever reads, the same checks hold every value to the page it was cited from, so a weaker reader has more set aside, not more believed. Only Anthropic's model has been run on real datasheets here: the others are held to the interface they share, by a test that stands in for the service.
+
+
+**Driving it from your own coding agent.** This needs no key of ours and works with any agent that can run a command. `motionsim agent` prints a guide written for one: the design file, the one command that runs every step, what comes back and what each exit status means. [AGENTS.md](AGENTS.md) points to it.
+
+Datasheets are their vendors' property: none is distributed here, and no vendor's device data ships with the project.
 
 ## Example
 
