@@ -2,19 +2,21 @@
 
 [![ci](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml/badge.svg)](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml)
 
-Bring a power transistor's datasheet, or a few figures typed from it, your motor and your load. See what the power stage loses, how hot it gets, whether the part passes, and how far the data behind that answer can be trusted.
+Compare any power transistor, from any maker, against your own motor and load, and take an answer into the design review that you can defend: what the part loses, how hot it runs, and what that rests on. Where the datasheet cannot settle the question, MotionSim tells you what to measure instead of guessing.
 
-**It does not only calculate an answer. It says whether the evidence supports the decision, and what to collect next.**
-
-MotionSim is a web page with a loss and temperature engine behind it. It needs no vendor's model library: the device model is built from the part's own datasheet, whichever vendor's, where the datasheet gives enough ([docs/LIMITS.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/LIMITS.md) says what the reader cannot read yet). It shows the equations it uses, and says in every result what the data supports and what it leaves out. It answers two questions: what power stage a load needs, and what load a device can drive.
+Choosing a part at the start of a design should take minutes, not a week.
 
 Live page: https://yannickyamo.github.io/MotionSim/
+
+**Reading a datasheet PDF needs your own model key.** Typing in a part's figures, opening a device file and trying the made-up parts all work on the live page, with no key and no account. To have a PDF read for you, run MotionSim on your own machine with an API key for a model you choose: Anthropic, OpenAI, Gemini, Grok, or one you host. The project ships no key and runs no server, so the call goes from your machine to your model and nowhere else. [How to set it up](#bringing-your-part-and-where-a-language-model-comes-in).
+
+The device model is built from the part's own datasheet, so there is no vendor library to wait for, and an IGBT from one maker sits beside a GaN transistor from another on the same terms. Every value records the page it came from, the equations are on show, and every result says what the data supports and what it leaves out. It works in both directions: the power stage a load needs, or the load a part can drive. [docs/LIMITS.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/LIMITS.md) says what it cannot read yet.
 
 No browser needed: the same five steps run from a terminal with one command, `motionsim design run design.yaml`, and a coding agent can drive it that way. See [docs/GUIDE.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/GUIDE.md).
 
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature; on the right the verdict in one line, the four tabs and the checks](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/page.png)
 
-The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. The first visit fetches about 26 MB (the Python runtime and its numerical libraries, 39 MB once unpacked); later visits use the browser's copy. It does not read datasheet PDFs: that needs your own key and a local install, as below.
+The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. The first visit fetches about 26 MB (the Python runtime and its numerical libraries, 39 MB once unpacked); later visits use the browser's copy.
 
 **Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). Against the one measured inverter loss found in public, a 48 V reference design, it is 10 to 31% low on a measurement that includes the board's own resistance. [docs/VALIDATION.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/LIMITS.md) says where it falls short.
 

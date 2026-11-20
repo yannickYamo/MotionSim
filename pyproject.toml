@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 [project]
 name = "motionsim"
 dynamic = ["version"]
-description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
+description = "Compare any power transistor, from any maker, against your own motor and load: what it loses, how hot it runs, and what that rests on"
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE", "DISCLAIMER.md", "THIRD_PARTY.md"]
