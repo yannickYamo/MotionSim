@@ -220,9 +220,9 @@ def test_the_service_refuses_a_motion_past_the_cap_as_the_page_would_be_answered
     profile = {"segments": [{"duration": 0.002, "speed_start": 0, "speed_end": 0}] * 501}
     request = {
         "device": "example",
-        "motor": yaml.safe_load(Path(APPLIANCE).read_text()),
+        "motor": yaml.safe_load(Path(APPLIANCE).read_text(encoding="utf-8")),
         "conditions": {"v_dc": 300, "f_sw": 16000, "cooling": "held", "t_sink": 60},
-        "load": yaml.safe_load(Path(LOAD).read_text()),
+        "load": yaml.safe_load(Path(LOAD).read_text(encoding="utf-8")),
         "profile": profile,
     }
     ws = page.Workspace(tmp_path)

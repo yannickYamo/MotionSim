@@ -26,8 +26,8 @@ OP = OperatingPoint(v_dc=300.0, i_rms=0.0, modulation_index=0.8, power_factor=0.
 
 def _example_trajectory(tmp_path, f_out: float = 5.0):
     path = tmp_path / "trajectory.csv"
-    path.write_text(followed.example(f_out=f_out, i_rms=15.0))
-    return followed.parse_trajectory(path.read_text())
+    path.write_text(followed.example(f_out=f_out, i_rms=15.0), encoding="utf-8")
+    return followed.parse_trajectory(path.read_text(encoding="utf-8"))
 
 
 def test_a_chip_sits_on_its_package_loss_through_the_layer_and_on_the_other_chip_through_the_package(

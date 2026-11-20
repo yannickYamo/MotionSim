@@ -222,7 +222,7 @@ def test_a_design_file_carries_the_limit_and_is_refused_with_a_wrong_one(ws, tmp
     assert setup["conditions"]["edge_limit"] == "close"
     design.validate_setup(setup)
     path = tmp_path / "design.yaml"
-    path.write_text(yaml.safe_dump(setup))
+    path.write_text(yaml.safe_dump(setup), encoding="utf-8")
     assert design.load_setup(path, ws)["conditions"]["edge_limit"] == "close"
     assert conditions(design.starting_setup("example-mosfet", ws)["conditions"]).edge_limit == "cable"
     with pytest.raises(Refusal):

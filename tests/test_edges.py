@@ -202,14 +202,15 @@ def test_a_motor_that_cannot_turn_from_the_supply_at_all_is_said_so(tmp_path) ->
 def test_files_that_are_not_devices_are_passed_over_or_refused_never_a_fault(tmp_path, capsys) -> None:
     ws = page.Workspace(tmp_path / "ws")
     for name, text in (("junk", "a: [1"), ("wrong", "switch: 1"), ("empty", "")):
-        (tmp_path / "ws" / f"{name}.device.yaml").write_text(text)
+        (tmp_path / "ws" / f"{name}.device.yaml").write_text(text, encoding="utf-8")
     assert [d["id"] for d in ws.listing()] == ["example", "example-mosfet"]  # the three are not the page's problem
     # Named in a design, each is refused with its name, exit 2.
     for text in ("a: [1", "switch: 1"):
-        (tmp_path / "bad.yaml").write_text(text)
+        (tmp_path / "bad.yaml").write_text(text, encoding="utf-8")
         file = tmp_path / "d.yaml"
         file.write_text(
-            yaml.safe_dump({**design.starting_setup("example-mosfet", ws), "devices": [str(tmp_path / "bad.yaml")]})
+            yaml.safe_dump({**design.starting_setup("example-mosfet", ws), "devices": [str(tmp_path / "bad.yaml")]}),
+            encoding="utf-8",
         )
         capsys.readouterr()
         assert cli.main(["design", "run", str(file), "--json"]) == 2
@@ -358,7 +359,7 @@ def test_the_reports_tables_put_each_figure_under_its_own_heading() -> None:
 
 def test_a_file_named_like_a_made_up_part_does_not_take_its_place(tmp_path) -> None:
     ws = page.Workspace(tmp_path / "ws")
-    (tmp_path / "example.yaml").write_text(MOSFET.read_text())
+    (tmp_path / "example.yaml").write_text(MOSFET.read_text(encoding="utf-8"), encoding="utf-8")
     assert design.bring_device("example.yaml", tmp_path, ws) == "example-file"
     assert ws.device("example").technology == "Si IGBT" and ws.device("example-file").technology == "Si MOSFET"
 
@@ -398,12 +399,12 @@ def first_fails(tmp_path):
     """The made-up IGBT twice over: once as it is, and once rated for a junction of 62 °C
     only and losing twice as much to conduction, so it runs and does not pass. Named first."""
     ws = page.Workspace(tmp_path / "ws")
-    weak = yaml.safe_load(IGBT.read_text())
+    weak = yaml.safe_load(IGBT.read_text(encoding="utf-8"))
     weak["part_number"] = "WEAK-600V-30A"
     weak["ratings"]["tj_max"] = 62
     for curve in weak["switch"]["conduction"]["curves"]:
         curve["value"] = [2 * v for v in curve["value"]]
-    (tmp_path / "weak.yaml").write_text(yaml.safe_dump(weak))
+    (tmp_path / "weak.yaml").write_text(yaml.safe_dump(weak), encoding="utf-8")
     setup = design.starting_setup("example", ws)
     setup = {**setup, "devices": [design.bring_device("weak.yaml", tmp_path, ws), "example", "example-mosfet"]}
     wound = setup.pop("motor")
@@ -453,7 +454,7 @@ def test_a_folder_or_a_locked_file_where_a_device_is_expected_is_no_fault(tmp_pa
     (tmp_path / "ws" / "folder.device.yaml").mkdir()
     assert [d["id"] for d in ws.listing()] == ["example", "example-mosfet"]
     locked = tmp_path / "locked.yaml"
-    locked.write_text(MOSFET.read_text())
+    locked.write_text(MOSFET.read_text(encoding="utf-8"), encoding="utf-8")
     locked.chmod(0)
     if os.access(locked, os.R_OK):
         pytest.skip("this user reads any file")

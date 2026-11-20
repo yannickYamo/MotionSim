@@ -178,7 +178,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m venv "$RUNNER_TEMP/audit"
+      # The venv's own pip is whatever the runner's Python came with: brought up to date first, so
+      # the audit reads what MotionSim pulls in, not the age of the runner's tools.
       - run: |
+          "$RUNNER_TEMP/audit/bin/python" -m pip install --upgrade pip
           "$RUNNER_TEMP/audit/bin/pip" install ".[all]"
       - run: pip install pip-audit
       # The package itself is skipped (it is the thing being built); everything it pulls in is checked.

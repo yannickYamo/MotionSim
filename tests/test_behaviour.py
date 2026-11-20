@@ -207,10 +207,10 @@ def workspace(tmp_path):
 def design_file(tmp_path, **changes) -> Path:
     file = tmp_path / "design.yaml"
     assert cli.main(["design", "init", "--device", "example-mosfet", "-o", str(file)]) == 0
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     for key, value in changes.items():
         setup[key] = {**setup.get(key, {}), **value} if isinstance(value, dict) else value
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     return file
 
 
@@ -269,9 +269,9 @@ def test_a_design_that_cannot_be_worked_with_is_refused_not_a_fault(tmp_path, ca
 
 def test_a_motor_with_no_kind_named_is_a_permanent_magnet_one(tmp_path, capsys) -> None:
     file = design_file(tmp_path)
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     assert setup["motor"].pop("type") == "pmsm"
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     code, out = run_design(file, capsys)
     assert code == 0 and out["outcome"].startswith("passes")
 
@@ -375,7 +375,7 @@ def test_no_scheme_worked_out_is_not_a_motor_that_decides_its_own() -> None:
     ],
 )
 def test_a_device_file_with_a_figure_that_is_not_one_is_refused_by_name(workspace, change, said) -> None:
-    data = yaml.safe_load(EXAMPLE_MOSFET.read_text())
+    data = yaml.safe_load(EXAMPLE_MOSFET.read_text(encoding="utf-8"))
     change(data)
     with pytest.raises(page.Refused, match=said):
         page.add_device("bad.yaml", yaml.dump(data), workspace)
@@ -393,7 +393,7 @@ def test_a_few_lines_that_stand_for_millions_of_figures_are_refused_at_once(work
 
 
 def test_a_device_name_no_file_could_have_is_cut_to_one_that_can(workspace) -> None:
-    out = page.add_device("n" * 5000 + ".yaml", EXAMPLE_MOSFET.read_text(), workspace)
+    out = page.add_device("n" * 5000 + ".yaml", EXAMPLE_MOSFET.read_text(encoding="utf-8"), workspace)
     assert len(out["device"]["id"]) <= 80
 
 
@@ -461,7 +461,7 @@ def test_a_supply_the_highest_class_covers_is_said_to_fit() -> None:
 
 
 def test_two_parts_under_names_that_read_alike_are_two_devices_and_a_file_dropped_again_is_one(workspace) -> None:
-    text = EXAMPLE_MOSFET.read_text()
+    text = EXAMPLE_MOSFET.read_text(encoding="utf-8")
     other = text.replace("part_number: ", "part_number: OTHER-", 1)
     assert "OTHER-" in other
     first = page.add_device("a b.yaml", text, workspace)["device"]["id"]
@@ -508,7 +508,7 @@ def test_each_position_gives_its_junctions_on_average_beside_their_peaks(workspa
 
 
 def test_the_page_s_report_follows_the_device_on_its_drawing_though_another_passes_first(workspace) -> None:
-    weak = yaml.safe_load(EXAMPLE.read_text())
+    weak = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
     weak["part_number"] = "WEAK-1"
     weak["ratings"]["tj_max"] = 62
     page.add_device("weak.yaml", yaml.dump(weak), workspace)
@@ -526,7 +526,7 @@ def test_the_page_s_report_follows_the_device_on_its_drawing_though_another_pass
 
 
 def test_a_copy_carrying_measurements_is_named_as_one(workspace) -> None:
-    data = json.loads((SOURCE.parent.parent / "examples" / "double_pulse_example.json").read_text())
+    data = json.loads((SOURCE.parent.parent / "examples" / "double_pulse_example.json").read_text(encoding="utf-8"))
     added = page.add_measurement("example", "bench.json", json.dumps(data), workspace)["device"]
     plain = next(d for d in page.setup(workspace)["devices"] if d["id"] == "example")
     assert added["id"] == "example-measured" and added["name"] == plain["name"] + ", measured"
@@ -566,7 +566,7 @@ def between_estimate_and_top(workspace, name: str = "open") -> tuple[str, float]
     # Just above the estimate running and held still, and under the top of the range.
     rating = max(estimate, found["stall_tj"]) + 0.3
     assert rating < top
-    data = yaml.safe_load(EXAMPLE.read_text())
+    data = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
     data["part_number"] = "OPEN-1"
     data["ratings"]["tj_max"] = rating
     page.add_device(f"{name}.yaml", yaml.dump(data), workspace)
@@ -594,11 +594,11 @@ def test_a_design_the_data_cannot_decide_says_so_and_exits_with_its_own_status(t
     name, _ = between_estimate_and_top(workspace)
     file = tmp_path / "design.yaml"
     assert cli.main(["design", "init", "--device", "example", "-o", str(file)]) == 0
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     setup["devices"] = [str(workspace.paths()[name])]
     setup["conditions"] = {"v_dc": 400, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "t_sink": 60}
     setup["motor"] = {"type": "pmsm", **page.setup(workspace)["motors"]["pmsm"]["values"]}
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     capsys.readouterr()
     code = cli.main(["design", "run", str(file), "--json", "--skip", "drive", "--skip", "build", "--skip", "motion"])
     out = json.loads(capsys.readouterr().out)
@@ -632,7 +632,7 @@ def test_a_trajectory_takes_how_the_package_is_mounted(tmp_path, capsys) -> None
     """The case stands over the heatsink by the layer's resistance times all the package loses."""
     assert cli.main(["template", "trajectory"]) == 0
     trace = tmp_path / "trace.csv"
-    trace.write_text(capsys.readouterr().out)
+    trace.write_text(capsys.readouterr().out, encoding="utf-8")
     base = ["trajectory", "examples/synthetic_igbt_600v_30a.yaml", str(trace), "--vdc", "300", "--fsw", "8000"]
 
     def case_and_loss(*more: str) -> tuple[float, float]:

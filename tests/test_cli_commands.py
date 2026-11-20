@@ -111,7 +111,7 @@ def test_a_map_is_the_motor_command_at_each_point_of_the_grid(capsys, tmp_path) 
     assert status == 0 and f"full map written to {table}" in out
     for title in ("Peak junction temperature, °C", "Inverter loss, W", "Shaft power over DC power, %"):
         assert title in out
-    rows = list(csv.DictReader(table.read_text().splitlines()))
+    rows = list(csv.DictReader(table.read_text(encoding="utf-8").splitlines()))
     assert [(float(r["rpm"]), float(r["torque_nm"])) for r in rows] == [
         (500.0, 0.5), (1000.0, 0.5), (1500.0, 0.5), (500.0, 1.5), (1000.0, 1.5), (1500.0, 1.5),
     ]  # fmt: skip
@@ -146,7 +146,7 @@ def test_measure_puts_the_measured_energies_into_the_device(capsys, tmp_path) ->
 def test_a_measurement_that_is_not_one_is_refused(capsys, tmp_path) -> None:
     for name, text in (("not.json", "{not json"), ("empty.json", "{}"), ("list.json", "[1]")):
         file = tmp_path / name
-        file.write_text(text)
+        file.write_text(text, encoding="utf-8")
         assert cli.main(["measure", IGBT, str(file), "-o", str(tmp_path / "out.yaml")]) == 2
         err = capsys.readouterr().err
         assert err.startswith("cannot measure: ") and "Traceback" not in err
@@ -155,12 +155,12 @@ def test_a_measurement_that_is_not_one_is_refused(capsys, tmp_path) -> None:
 
 def test_compare_ranks_by_loss_and_sweeps_the_frequency(capsys, tmp_path) -> None:
     # The same part with twice the on-state voltage loses more: it is ranked second.
-    data = yaml.safe_load(Path(IGBT).read_text())
+    data = yaml.safe_load(Path(IGBT).read_text(encoding="utf-8"))
     data["part_number"] = "LOSSY-600V-30A"
     for curve in data["switch"]["conduction"]["curves"]:
         curve["value"] = [2 * v for v in curve["value"]]
     lossy = tmp_path / "lossy.yaml"
-    lossy.write_text(yaml.safe_dump(data))
+    lossy.write_text(yaml.safe_dump(data), encoding="utf-8")
     status, out = run(capsys, "compare", str(lossy), IGBT, *POINT, "--irms", "10", "--sweep-fsw", "2000:20000")
     lines = out.splitlines()
     assert status == 0 and lines[0].split() == [
@@ -242,7 +242,7 @@ def test_cycle_prints_the_motion_and_writes_every_instant(capsys, tmp_path) -> N
     ]
     # The profile's own stretches: 0.3 + 0.45 + 0.3 + 2.0 s, twelve instants to each.
     assert figure(out, "duration") == pytest.approx(3.05)
-    rows = list(csv.DictReader(table.read_text().splitlines()))
+    rows = list(csv.DictReader(table.read_text(encoding="utf-8").splitlines()))
     assert len(rows) == 4 * 12
     assert list(rows[0]) == [
         "time_s", "motor_rpm", "motor_torque_nm", "p_stage_w", "p_dc_w", "tj_c", "tj_if_held_forever_c", "t_sink_c", "problem",
@@ -278,7 +278,7 @@ def test_trajectory_checks_the_most_current_any_leg_carries(capsys, tmp_path) ->
     # One leg, 2 A for most of the time and 25 A for five samples in forty: a mean of 4.9 A.
     trace = tmp_path / "burst.csv"
     rows = ["time_s,i_a,d_a"] + [f"{k * 1e-3:.3f},{25 if 18 <= k <= 22 else 2},0.5" for k in range(40)]
-    trace.write_text("\n".join(rows) + "\n")
+    trace.write_text("\n".join(rows) + "\n", encoding="utf-8")
     status, out = run(
         capsys, "trajectory", IGBT, str(trace), "--vdc", "300", "--fsw", "8000", "--tsink", "60", "--json"
     )

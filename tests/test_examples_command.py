@@ -16,12 +16,12 @@ GATE = ["--vdrive", "10", "--rgon", "5", "--rgoff", "5"]
 
 
 def test_the_examples_are_listed_with_their_paths(capsys) -> None:
-    """An editable install has no examples inside the package: they are the clone's."""
+    """Listed from wherever this install keeps them: the clone's folder in place, the package's own from a wheel."""
     assert cli.main(["examples"]) == cli.PASSED
     out = capsys.readouterr().out
     files = sorted(p.name for p in REPO_EXAMPLES.iterdir() if p.is_file())
     assert files and all(name in out for name in files)
-    assert str(REPO_EXAMPLES.resolve()) in out
+    assert str(shipped.folder().resolve()) in out
     assert cli.main(["examples", "--json"]) == cli.PASSED
     listed = json.loads(capsys.readouterr().out)
     assert sorted(x["name"] for x in listed["files"]) == files

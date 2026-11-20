@@ -30,8 +30,8 @@ def test_a_group_counts_its_moved_figures_words_and_keys(capsys, tmp_path) -> No
     assert d["added"] == ["/came"] and d["removed"] == ["/gone"]
 
     a, b = tmp_path / "a.json", tmp_path / "b.json"
-    a.write_text(json.dumps(old))
-    b.write_text(json.dumps(new))
+    a.write_text(json.dumps(old), encoding="utf-8")
+    b.write_text(json.dumps(new), encoding="utf-8")
     assert _tool().main([str(a), str(b)]) == 0
     row = capsys.readouterr().out.splitlines()[1].split()
     # group, shared, moved, median of 1/11 and 1/2, largest, words, added, removed

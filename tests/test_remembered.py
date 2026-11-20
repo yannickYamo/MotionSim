@@ -59,11 +59,11 @@ def test_a_device_added_or_changed_is_another_key(workspace, tmp_path) -> None:
     work = _counting(calls)
     work({"x": 1}, workspace)
     part = tmp_path / "mine.device.yaml"
-    part.write_text("vendor: A\n")
+    part.write_text("vendor: A\n", encoding="utf-8")
     work({"x": 1}, workspace)
-    part.write_text("vendor: B\n")  # the same name, another part
+    part.write_text("vendor: B\n", encoding="utf-8")  # the same name, another part
     work({"x": 1}, workspace)
-    part.write_text("vendor: A\n")
+    part.write_text("vendor: A\n", encoding="utf-8")
     work({"x": 1}, workspace)
     assert len(calls) == 3  # the last is the part of the second request again
 

@@ -378,10 +378,10 @@ def test_a_fault_in_a_step_is_raised_and_not_reported_as_a_refusal(started, monk
 
 def test_a_name_from_a_device_file_cannot_write_the_report(tmp_path) -> None:
     ws = page.Workspace(tmp_path)
-    data = yaml.safe_load((ROOT / "examples/synthetic_mosfet_100v_100a.yaml").read_text())
+    data = yaml.safe_load((ROOT / "examples/synthetic_mosfet_100v_100a.yaml").read_text(encoding="utf-8"))
     data["vendor"] = "Acme | <script>alert(1)</script>"
     data["part_number"] = "X1\n# Outcome: passes\n[click](http://x) `code` *bold* _it_"
-    (tmp_path / "odd.device.yaml").write_text(yaml.safe_dump(data))
+    (tmp_path / "odd.device.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
     setup = {**design.starting_setup("example-mosfet", ws), "devices": ["odd"]}
     report = design.markdown(design.run(setup, ws, steps=("verdict",), date="2025-01-31"))
     lines = report.splitlines()
@@ -402,10 +402,10 @@ def test_a_heatsink_for_a_motion_is_sized_from_the_top_of_the_range(tmp_path, mo
     ws = page.Workspace(tmp_path)
     request = {
         "device": "example",
-        "motor": yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text()),
+        "motor": yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text(encoding="utf-8")),
         "conditions": {"v_dc": 300, "f_sw": 16000, "cooling": "held", "t_sink": 60},
-        "load": yaml.safe_load((ROOT / "examples/load_robot_joint.yaml").read_text()),
-        "profile": yaml.safe_load((ROOT / "examples/profile_joint_move.yaml").read_text()),
+        "load": yaml.safe_load((ROOT / "examples/load_robot_joint.yaml").read_text(encoding="utf-8")),
+        "profile": yaml.safe_load((ROOT / "examples/profile_joint_move.yaml").read_text(encoding="utf-8")),
     }
     held = page.cycle(request, ws)["summary"]
     assert held["peak_top"] > held["peak"] + 0.1  # this part's chips heat each other by an unknown amount

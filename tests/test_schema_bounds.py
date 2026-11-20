@@ -15,8 +15,8 @@ from motionsim.device.schema import Device
 from motionsim.errors import Refusal
 
 ROOT = Path(__file__).parent.parent
-IGBT = yaml.safe_load((ROOT / "examples/synthetic_igbt_600v_30a.yaml").read_text())
-MOSFET = yaml.safe_load((ROOT / "examples/synthetic_mosfet_100v_100a.yaml").read_text())
+IGBT = yaml.safe_load((ROOT / "examples/synthetic_igbt_600v_30a.yaml").read_text(encoding="utf-8"))
+MOSFET = yaml.safe_load((ROOT / "examples/synthetic_mosfet_100v_100a.yaml").read_text(encoding="utf-8"))
 
 
 def put(data: dict, path: tuple, value) -> dict:
@@ -66,7 +66,7 @@ def test_a_figure_no_device_has_is_refused(base, path, value) -> None:
 
 def test_a_file_of_another_schema_version_is_refused_by_its_version(tmp_path) -> None:
     file = tmp_path / "later.device.yaml"
-    file.write_text(yaml.safe_dump({**IGBT, "schema_version": 2}))
+    file.write_text(yaml.safe_dump({**IGBT, "schema_version": 2}), encoding="utf-8")
     with pytest.raises(Refusal, match="schema version 2") as caught:
         load_device(file)
     assert "version 1" in caught.value.reason
@@ -74,6 +74,6 @@ def test_a_file_of_another_schema_version_is_refused_by_its_version(tmp_path) ->
 
 def test_a_refused_device_file_says_which_figure(tmp_path) -> None:
     file = tmp_path / "wrong.device.yaml"
-    file.write_text(yaml.safe_dump(put(IGBT, ("ratings", "i_nominal"), 1e-300)))
+    file.write_text(yaml.safe_dump(put(IGBT, ("ratings", "i_nominal"), 1e-300)), encoding="utf-8")
     with pytest.raises(Refusal, match=r"the current rating cannot be below 0\.001"):
         load_device(file)

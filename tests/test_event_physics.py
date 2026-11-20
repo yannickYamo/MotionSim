@@ -10,6 +10,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from scipy.integrate import trapezoid
 
 from motionsim.event.circuit import Capacitance, Circuit, Gate, Loop, Reverse, Switch
 from motionsim.event.measure import crossing, turn_off, turn_on
@@ -69,10 +70,10 @@ def test_the_energy_the_supply_gives_is_accounted_for() -> None:
     c = circuit()
     w = edge_wave(c, "off", c.gate.rg)
     v_r = V_DC - w.v_ds  # the loop's inductance holds no voltage once still; along the way, it does
-    supplied = np.trapezoid(V_DC * w.i, w.t)
-    taken = np.trapezoid(w.v_ds * w.i, w.t)
+    supplied = trapezoid(V_DC * w.i, w.t)
+    taken = trapezoid(w.v_ds * w.i, w.t)
     inductance = np.gradient(w.i, w.t) * 20e-9
-    reverse = np.trapezoid((v_r - inductance) * w.i, w.t)
+    reverse = trapezoid((v_r - inductance) * w.i, w.t)
     stored = 0.5 * 20e-9 * (w.i[-1] ** 2 - w.i[0] ** 2)
     assert taken + reverse + stored == pytest.approx(supplied, rel=0.01, abs=1e-6)
 

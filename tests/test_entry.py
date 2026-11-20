@@ -95,7 +95,7 @@ def test_the_command_line_builds_a_device_from_the_template(tmp_path, capsys) ->
     assert cli.main(["template", "device", "-o", str(figures)]) == 0
     assert cli.main(["build", str(figures), "-o", str(device)]) == 0
     assert load_device(device).ratings.i_nominal == 100
-    figures.write_text(figures.read_text().replace("rds_on: 4.0", "rds_on: 4000"))
+    figures.write_text(figures.read_text(encoding="utf-8").replace("rds_on: 4.0", "rds_on: 4000"), encoding="utf-8")
     assert cli.main(["build", str(figures), "-o", str(device)]) == 2
     assert "milliohm" in capsys.readouterr().err
 
@@ -105,7 +105,9 @@ def test_both_made_up_parts_are_shipped_and_the_same_as_the_examples() -> None:
         ("example_mosfet.yaml", "synthetic_mosfet_100v_100a.yaml"),
         ("example_device.yaml", "synthetic_igbt_600v_30a.yaml"),
     ):
-        assert (ROOT / "src/motionsim" / packed).read_text() == (ROOT / "examples" / example).read_text()
+        assert (ROOT / "src/motionsim" / packed).read_text(encoding="utf-8") == (ROOT / "examples" / example).read_text(
+            encoding="utf-8"
+        )
     assert (
         load_device(ROOT / "examples/synthetic_mosfet_100v_100a.yaml").switch.conduction.source.kind.value
         == "synthetic"

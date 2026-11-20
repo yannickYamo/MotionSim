@@ -35,13 +35,15 @@ PARTS = {
 
 def _part(folder: Path, key: str, v: float, i: float, technology: str, topology: str) -> None:
     igbt = "IGBT" in technology
-    text = yaml.safe_load((ROOT / ("example_device.yaml" if igbt else "example_mosfet.yaml")).read_text())
+    text = yaml.safe_load(
+        (ROOT / ("example_device.yaml" if igbt else "example_mosfet.yaml")).read_text(encoding="utf-8")
+    )
     text["technology"] = technology
     text["ratings"] = {**text["ratings"], "v_max": v, "i_nominal": i}
     text["package"] = {**text["package"], "topology": topology}
     if topology != "discrete":
         text["package"].pop("outline", None)
-    (folder / f"{key}.device.yaml").write_text(yaml.safe_dump(text))
+    (folder / f"{key}.device.yaml").write_text(yaml.safe_dump(text), encoding="utf-8")
 
 
 @pytest.fixture(scope="module")

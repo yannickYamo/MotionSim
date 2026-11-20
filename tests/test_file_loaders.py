@@ -96,9 +96,9 @@ def test_a_design_written_as_json_reads_its_numbers_as_json_writes_them(tmp_path
     """A program writes 0.00002 as 2e-05 in JSON. Read as YAML 1.1 that is the text '2e-05',
     and a design file written by a program was refused; JSON is read as JSON."""
     file = tmp_path / "design.json"
-    file.write_text('{"load": {"motor_inertia": 2e-05, "inertia": 1E3, "name": "1e5"}}')
+    file.write_text('{"load": {"motor_inertia": 2e-05, "inertia": 1E3, "name": "1e5"}}', encoding="utf-8")
     assert read_record(file) == {"load": {"motor_inertia": 2e-05, "inertia": 1000.0, "name": "1e5"}}
     # YAML keeps its own reading, where a bare 1e5 is a word such as a part number.
     yaml_file = tmp_path / "part.yaml"
-    yaml_file.write_text("part_number: 1e5\nv_max: 2.0e-05\n")
+    yaml_file.write_text("part_number: 1e5\nv_max: 2.0e-05\n", encoding="utf-8")
     assert read_record(yaml_file) == {"part_number": "1e5", "v_max": 2e-05}

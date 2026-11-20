@@ -140,7 +140,7 @@ def test_catalogue_values_give_the_same_motor() -> None:
 @pytest.mark.parametrize("kind", sorted(TEMPLATES))
 def test_every_motor_template_loads_and_runs(kind: str, tmp_path) -> None:
     path = tmp_path / "motor.yaml"
-    path.write_text(TEMPLATES[kind])
+    path.write_text(TEMPLATES[kind], encoding="utf-8")
     motor = load_machine(path)
     assert motor.type == kind
     v_dc = 560.0 if kind == "induction" else 48.0

@@ -142,7 +142,7 @@ def test_module_against_the_vendor_simulator() -> None:
     results = FOLDER.parent / "private" / "simulator_modules.yaml"
     if not results.exists():
         pytest.skip("no simulator reference file present")
-    data = yaml.safe_load(results.read_text())
+    data = yaml.safe_load(results.read_text(encoding="utf-8"))
     reference = data["parts"][data["aliases"]["module_c"]]
     for row in reference["points"]:
         f_out, f_sw, pf, total, t_case = row[0], row[1], row[2], row[5], row[6]

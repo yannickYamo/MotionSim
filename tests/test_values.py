@@ -479,14 +479,14 @@ def test_cooling_flags_that_do_not_add_up_are_refused(flags, capsys) -> None:
 
 def test_a_figures_file_is_built_or_refused_in_words(tmp_path, capsys) -> None:
     good = tmp_path / "part.yaml"
-    good.write_text(TEMPLATE)
+    good.write_text(TEMPLATE, encoding="utf-8")
     for name, text in (
         ("no-rds.yaml", TEMPLATE.replace("rds_on: 4.0", "# rds_on")),
         ("list.yaml", "- 1\n- 2\n"),
         ("empty.yaml", ""),
         ("broken.yaml", "a: [1, 2\n"),
     ):
-        (tmp_path / name).write_text(text)
+        (tmp_path / name).write_text(text, encoding="utf-8")
         assert cli.main(["build", str(tmp_path / name), "-o", str(tmp_path / "out.device.yaml")]) == 2
     assert cli.main(["build", str(tmp_path / "missing.yaml"), "-o", str(tmp_path / "out.device.yaml")]) == 2
     assert "on-resistance at 25 °C is needed" in capsys.readouterr().err
@@ -495,7 +495,7 @@ def test_a_figures_file_is_built_or_refused_in_words(tmp_path, capsys) -> None:
 def test_the_page_and_the_command_line_agree_with_a_dead_time_left_open(tmp_path, capsys) -> None:
     ws = page.Workspace(tmp_path)
     key = page.add_typed(FIGURES, ws)["device"]["id"]
-    values = yaml.safe_load((ROOT / "examples/motor_robot_joint_pmsm.yaml").read_text())
+    values = yaml.safe_load((ROOT / "examples/motor_robot_joint_pmsm.yaml").read_text(encoding="utf-8"))
     request = {
         "motor": {**values},
         "devices": [key],
@@ -738,7 +738,7 @@ def test_a_dead_time_that_takes_half_the_period_is_refused_not_hidden() -> None:
     from motionsim.motor.machines import ADAPTER
     from motionsim.motor.stage import Unreachable
 
-    appliance = yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text())
+    appliance = yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text(encoding="utf-8"))
     motor = ADAPTER.validate_python({"type": "pmsm", **appliance})
     device = load_device(MODULE)
     slow = OperatingPoint(

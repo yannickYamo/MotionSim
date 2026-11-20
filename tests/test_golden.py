@@ -34,7 +34,10 @@ def figures(tmp_path) -> dict:
     point = OperatingPoint(v_dc=300, i_rms=10, modulation_index=0.9, power_factor=0.85, f_sw=8000, t_sink=60)
     out["solve"] = page._result(solve(igbt, point), igbt.ratings.tj_max)
     # Three devices on one motor: the comparison, its margins and its sentences.
-    appliance = {"type": "pmsm", **yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text())}
+    appliance = {
+        "type": "pmsm",
+        **yaml.safe_load((ROOT / "examples/motor_appliance_pmsm.yaml").read_text(encoding="utf-8")),
+    }
     drive = {
         "motor": appliance,
         "conditions": {"v_dc": 300, "rpm": 3000, "torque": 6, "f_sw": 16000, "t_sink": 70, "t_dead": 5e-7},
@@ -52,10 +55,14 @@ def figures(tmp_path) -> dict:
     }
     # A load and its motion, on two kinds of motor.
     load = {
-        k: v for k, v in yaml.safe_load((ROOT / "examples/load_robot_joint.yaml").read_text()).items() if k != "name"
+        k: v
+        for k, v in yaml.safe_load((ROOT / "examples/load_robot_joint.yaml").read_text(encoding="utf-8")).items()
+        if k != "name"
     }
     profile = {
-        k: v for k, v in yaml.safe_load((ROOT / "examples/profile_joint_move.yaml").read_text()).items() if k != "name"
+        k: v
+        for k, v in yaml.safe_load((ROOT / "examples/profile_joint_move.yaml").read_text(encoding="utf-8")).items()
+        if k != "name"
     }
     wound = page.suggest({"device": "sic"}, ws)["motors"]
     out["motion"] = {}
@@ -105,9 +112,9 @@ def test_no_figure_has_moved(tmp_path, request) -> None:
     now = figures(tmp_path)
     if request.config.getoption("--update-golden"):
         GOLDEN.parent.mkdir(exist_ok=True)
-        GOLDEN.write_text(json.dumps(now, indent=1, sort_keys=True) + "\n")
+        GOLDEN.write_text(json.dumps(now, indent=1, sort_keys=True) + "\n", encoding="utf-8")
         pytest.skip("golden figures rewritten")
-    moved = differences(now, json.loads(GOLDEN.read_text()))
+    moved = differences(now, json.loads(GOLDEN.read_text(encoding="utf-8")))
     assert not moved, f"{len(moved)} figures moved, the first of them:\n" + "\n".join(moved[:12])
 
 
@@ -126,7 +133,7 @@ def test_the_readme_shows_what_its_own_command_prints(capsys, monkeypatch, tmp_p
 
     from motionsim import cli
 
-    blocks = (ROOT / "README.md").read_text().split("```")[1::2]
+    blocks = (ROOT / "README.md").read_text(encoding="utf-8").split("```")[1::2]
     at = next(i for i, b in enumerate(blocks) if b.strip().startswith("motionsim simulate example "))
     # The README's command names the made-up part and no file: it runs from any folder.
     monkeypatch.chdir(tmp_path)

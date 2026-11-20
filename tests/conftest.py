@@ -110,8 +110,8 @@ switch:
 
 def sic_files(folder) -> None:
     """A SiC module, and the same one with a poor thermal path, as device files in a folder."""
-    (folder / "sic.device.yaml").write_text(SIC.format(name="SIC-650V-30A", r="[0.15, 0.4, 0.45]"))
-    (folder / "sic-hot.device.yaml").write_text(SIC.format(name="SIC-HOT", r="[0.6, 1.6, 1.8]"))
+    (folder / "sic.device.yaml").write_text(SIC.format(name="SIC-650V-30A", r="[0.15, 0.4, 0.45]"), encoding="utf-8")
+    (folder / "sic-hot.device.yaml").write_text(SIC.format(name="SIC-HOT", r="[0.6, 1.6, 1.8]"), encoding="utf-8")
 
 
 def pytest_addoption(parser) -> None:

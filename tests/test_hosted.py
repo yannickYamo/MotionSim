@@ -40,9 +40,9 @@ for route, body in (
     ("/api/report", start),
     ("/api/largest", {**start, "device": "example-mosfet"}),
     ("/api/loads", {"kind": "pmsm", "rpm": 2000, "torque": 1.6, "v_dc": 48}),
-    ("/api/device", {"name": "mine.device.yaml", "text": Path("src/motionsim/example_mosfet.yaml").read_text()}),
+    ("/api/device", {"name": "mine.device.yaml", "text": Path("src/motionsim/example_mosfet.yaml").read_text(encoding="utf-8")}),
     ("/api/measure", {"device": "example", "name": "pulse.json",
-                      "text": Path("examples/double_pulse_example.json").read_text()}),
+                      "text": Path("examples/double_pulse_example.json").read_text(encoding="utf-8")}),
     ("/api/typed", {"figures": {"technology": "Si MOSFET", "part_number": "X", "v_rated": 100, "i_rated": 100, "tj_max": 175, "rth_jc": 0.6,
                                 "rds_on": 4, "v_th": 3, "v_plateau": 4.6, "q_gs": 20, "q_gd": 14}}),
 ):

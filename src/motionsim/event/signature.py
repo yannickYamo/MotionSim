@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.integrate import trapezoid
 
 from motionsim.event.calibrate import Edge
 from motionsim.event.circuit import Circuit
@@ -58,7 +59,7 @@ def _energy(e: Edge, after: float) -> float:
     a, b = r.window if r.window else (w.t[0], w.t[-1])
     a = max(a, after)
     keep = (w.t >= a) & (w.t <= b)
-    return float(np.trapezoid(w.p[keep], w.t[keep])) if keep.sum() > 1 else 0.0
+    return float(trapezoid(w.p[keep], w.t[keep])) if keep.sum() > 1 else 0.0
 
 
 def _turn_on(on: Edge, c: Circuit) -> tuple[float, float, float, float, float]:
@@ -69,7 +70,7 @@ def _turn_on(on: Edge, c: Circuit) -> tuple[float, float, float, float, float]:
     back = np.nonzero(w.i[k:] < load)[0]
     lobe = slice(0, k + int(back[0]) + 1 if back.size else len(w.t))
     over = np.clip(w.i[lobe] - load, 0.0, None)
-    carried = float(np.trapezoid(over, w.t[lobe])) - c.reverse.c_r.charge(v_dc)
+    carried = float(trapezoid(over, w.t[lobe])) - c.reverse.c_r.charge(v_dc)
     t90 = crossing(w.t, w.v_ds, 0.9 * v_dc, False)
     t10 = crossing(w.t, w.v_ds, 0.1 * v_dc, False)
     g = c.gate

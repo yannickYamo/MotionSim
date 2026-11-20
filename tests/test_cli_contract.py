@@ -248,7 +248,7 @@ def test_the_same_part_twice_is_ranked_and_not_a_fault(capsys) -> None:
 @pytest.mark.parametrize("kind", ["device", "motor", "design"])
 def test_a_file_that_is_not_what_it_is_given_as_is_refused_in_a_line(capsys, tmp_path, kind, text, said) -> None:
     file = tmp_path / "wrong.yaml"
-    file.write_text(text)
+    file.write_text(text, encoding="utf-8")
     argv = {
         "device": ["simulate", str(file), *POINT, "--irms", "10", "--tsink", "60"],
         "motor": ["motor", MOSFET, "--motor", str(file), "--vdc", "48", "--fsw", "20000", "--rpm", "1", "--torque", "1", "--tsink", "60"],
@@ -277,7 +277,7 @@ def test_a_motion_of_too_many_stretches_is_refused(tmp_path, capsys) -> None:
 
     profile = tmp_path / "long.yaml"
     stretch = {"duration": 0.01, "speed_start": 10, "speed_end": 10}
-    profile.write_text(yaml.safe_dump({"segments": [stretch] * 501}))
+    profile.write_text(yaml.safe_dump({"segments": [stretch] * 501}), encoding="utf-8")
     argv = [*COMMANDS["cycle"][:6], "--profile", str(profile), "--vdc", "300", "--fsw", "16000", "--tsink", "60"]
     status, answer = told(capsys, *argv)
     assert status == 2 and answer["field"] == "profile" and "501 stretches" in answer["refused"]
@@ -288,7 +288,9 @@ def test_repeats_that_make_too_many_instants_are_refused(tmp_path, capsys) -> No
 
     profile = tmp_path / "long.yaml"
     stretch = {"duration": 0.01, "speed_start": 10, "speed_end": 10}
-    profile.write_text(yaml.safe_dump({"segments": [stretch] * 400}))  # 400 x 12 instants x 50 runs = 240,000
+    profile.write_text(
+        yaml.safe_dump({"segments": [stretch] * 400}), encoding="utf-8"
+    )  # 400 x 12 instants x 50 runs = 240,000
     argv = [*COMMANDS["cycle"][:6], "--profile", str(profile), "--vdc", "300", "--fsw", "16000", "--tsink", "60"]
     status, answer = told(capsys, *argv, "--repeat", "50")
     assert status == 2 and answer["field"] == "repeats" and "240000 instants" in answer["refused"]
@@ -298,9 +300,9 @@ def test_repeats_that_make_too_many_instants_are_refused(tmp_path, capsys) -> No
 def test_a_winding_with_next_to_no_inductance_or_resistance_is_refused(tmp_path, capsys, figure, value) -> None:
     import yaml
 
-    motor = {**yaml.safe_load(Path(PMSM).read_text()), figure: value}
+    motor = {**yaml.safe_load(Path(PMSM).read_text(encoding="utf-8")), figure: value}
     file = tmp_path / "motor.yaml"
-    file.write_text(yaml.safe_dump(motor))
+    file.write_text(yaml.safe_dump(motor), encoding="utf-8")
     argv = ["motor", MOSFET, "--motor", str(file), "--vdc", "48", "--fsw", "20000", "--rpm", "1000", "--torque", "1"]
     status, answer = told(capsys, *argv, "--tsink", "60")
     assert status == 2 and answer["field"] == figure

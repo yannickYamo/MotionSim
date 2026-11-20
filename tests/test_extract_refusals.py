@@ -60,7 +60,7 @@ def test_a_file_that_is_not_a_pdf_is_refused_in_words_and_nothing_is_asked(
     monkeypatch.setenv("MOTIONSIM_LLM_URL", url)
     monkeypatch.setenv("MOTIONSIM_LLM_MODEL", "stub")
     notes = tmp_path / "notes.txt"
-    notes.write_text("these are not the pages of a datasheet\n" * 50)
+    notes.write_text("these are not the pages of a datasheet\n" * 50, encoding="utf-8")
     assert main(["extract", str(notes), "-o", str(tmp_path / "out.yaml")]) == 2
     assert capsys.readouterr().err.strip() == "cannot read: that file is not a PDF"
     assert seen == [] and not (tmp_path / "out.yaml").exists()

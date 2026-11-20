@@ -22,10 +22,10 @@ POINT = dict(
 
 
 def _at_25_only(tmp_path: Path) -> Path:
-    data = yaml.safe_load(EXAMPLE.read_text())
+    data = yaml.safe_load(EXAMPLE.read_text(encoding="utf-8"))
     data["switch"]["conduction"]["curves"] = data["switch"]["conduction"]["curves"][:1]
     file = tmp_path / "hand.yaml"
-    file.write_text(yaml.safe_dump(data))
+    file.write_text(yaml.safe_dump(data), encoding="utf-8")
     return file
 
 

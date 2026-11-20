@@ -28,7 +28,7 @@ FAILED = 3
 
 def _trace(tmp_path: Path) -> str:
     trace = tmp_path / "trace.csv"
-    trace.write_text("time_s,i_a,d_a\n" + "".join(f"{k * 1e-3:.3f},10,0.5\n" for k in range(40)))
+    trace.write_text("time_s,i_a,d_a\n" + "".join(f"{k * 1e-3:.3f},10,0.5\n" for k in range(40)), encoding="utf-8")
     return str(trace)
 
 

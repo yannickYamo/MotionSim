@@ -100,6 +100,6 @@ def test_a_file_from_a_spreadsheet_is_read_and_a_broken_one_is_refused_in_words(
         (good.replace("0.001,2,0.5", "0.001,2"), "as many values"),
         (good.replace("time_s,i_a,d_a", "time_s,i_a,i_a"), "same name"),
     ):
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8")
         with pytest.raises(BadTrajectory, match=reason):
             load_trajectory(path)

@@ -150,13 +150,13 @@ def test_the_command_line_gives_the_same_event(tmp_path, capsys, monkeypatch) ->
         return capsys.readouterr().out
 
     run("design", "init", "--device", "example-mosfet", "-o", "d.yaml")
-    (tmp_path / "layout.yaml").write_text("l_loop_nh: 9\n")
+    (tmp_path / "layout.yaml").write_text("l_loop_nh: 9\n", encoding="utf-8")
     body = json.loads(run("event", "d.yaml", "--layout", "layout.yaml", "--json"))
     assert body["used"]["l_loop"] == pytest.approx(9e-9)
     told = run("event", "d.yaml", "--csv", "traces.csv", "--lcs", "1", "--voff", "-2")
     assert "Turn-off: energy" in told and "assumed: Loop inductance assumed 20 nH" in told
     assert "Common-source" not in told
-    assert (tmp_path / "traces.csv").read_text().startswith("edge,t_s,v_gs_v,v_ds_v,i_a,p_w\nturn_on,")
+    assert (tmp_path / "traces.csv").read_text(encoding="utf-8").startswith("edge,t_s,v_gs_v,v_ds_v,i_a,p_w\nturn_on,")
 
 
 def test_a_device_the_design_does_not_name_is_refused(tmp_path, capsys, monkeypatch) -> None:

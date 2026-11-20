@@ -20,10 +20,10 @@ ROOT = Path(__file__).parent.parent
 def started(tmp_path, device="example-mosfet", **changes) -> Path:
     file = tmp_path / "design.yaml"
     assert cli.main(["design", "init", "--device", device, "-o", str(file)]) == 0
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     for key, value in changes.items():
         setup[key] = {**setup[key], **value} if isinstance(value, dict) else value
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     return file
 
 
@@ -39,7 +39,7 @@ def test_a_design_started_for_a_part_runs_as_it_is_and_says_what_the_page_says(t
     assert set(out) >= {"fit", "stage", "verdict", "motion", "build", "drive", "setup", "devices"}
     # The same figures as the page's own steps, asked one by one.
     ws = page.Workspace(tmp_path / "ws")
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     request = {"motor": setup["motor"], "conditions": setup["conditions"], "supply": "one-way"}
     on_page = page.proposal({**request, "devices": ["example-mosfet"]}, ws)["candidates"][0]
     assert out["verdict"]["candidates"][0]["result"]["loss"] == pytest.approx(on_page["result"]["loss"])
@@ -58,7 +58,7 @@ def test_a_design_started_for_a_part_runs_as_it_is_and_says_what_the_page_says(t
 def test_the_report_says_what_was_tested_the_verdict_and_what_it_rests_on(tmp_path, capsys) -> None:
     file, report = started(tmp_path), tmp_path / "report.md"
     assert cli.main(["design", "run", str(file), "--md", str(report)]) == 0
-    text = report.read_text()
+    text = report.read_text(encoding="utf-8")
     for heading in (
         "## What was tested",
         "## Does the motor fit the part",
@@ -87,7 +87,7 @@ def test_what_cannot_be_run_is_said_in_place_not_thrown(tmp_path, capsys) -> Non
     # No such file, and a file that is not a design.
     assert cli.main(["design", "run", str(tmp_path / "missing.yaml"), "--json"]) == 2
     assert json.loads(capsys.readouterr().out)["outcome"] == "refused"
-    (tmp_path / "list.yaml").write_text("- 1\n")
+    (tmp_path / "list.yaml").write_text("- 1\n", encoding="utf-8")
     assert cli.main(["design", "run", str(tmp_path / "list.yaml")]) == 2
 
 
@@ -153,11 +153,14 @@ def test_a_motor_load_and_profile_named_as_files_beside_the_design_are_read_from
         shutil.copy(ROOT / "examples" / name, folder / name)
     conditions = {"v_dc": 48, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "cooling": "held", "t_sink": 60}
     by_name = {"devices": ["example-mosfet"], "conditions": conditions, **parts}
-    written_in = {**by_name, **{key: yaml.safe_load((folder / name).read_text()) for key, name in parts.items()}}
+    written_in = {
+        **by_name,
+        **{key: yaml.safe_load((folder / name).read_text(encoding="utf-8")) for key, name in parts.items()},
+    }
     ws = page.Workspace(tmp_path / "ws")
     read = []
     for file, setup in (("named.yaml", by_name), ("written.yaml", written_in)):
-        (folder / file).write_text(yaml.safe_dump(setup))
+        (folder / file).write_text(yaml.safe_dump(setup), encoding="utf-8")
         read.append(design.load_setup(folder / file, ws))
     assert read[0] == read[1]
     assert read[0]["motor"]["rs"] == 0.045 and read[0]["load"]["gear_ratio"] == 50
@@ -175,7 +178,7 @@ def test_a_design_names_up_to_five_devices(tmp_path) -> None:
 
 
 def test_devices_come_by_name_as_files_or_as_typed_figures_and_are_compared(tmp_path, capsys) -> None:
-    (tmp_path / "typed.yaml").write_text(TEMPLATE)
+    (tmp_path / "typed.yaml").write_text(TEMPLATE, encoding="utf-8")
     file = started(
         tmp_path, devices=["example-mosfet", "typed.yaml", str(ROOT / "examples/synthetic_mosfet_100v_100a.yaml")]
     )
@@ -187,7 +190,7 @@ def test_devices_come_by_name_as_files_or_as_typed_figures_and_are_compared(tmp_
     names = [c["name"] for c in out["verdict"]["candidates"]]
     assert len(names) == 3 and "Made-up Semiconductor MU100N04" in names and out["verdict"]["explain"]
     # A figure that cannot be right is refused with its name.
-    (tmp_path / "typed.yaml").write_text(TEMPLATE.replace("rds_on: 4.0", "rds_on: 4000"))
+    (tmp_path / "typed.yaml").write_text(TEMPLATE.replace("rds_on: 4.0", "rds_on: 4000"), encoding="utf-8")
     assert cli.main(["design", "run", str(file), "--json"]) == 2
     assert json.loads(capsys.readouterr().out)["field"] == "rds_on"
 
@@ -207,19 +210,19 @@ def test_the_guide_for_agents_names_commands_that_exist(capsys) -> None:
     ws_keys = {"outcome", "fit", "stage", "verdict", "followed", "motion", "build", "drive"}
     for key in ws_keys:
         assert f"`{key}" in guide, key
-    assert (ROOT / "AGENTS.md").read_text().count("motionsim agent") >= 1
+    assert (ROOT / "AGENTS.md").read_text(encoding="utf-8").count("motionsim agent") >= 1
 
 
 def test_several_motors_on_one_inverter_and_every_device_through_the_motion(tmp_path, capsys) -> None:
     import csv
 
     file = started(tmp_path, devices=["example-mosfet", str(ROOT / "examples/synthetic_mosfet_100v_100a.yaml")])
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     lighter = {**setup["motor"], "name": "half the current limit", "i_max": setup["motor"]["i_max"] / 2}
     cannot = {**setup["motor"], "name": "wound for mains", "kv": 2}
     setup["motors"] = [{**setup["motor"], "name": "as it is"}, lighter, cannot]
     del setup["motor"]
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     table = tmp_path / "table.csv"
     capsys.readouterr()
     assert (
@@ -237,7 +240,7 @@ def test_several_motors_on_one_inverter_and_every_device_through_the_motion(tmp_
     assert second["i_peak"] == pytest.approx(first["i_peak"]) and second["level"] in ("ok", "caution")
     assert "refused" in third and "wound for" in third["fix"] + third["refused"]
     # The table holds a row a device and a row a motor, with the figures of the report.
-    listed = list(csv.DictReader(table.read_text().splitlines()))
+    listed = list(csv.DictReader(table.read_text(encoding="utf-8").splitlines()))
     assert [r["kind"] for r in listed] == ["device", "device", "motor", "motor", "motor"]
     assert float(listed[0]["loss_w"]) == pytest.approx(out["verdict"]["candidates"][0]["result"]["loss"])
     assert (
@@ -261,7 +264,7 @@ def test_the_same_inputs_carry_the_same_marks_and_a_changed_one_does_not(tmp_pat
 
 def test_a_design_with_a_slip_in_it_is_refused_in_words_never_a_fault(tmp_path, capsys) -> None:
     """A slip is said in words, at its figure: none is passed over, and none ends in a traceback."""
-    good = yaml.safe_load(started(tmp_path).read_text())
+    good = yaml.safe_load(started(tmp_path).read_text(encoding="utf-8"))
 
     def status(change, name="d.yaml") -> tuple[int, dict]:
         file = tmp_path / name
@@ -272,7 +275,7 @@ def test_a_design_with_a_slip_in_it_is_refused_in_words_never_a_fault(tmp_path, 
                 for k, v in change.items()
             },
         }
-        file.write_text(yaml.safe_dump(setup))
+        file.write_text(yaml.safe_dump(setup), encoding="utf-8")
         capsys.readouterr()
         code = cli.main(["design", "run", str(file), "--json", "--skip", "drive"])
         return code, json.loads(capsys.readouterr().out)
@@ -344,7 +347,8 @@ def test_the_winding_temperature_counts_wherever_it_is_given_and_two_files_of_on
     for folder, rds in (("a", 4.0), ("b", 8.0)):
         (tmp_path / folder).mkdir()
         (tmp_path / folder / "part.yaml").write_text(
-            TEMPLATE.replace("rds_on: 4.0", f"rds_on: {rds}").replace("rds_on_hot: 7.2", f"rds_on_hot: {rds * 1.8}")
+            TEMPLATE.replace("rds_on: 4.0", f"rds_on: {rds}").replace("rds_on_hot: 7.2", f"rds_on_hot: {rds * 1.8}"),
+            encoding="utf-8",
         )
     file = started(tmp_path, devices=["a/part.yaml", "b/part.yaml"])
     capsys.readouterr()
@@ -416,9 +420,9 @@ def test_the_page_can_ask_for_a_report_with_everything_it_sends(tmp_path) -> Non
 
 
 def test_a_start_that_is_not_a_record_is_refused_in_words(tmp_path, capsys) -> None:
-    setup = yaml.safe_load(started(tmp_path).read_text())
+    setup = yaml.safe_load(started(tmp_path).read_text(encoding="utf-8"))
     file = tmp_path / "start.yaml"
-    file.write_text(yaml.safe_dump({**setup, "start": "open_loop"}))
+    file.write_text(yaml.safe_dump({**setup, "start": "open_loop"}), encoding="utf-8")
     assert cli.main(["design", "run", str(file), "--json"]) in (0, 2, 3, 4)
     said = capsys.readouterr()
     assert "start: {method: open_loop}" in said.out + said.err and "Traceback" not in said.out + said.err

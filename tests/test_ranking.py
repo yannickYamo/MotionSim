@@ -204,7 +204,7 @@ def test_the_command_line_takes_parallel_devices_and_a_motor_temperature(capsys)
 
 def test_one_version_everywhere(capsys) -> None:
     # The version is written once, in the package, and the build reads it from there.
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     assert "version" not in project["project"] and project["project"]["dynamic"] == ["version"]
     assert project["tool"]["hatch"]["version"]["path"] == "src/motionsim/__init__.py"
     declared = __version__

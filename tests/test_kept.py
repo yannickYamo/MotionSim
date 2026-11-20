@@ -41,11 +41,11 @@ def test_a_kept_file_that_is_not_figures_is_passed_by(tmp_path, monkeypatch, tex
     first(*ARGS)
     (file,) = tmp_path.iterdir()
     if text is None:  # the right key with something that is not a figure under it
-        data = json.loads(file.read_text())
+        data = json.loads(file.read_text(encoding="utf-8"))
         data = {key: ["__import__('os')", True, "x", 1] for key in data}
-        file.write_text(json.dumps(data))
+        file.write_text(json.dumps(data), encoding="utf-8")
     else:
-        file.write_text(text)
+        file.write_text(text, encoding="utf-8")
     again, _ = _fresh(tmp_path, monkeypatch)
     assert again(*ARGS) == work(*ARGS)
 
@@ -62,7 +62,7 @@ def test_nothing_is_kept_when_asked_not_to(tmp_path, monkeypatch) -> None:
 
 def test_a_folder_that_cannot_be_written_is_passed_by(tmp_path, monkeypatch) -> None:
     blocked = tmp_path / "file"
-    blocked.write_text("a file where the folder would go")
+    blocked.write_text("a file where the folder would go", encoding="utf-8")
     first, work = _fresh(blocked, monkeypatch)
     assert first(*ARGS) == work(*ARGS)
 

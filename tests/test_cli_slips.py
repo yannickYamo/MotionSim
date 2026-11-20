@@ -102,10 +102,10 @@ def test_a_typed_part_with_no_kind_is_refused(technology) -> None:
 
 
 def test_a_motor_figure_of_true_is_refused(capsys, tmp_path) -> None:
-    motor = yaml.safe_load(Path(PMSM).read_text())
+    motor = yaml.safe_load(Path(PMSM).read_text(encoding="utf-8"))
     motor["rs"] = True
     file = tmp_path / "motor.yaml"
-    file.write_text(yaml.safe_dump(motor))
+    file.write_text(yaml.safe_dump(motor), encoding="utf-8")
     argv = ["motor", "example-mosfet", "--motor", str(file), "--vdc", "48", "--fsw", "20000", "--tsink", "60"]
     assert cli.main([*argv, "--rpm", "1000", "--torque", "1"]) == 2
 

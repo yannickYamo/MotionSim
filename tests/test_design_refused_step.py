@@ -16,9 +16,9 @@ REFUSED = 2
 def _design(tmp_path, change) -> str:
     file = tmp_path / "design.yaml"
     assert cli.main(["design", "init", "-o", str(file)]) == 0
-    setup = yaml.safe_load(file.read_text())
+    setup = yaml.safe_load(file.read_text(encoding="utf-8"))
     change(setup)
-    file.write_text(yaml.safe_dump(setup))
+    file.write_text(yaml.safe_dump(setup), encoding="utf-8")
     return str(file)
 
 
@@ -41,7 +41,7 @@ def test_a_refused_motion_step_is_a_refused_design(capsys, tmp_path, change) -> 
     assert answer["verdict"]["candidates"][0]["result"] is not None  # the point itself ran
     report = tmp_path / "report.md"
     assert cli.main(["design", "run", file, "--md", str(report), "--skip", "drive", "--skip", "build"]) == REFUSED
-    text = report.read_text()
+    text = report.read_text(encoding="utf-8")
     assert "**Outcome: refused.**" in text and "Not run: motion." in text
     assert "**Outcome: passes" not in text
 

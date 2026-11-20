@@ -15,6 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
+from scipy.integrate import trapezoid
 
 from motionsim.event.run import Wave
 
@@ -52,7 +53,7 @@ def energy(w: Wave, a: float | None, b: float | None) -> float:
     if a is None or b is None or b <= a:
         return 0.0
     t = np.linspace(a, b, 2000)
-    return float(np.trapezoid(np.interp(t, w.t, w.p), t))
+    return float(trapezoid(np.interp(t, w.t, w.p), t))
 
 
 def ringing(t: np.ndarray, x: np.ndarray, centre: float, after: float) -> float | None:

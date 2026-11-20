@@ -164,9 +164,9 @@ def test_stepper_limits() -> None:
 
 def test_motor_file_selects_the_type(tmp_path) -> None:
     path = tmp_path / "m.yaml"
-    path.write_text("type: dc\nkt: 0.1\nr: 0.5\n")
+    path.write_text("type: dc\nkt: 0.1\nr: 0.5\n", encoding="utf-8")
     assert isinstance(load_machine(path), BrushedDc)
-    path.write_text("pole_pairs: 4\nflux_linkage: 0.1\nld: 0.008\nlq: 0.008\nrs: 1.0\n")
+    path.write_text("pole_pairs: 4\nflux_linkage: 0.1\nld: 0.008\nlq: 0.008\nrs: 1.0\n", encoding="utf-8")
     assert load_machine(path).type == "pmsm"
 
 
