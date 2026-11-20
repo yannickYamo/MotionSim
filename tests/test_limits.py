@@ -86,16 +86,23 @@ def test_what_the_motor_notes_about_its_own_model_is_not_a_data_caution() -> Non
 
 
 def test_only_a_loss_term_that_matters_puts_a_result_outside_its_data() -> None:
-    from test_mosfet import fet
+    from conftest import line
+    from test_mosfet import R_ON, SRC, fet
     from test_mosfet import op as fet_op
 
     from motionsim import guard
+    from motionsim.device.schema import ConductionModel
     from motionsim.engine import solve
-    from motionsim.engine.solver import DRIFT, MINOR_SHARE, Validity, _shares
+    from motionsim.engine.doubt import MINOR_SHARE, _shares
+    from motionsim.engine.envelope import DRIFT
+    from motionsim.engine.solver import Validity
 
     # Every table of this device is given at 25 °C only. Conduction is most of the loss, so
     # a little way from 25 °C it is still within what the data supports, and far from it not.
     device = fet(measured=True)
+    # The engine's reading of a table at one temperature, as an IGBT's or an energy table can
+    # be: put in after the model is built, which would draw a channel's usual rise through it.
+    device.switch.conduction = ConductionModel(curves=[line(25.0, 0.0, R_ON)], source=SRC)
     near, far = solve(device, fet_op(i_rms=5.0, t_sink=27.0)), solve(device, fet_op(t_sink=90.0))
     for r, outside in ((near, False), (far, True)):
         # Every term is in doubt by the same share, so together they are the whole loss.
@@ -125,3 +132,35 @@ def test_table_points_are_a_stated_footing_not_a_caution() -> None:
     assert result.validity is Validity.assumed
     data = [c for c in guard.check(fet(), fet_op(), result, 28.0) if c.topic == "data"]
     assert data[0].level is guard.Level.ok and "estimate from charge" in data[0].message
+
+
+def _role(name: str, switch, diode, tj_switch: float, tj_diode: float):
+    from motionsim.engine.point import RoleResult
+
+    return RoleResult(name, 1, switch, diode, tj_switch, tj_diode, tj_switch, tj_diode, 60.0)
+
+
+def test_a_hot_chip_with_none_of_its_own_loss_in_doubt_is_lifted_by_its_share_of_the_stage() -> None:
+    """Two positions, written out by hand, on a 60 °C heatsink. The hot one loses 8 W, all
+    of it conduction that the data holds, and peaks at 120 °C. The cool one is a transistor
+    whose 2 W is all its own body diode's recovery, which could be half as much again, and
+    peaks at 80 °C. Recovery is 2 W of the stage's 10 W, a fifth, so the stage could lose a
+    tenth more, and that tenth lifts every chip: the hot one's 60 K rise to 66 K. The cool
+    one, wholly in doubt, would reach only 80 + 0.5·20 = 90 °C. So the doubt is a tenth."""
+    from motionsim.engine.doubt import _doubt, _shares
+    from motionsim.engine.envelope import _Notes
+    from motionsim.engine.point import DiodeLoss, SwitchLoss
+
+    hot = _role("conducting", SwitchLoss(8.0, 0.0, 0.0), DiodeLoss(0.0, 0.0), 120.0, 60.0)
+    cool = _role("recovering", SwitchLoss(0.0, 0.0, 0.0, recovery=2.0), DiodeLoss(0.0, 0.0), 80.0, 60.0)
+    assert _shares([hot, cool])["recovery energy"] == pytest.approx(0.2)
+    marks = _Notes()
+    marks.off["recovery energy"] = 0.5
+    assert _doubt(marks, [hot, cool], coolest=60.0) == pytest.approx(0.1)
+    # With the recovery on a diode of its own, it is the same fifth of the stage.
+    diode = _role("recovering", SwitchLoss(0.0, 0.0, 0.0), DiodeLoss(0.0, 2.0), 60.0, 80.0)
+    assert _shares([hot, diode])["recovery energy"] == pytest.approx(0.2)
+    assert _doubt(marks, [hot, diode], coolest=60.0) == pytest.approx(0.1)
+    # A fifth of the stage in doubt by an eighth is a fortieth: under the twentieth that decides.
+    marks.off["recovery energy"] = 0.125
+    assert _doubt(marks, [hot, cool], coolest=60.0) == 0.0

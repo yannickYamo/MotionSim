@@ -31,13 +31,40 @@ def voltage_factor(table: SwitchingEnergy, v_dc: float) -> float:
     return v_dc / table.v_ref
 
 
-def energy(table: SwitchingEnergy, current: np.ndarray, tj: float, v_dc: float, rg: float | None = None) -> np.ndarray:
+def energy(
+    table: SwitchingEnergy, current: np.ndarray, tj: float | np.ndarray, v_dc: float, rg: float | None = None
+) -> np.ndarray:
     """Energy of one switching event at each current, J: the datasheet's table at the junction
     temperature, brought to the voltage switched and the gate resistor in use."""
     e = lookup.evaluate(table.curves, current, tj) * voltage_factor(table, v_dc) * gate_factor(table, rg)
     return np.maximum(e, 0.0)
 
 
-def voltage(chip: Chip, current: np.ndarray, tj: float) -> np.ndarray:
-    """Voltage across a conducting chip at each current, V, at one junction temperature."""
+def voltage(chip: Chip, current: np.ndarray, tj: float | np.ndarray) -> np.ndarray:
+    """Voltage across a conducting chip at each current, V, at the junction temperature (one for
+    all the currents, or one for each)."""
     return np.maximum(lookup.evaluate(chip.conduction.curves, current, tj), 0.0)
+
+
+def conducted(drop, role) -> np.ndarray:
+    """Current times voltage of a conducting chip at each instant of the period, W, averaged
+    over the ripple at the switching frequency where the role carries one.
+
+    drop gives the chip's voltage at each of an array of currents. A role with ripple holds
+    the root of the mean square in its current, which is right for a resistance and too much
+    for a knee voltage: a knee loses with the mean current, and the ripple does not move the
+    mean. So the product is averaged over the triangle the current really runs along, from
+    its bottom through its middle to its top, by Simpson's rule, which is exact for a knee
+    with a resistance and close for any smooth curve.
+    """
+    rms = role.current
+    if role.current_on is None or role.current_off is None:
+        return rms * drop(rms)
+    top = role.current_off
+    # The middle of the triangle, from its top and its root mean square:
+    # rms² = mid² + (top - mid)² / 3. The bottom is as far under the middle as the top is
+    # over it; where that is below zero the current has turned round, and what it loses
+    # there is taken as the same current the other way.
+    mid = (top + np.sqrt(np.maximum(12 * rms**2 - 3 * top**2, 0.0))) / 4
+    bottom = np.abs(2 * mid - top)
+    return (bottom * drop(bottom) + 4 * mid * drop(mid) + top * drop(top)) / 6

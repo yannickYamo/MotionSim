@@ -21,7 +21,7 @@ from motionsim.observe.schema import (
     ReadFigure,
 )
 from motionsim.observe.verify import normalise_unit
-from motionsim.text import written
+from motionsim.text import rounded, written
 
 SAMPLES = 120
 FLAT = 0.55  # a plateau rises at less than this share of the rate the curve starts at
@@ -68,8 +68,6 @@ def plateau(charge: np.ndarray, voltage: np.ndarray) -> tuple[float, float, floa
         b += 1
     if charge[b - 1] - charge[a] < MIN_PLATEAU * np.ptp(charge):
         return None
-    best = (a, b)
-    a, b = best
     return float(np.median(voltage[a:b])), float(charge[a]), float(charge[b - 1])
 
 
@@ -123,6 +121,28 @@ def _typ(observations: list[Observation], quantity: Quantity) -> Observation | N
     return None
 
 
+def _plateau_start(start: float, observations: list[Observation], flags: list[str], notes: list[str]) -> float | None:
+    """How far the charge at which the plateau starts sits from the tabulated gate-source
+    charge, or None where none is tabulated. A row that gives only a maximum bounds it
+    from above."""
+    table = _typ(observations, Quantity.q_gs)
+    if table is None:
+        notes.append("no tabulated gate-source charge to compare the start of the plateau with")
+        return None
+    if table.typ is not None:
+        value, error = table.typ, abs(start / table.typ - 1)
+    elif table.max is not None:
+        value, error = table.max, max(start / table.max - 1, 0.0)
+    else:
+        return None  # _typ gives no row without one of the two
+    if error > CHARGE_TOLERANCE:
+        flags.append(
+            f"plateau starts at {written(start * 1e9, 3)} nC; the tabulated "
+            f"gate-source charge is {written(value * 1e9, 3)} nC"
+        )
+    return error
+
+
 def digitise_gate_charge(
     page, frame: figures.Frame, figure: ReadFigure, axes: ReadAxes, observations: list[Observation]
 ) -> CurveObservation:
@@ -154,28 +174,16 @@ def digitise_gate_charge(
             f"plateau at {written(level, 3)} V, from {written((start - grid[0]) * 1e9, 3)} nC to "
             f"{written((end - grid[0]) * 1e9, 3)} nC after the start of the curve"
         )
-        table = _typ(observations, Quantity.q_gs)
-        if table is None:
-            notes.append("no tabulated gate-source charge to compare the start of the plateau with")
-        else:
-            value = table.typ if table.typ is not None else table.max
-            error = (
-                abs((start - grid[0]) / value - 1) if table.typ is not None else max((start - grid[0]) / value - 1, 0.0)
-            )
-            if error > CHARGE_TOLERANCE:
-                flags.append(
-                    f"plateau starts at {written((start - grid[0]) * 1e9, 3)} nC; the tabulated "
-                    f"gate-source charge is {written(value * 1e9, 3)} nC"
-                )
+        error = _plateau_start(start - grid[0], observations, flags, notes)
     return CurveObservation(
         quantity=quantity,
         page=figure.page,
         label=figure.label,
-        x=[float(f"{written(x, 6)}") for x in grid],
-        y=[float(f"{written(y, 6)}") for y in v],
+        x=[rounded(x, 6) for x in grid],
+        y=[rounded(y, 6) for y in v],
         x_axis=axes.x,
         y_axis=axes.y,
-        anchor_error=None if error is None else float(f"{written(error, 3)}"),
+        anchor_error=None if error is None else rounded(error, 3),
         method="vector",
         status=ReviewStatus.flagged if flags else ReviewStatus.unverified,
         flags=flags,
@@ -234,12 +242,12 @@ def digitise_capacitance(
         quantity=quantity,
         page=figure.page,
         label=figure.label,
-        x=[float(f"{written(v, 6)}") for v in grid],
-        y=[float(f"{written(c, 6)}") for c in value],
+        x=[rounded(v, 6) for v in grid],
+        y=[rounded(c, 6) for c in value],
         x_axis=axes.x,
         y_axis=axes.y,
         test_voltage_v=table.voltage_v,
-        anchor_error=float(f"{written(error, 3)}"),
+        anchor_error=rounded(error, 3),
         method="vector",
         status=ReviewStatus.flagged if flags else ReviewStatus.unverified,
         flags=flags,
@@ -257,4 +265,4 @@ def output_charge(voltage, capacitance, upto: float | None = None) -> tuple[list
         keep = v <= upto
         v, c = v[keep], c[keep]
     charge = c[0] * v[0] + np.concatenate([[0.0], np.cumsum(np.diff(v) * (c[1:] + c[:-1]) / 2)])
-    return [float(f"{written(x, 5)}") for x in v], [float(f"{written(q, 5)}") for q in charge]
+    return [rounded(x, 5) for x in v], [rounded(q, 5) for q in charge]

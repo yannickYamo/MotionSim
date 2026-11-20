@@ -19,10 +19,24 @@ from dataclasses import dataclass
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
-from scipy.optimize import brentq, minimize_scalar
 
+from motionsim.engine.notes import Code
 from motionsim.motor.stage import Unreachable
 from motionsim.text import written
+
+
+# SciPy takes a good part of a second to load, and most runs never reach this: it is
+# loaded at the first call.
+def brentq(*args, **kwargs):
+    from scipy.optimize import brentq as loaded
+
+    return loaded(*args, **kwargs)
+
+
+def minimize_scalar(*args, **kwargs):
+    from scipy.optimize import minimize_scalar as loaded
+
+    return loaded(*args, **kwargs)
 
 
 class Motor(BaseModel):
@@ -99,23 +113,53 @@ def operating_state(motor: Motor, rpm: float, torque: float, v_max: float, i_d: 
     return _state(now, rpm, torque, v_max, i_d)
 
 
+def _least_current_id(motor: Motor, torque: float, floor: float, held: float | None) -> float:
+    """The d-axis current: as held, nought where it adds nothing, else the one that gives the
+    torque for the least current."""
+    if held is not None:
+        if not floor <= held:
+            raise Unreachable(
+                f"a d-axis current of {written(held, 3)} A would oppose the magnet in full", Code.reach_other
+            )
+        return held
+    if motor.ld == motor.lq or torque == 0:
+        return 0.0
+    span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
+    lo, hi = (max(-span, floor), 0.0) if motor.ld < motor.lq else (0.0, span)
+    best = minimize_scalar(lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded")
+    return float(best.x)
+
+
+def _weakened_id(motor: Motor, w: float, rpm: float, torque: float, v_max: float, floor: float, i_d: float) -> float:
+    """The d-axis current that brings the voltage down to what the supply gives, along the
+    line of constant torque."""
+
+    def excess(x: float) -> float:
+        return float(np.hypot(*_voltages(motor, w, x, _iq_for(motor, torque, x))) - v_max)
+
+    # Along the line of constant torque the voltage falls as id goes negative, reaches a
+    # least value, and rises again: that least value is the most torque the voltage can
+    # give at this speed. With magnets on the surface it sits where the magnet is fully
+    # opposed. With buried magnets, whose reluctance torque needs current of its own, it
+    # lies further out, and the search goes on to find it.
+    lowest = floor if motor.ld >= motor.lq else -4.0 * motor.flux_linkage / motor.ld
+    least = minimize_scalar(excess, bounds=(lowest, i_d), method="bounded")
+    deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
+    if excess(deepest) > 0:
+        raise Unreachable(
+            f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs more voltage than {written(v_max, 4)} V peak "
+            "even with full field weakening",
+            Code.reach_voltage,
+        )
+    return float(brentq(excess, deepest, i_d))
+
+
 def _state(motor: Motor, rpm: float, torque: float, v_max: float, held: float | None = None) -> DriveState:
     """The point for inductances taken as they stand."""
     w = motor.pole_pairs * 2 * np.pi * rpm / 60
     # Most negative id that keeps flux positive: beyond it the magnet is fully opposed.
     floor = -0.999 * motor.flux_linkage / motor.ld
-
-    if held is not None:
-        if not floor <= held:
-            raise Unreachable(f"a d-axis current of {written(held, 3)} A would oppose the magnet in full")
-        i_d = held
-    elif motor.ld == motor.lq or torque == 0:
-        i_d = 0.0
-    else:
-        span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
-        lo, hi = (max(-span, floor), 0.0) if motor.ld < motor.lq else (0.0, span)
-        best = minimize_scalar(lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded")
-        i_d = float(best.x)
+    i_d = _least_current_id(motor, torque, floor, held)
     i_q = _iq_for(motor, torque, i_d)
     v_d, v_q = _voltages(motor, w, i_d, i_q)
     weakening = False
@@ -123,28 +167,12 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float, held: float | 
     if held is not None and np.hypot(v_d, v_q) > v_max:
         raise Unreachable(
             f"with the d-axis current held at {written(held, 3)} A, {written(torque, 3)} N·m at "
-            f"{written(rpm, 4)} rpm needs more than {written(v_max, 4)} V peak"
+            f"{written(rpm, 4)} rpm needs more than {written(v_max, 4)} V peak",
+            Code.reach_voltage,
         )
     if np.hypot(v_d, v_q) > v_max:
         weakening = True
-
-        def excess(x: float) -> float:
-            return float(np.hypot(*_voltages(motor, w, x, _iq_for(motor, torque, x))) - v_max)
-
-        # Along the line of constant torque the voltage falls as id goes negative, reaches a
-        # least value, and rises again: that least value is the most torque the voltage can
-        # give at this speed. With magnets on the surface it sits where the magnet is fully
-        # opposed. With buried magnets, whose reluctance torque needs current of its own, it
-        # lies further out, and the search goes on to find it.
-        lowest = floor if motor.ld >= motor.lq else -4.0 * motor.flux_linkage / motor.ld
-        least = minimize_scalar(excess, bounds=(lowest, i_d), method="bounded")
-        deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
-        if excess(deepest) > 0:
-            raise Unreachable(
-                f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs more voltage than {written(v_max, 4)} V peak "
-                "even with full field weakening"
-            )
-        i_d = float(brentq(excess, deepest, i_d))
+        i_d = _weakened_id(motor, w, rpm, torque, v_max, floor, i_d)
         i_q = _iq_for(motor, torque, i_d)
         v_d, v_q = _voltages(motor, w, i_d, i_q)
 
@@ -164,6 +192,7 @@ def _state(motor: Motor, rpm: float, torque: float, v_max: float, held: float | 
         needed = next((n for n in figures if float(n) > motor.i_max), repr(float(state.i_rms)))
         raise Unreachable(
             f"{written(torque, 3)} N·m at {written(rpm, 4)} rpm needs {needed} A rms, above the motor's "
-            f"{motor.i_max:g} A limit"
+            f"{motor.i_max:g} A limit",
+            Code.reach_current,
         )
     return state

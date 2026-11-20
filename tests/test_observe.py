@@ -17,7 +17,8 @@ PAGE = (
     "VCE(ON) IC = 7.5A - 1.5 1.9 V\nIC = 7.5A, TJ = 150°C - 1.7 - V\n"
     "VF IC = 7.5A - 1.6 2.2 V\n"
     "VDC = 300V, IC = 7.5A EON 25°C - 220 - μJ 150°C - 330 -\n"
-    "EOFF 110 155 EREC 30 60\nIC = 15A 600 IC = 1.5A\n"
+    "IC = 15A 150°C - 600 -\n"
+    "EOFF 110 155 EREC 30 60\nIC = 1.5A\n"
 )
 
 
@@ -164,7 +165,8 @@ def test_built_device_reproduces_the_table_points() -> None:
     assert (hot.tj, hot.current[-1], hot.value[-1]) == (150.0, 7.5, 1.7)
     assert device.switch.e_on.v_ref == 300.0
     assert device.switch.e_on.curves[0].value[-1] == 220e-6
-    assert device.switch.thermal.r == [4.7] and device.switch.thermal.tau is None
+    # A thermal resistance is taken at the datasheet's maximum where it prints one: 5.4, not the typical 4.7.
+    assert device.switch.thermal.r == [5.4] and device.switch.thermal.tau is None
     assert device.ratings.tj_max == 150.0
 
     op = OperatingPoint(v_dc=300, i_rms=5, modulation_index=0.8, power_factor=0.8, f_sw=6000, t_sink=80)
@@ -306,7 +308,8 @@ def test_recovery_energy_is_estimated_from_charge_when_no_energy_is_tabulated():
             page=1,
         )
     )
-    device = build_device(check(read_result(points), DOC, [PAGE], reader="test"))
+    page = PAGE + "QRR IF = 7.5A, VR = 300V 30 60 nC\n"
+    device = build_device(check(read_result(points), DOC, [page], reader="test"))
     e_rr = device.diode.e_rr
     assert e_rr.v_ref == 300.0 and "quarter of the recovery charge" in e_rr.assumption
     assert e_rr.curves[0].current == [0.0, 7.5]

@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.optimize import least_squares
+
+
+# SciPy takes a good part of a second to load, and most runs never reach this: it is
+# loaded at the first call.
+def least_squares(*args, **kwargs):
+    from scipy.optimize import least_squares as loaded
+
+    return loaded(*args, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -48,11 +55,13 @@ def fit_foster(t: np.ndarray, z: np.ndarray, max_order: int = 6, target: float =
     grid = np.logspace(np.log10(t[0]), np.log10(t[-1]), 60)
     z = np.interp(np.log(grid), np.log(t), z)
     t = grid
-    best = None
+    best: FosterFit | None = None
     for order in range(1, max_order + 1):
         candidate = _fit_order(t, z, order)
         if best is None or candidate.worst_error < best.worst_error:
             best = candidate
         if candidate.worst_error <= target:
             break
+    if best is None:
+        raise ValueError("a fit needs at least one stage")
     return best

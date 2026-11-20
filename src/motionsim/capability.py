@@ -9,6 +9,7 @@ rating, and how far a given load can be scaled up before a check fails.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 from motionsim.drivers import at_speed_and_torque
 from motionsim.engine.limits import hottest
@@ -73,11 +74,16 @@ def torque_limit(device, motor, rpm: float, op: OperatingPoint, start: float = 1
 
 def envelope(device, motor, speeds: list[float], op: OperatingPoint, start: float = 1.0) -> list[Limit]:
     """The torque limit at each speed: the edge of what this device can drive without end."""
-    out = []
+    out: list[Limit] = []
     for rpm in speeds:
         # The limit moves little from one speed to the next: start the search there.
         out.append(torque_limit(device, motor, rpm, op, 0.7 * out[-1].torque if out and out[-1].torque > 0 else start))
     return out
+
+
+def _one(name: str, value: float) -> dict[str, Any]:
+    """One field of an operating point by its name, to replace it with."""
+    return {name: value}
 
 
 def against(
@@ -85,14 +91,14 @@ def against(
 ) -> list[Limit]:
     """The torque limit at one speed as one condition is varied: `what` is a field of the
     operating point, such as f_sw or t_sink."""
-    out = []
+    out: list[Limit] = []
     for v in values:
         out.append(
             torque_limit(
                 device,
                 motor,
                 rpm,
-                replace(op, **{what: v}),
+                replace(op, **_one(what, v)),
                 0.7 * out[-1].torque if out and out[-1].torque > 0 else start,
             )
         )

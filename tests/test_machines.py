@@ -367,7 +367,7 @@ def test_reluctance_motor_uses_least_current_then_trades_it_for_voltage() -> Non
         motor.stage(9000, 5.0, 540, Pwm.space_vector)
     from pydantic import ValidationError
 
-    with pytest.raises(ValidationError, match="larger than lq"):
+    with pytest.raises(ValidationError, match="easy-axis inductance has to be larger"):
         SynRm(type="synrm", pole_pairs=2, ld=0.04, lq=0.2, rs=1)
 
 

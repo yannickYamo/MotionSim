@@ -176,7 +176,8 @@ def test_the_gate_resistor_line_counts_the_recovery_charge_the_current_brings(am
     line = next(text for text in rec.lines if "switching event" in text)
     on, off = (float(x) for x in re.findall(r"([\d.]+) µJ", line))
     moved = 2.0e-8 - 1.304e-8 + 1.4e-8
-    recovered = 1.2e-7 * min(amps / 50.0, 1.0)
+    # In proportion below the 50 A it was measured at, as the square root above.
+    recovered = 1.2e-7 * (amps / 50.0 if amps <= 50.0 else math.sqrt(amps / 50.0))
     e_on = 0.5 * 48 * amps * moved * rec.value["rg_on"] / (10 - 4.6) + (1.5e-7 * math.sqrt(48 / 50) + recovered) * 48
     e_off = 0.5 * 48 * amps * moved * rec.value["rg_off"] / 4.6
     assert on == pytest.approx(e_on * 1e6, rel=6e-3)  # written to three figures
@@ -220,8 +221,8 @@ def run_design(file, capsys) -> tuple[int, dict]:
 
 
 def test_a_part_that_cannot_do_the_motion_does_not_pass(tmp_path, capsys) -> None:
-    # 400 N·m of friction at the load is far past what the motor's 40 A gives through the gear.
-    code, out = run_design(design_file(tmp_path, load={"friction_coulomb": 400}), capsys)
+    # 1000 N·m of friction at the load is far past what the motor's 63 A gives through the gear.
+    code, out = run_design(design_file(tmp_path, load={"friction_coulomb": 1000}), capsys)
     assert out["verdict"]["candidates"][0]["level"] != "fail"  # the design point alone is fine
     assert any(c["level"] == "fail" for c in out["motion"]["checks"])
     assert out["outcome"] == "does not pass" and code == 3
@@ -295,7 +296,7 @@ def test_a_motor_with_no_kind_named_is_a_permanent_magnet_one(tmp_path, capsys) 
                 "--tsink",
                 "60",
             ],
-            "cannot simulate: No such file",
+            "cannot simulate: no device called no-such-file.yaml, and no file of that name",
         ),
         (
             [
@@ -311,8 +312,14 @@ def test_a_motor_with_no_kind_named_is_a_permanent_magnet_one(tmp_path, capsys) 
                 "8000",
                 "--tsink",
                 "60",
+                "--vdrive",
+                "3",
+                "--rgon",
+                "5",
+                "--rgoff",
+                "5",
             ],
-            "cannot max-current: this device has no measured switching energy",
+            "cannot max-current: gate drive voltage 3 V does not exceed the plateau",
         ),
         (["design", "run", "no-such-design.yaml"], "no-such-design.yaml"),
     ],
@@ -363,8 +370,8 @@ def test_no_scheme_worked_out_is_not_a_motor_that_decides_its_own() -> None:
     ("change", "said"),
     [
         (lambda d: d["switch"]["thermal"].__setitem__("r", [float("nan")]), "thermal"),
-        (lambda d: d["ratings"].__setitem__("tj_max", -40), "tj_max"),
-        (lambda d: d["ratings"].__setitem__("tj_max", float("inf")), "tj_max"),
+        (lambda d: d["ratings"].__setitem__("tj_max", -40), "highest junction temperature cannot be below 25"),
+        (lambda d: d["ratings"].__setitem__("tj_max", float("inf")), "highest junction temperature is not a number"),
     ],
 )
 def test_a_device_file_with_a_figure_that_is_not_one_is_refused_by_name(workspace, change, said) -> None:
@@ -414,11 +421,13 @@ def test_over_http_a_malformed_request_gets_an_answer(workspace) -> None:
 
     def status(path: str, body: bytes | None, headers: dict | None = None) -> int:
         try:
-            return urllib.request.urlopen(
+            with urllib.request.urlopen(
                 urllib.request.Request(address + path, body, headers or {}), timeout=10
-            ).status
+            ) as answer:
+                return answer.status
         except urllib.error.HTTPError as exc:
-            return exc.code
+            with exc:  # the answer is a connection too, and is closed
+                return exc.code
 
     try:
         assert status("/api/device", b"[]") == 400
@@ -429,6 +438,7 @@ def test_over_http_a_malformed_request_gets_an_answer(workspace) -> None:
         assert status("/", None) == 200
     finally:
         httpd.shutdown()
+        httpd.server_close()
 
 
 @pytest.mark.parametrize(
@@ -530,14 +540,19 @@ def test_each_kind_of_motor_is_offered_only_the_loads_it_is_used_for() -> None:
     # A reluctance motor is not a washer's or a wheel's motor; nor is a stepper.
     for kind in ("synrm", "stepper"):
         assert not {"drum", "vehicle"} & set(offered[kind]), (kind, offered[kind])
-    assert offered["synrm"] == ["fan", "conveyor"]
+    # A reluctance motor runs pumps, fans and compressors: no magnets, a steady speed.
+    assert offered["synrm"] == ["fan", "conveyor", "compressor"]
     # A washer drum: the permanent-magnet motor that drives it directly and the induction motor on its belt.
     assert [k for k, loads in offered.items() if "drum" in loads] == ["pmsm", "induction"]
     # A wheel: motors that can brake it, wound for a battery.
     assert [k for k, loads in offered.items() if "vehicle" in loads] == ["pmsm", "bldc", "dc"]
     # A series motor is offered only loads whose own torque stops them: it cannot brake.
     assert offered["dc_series"] == ["tool", "conveyor"]
-    assert set(offered["bldc"]) == {"fan", "vehicle", "tool", "conveyor"} and offered["stepper"] == ["axis", "conveyor"]
+    assert set(offered["bldc"]) == {"fan", "vacuum", "ceiling_fan", "vehicle", "tool", "conveyor"}
+    assert offered["stepper"] == ["axis", "conveyor"]
+    # A ceiling fan and a vacuum run brushless motors; a compressor, a permanent-magnet one or an induction motor.
+    assert [k for k, loads in offered.items() if "ceiling_fan" in loads] == ["pmsm", "bldc"]
+    assert [k for k, loads in offered.items() if "compressor" in loads] == ["pmsm", "synrm", "induction"]
 
 
 def between_estimate_and_top(workspace, name: str = "open") -> tuple[str, float]:
@@ -633,5 +648,5 @@ def test_a_trajectory_takes_how_the_package_is_mounted(tmp_path, capsys) -> None
     on_grease, _ = case_and_loss()
     on_a_pad, _ = case_and_loss("--interface", "pad")
     assert on_a_pad > on_grease + 1.0
-    with pytest.raises(SystemExit, match="0 to 50 K/W"):
-        cli.main([*base, "--tsink", "60", "--rth-case-sink", "80"])
+    assert cli.main([*base, "--tsink", "60", "--rth-case-sink", "80"]) == 2
+    assert "case-to-heatsink thermal resistance cannot be above 50" in capsys.readouterr().err

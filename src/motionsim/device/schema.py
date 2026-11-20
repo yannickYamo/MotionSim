@@ -10,11 +10,39 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+SCHEMA_VERSION = 1
+
+# No figure of a power device, in SI units, is as small as this without being nought, or as
+# large: picocoulombs and nanoseconds lie well inside, 1e-300 A and 1e308 V do not. A file
+# that holds such a figure is a slip or a broken export, and working with it gives results
+# that are not numbers.
+LEAST_FIGURE, MOST_FIGURE = 1e-15, 1e9
+ABSOLUTE_ZERO = -273.15  # °C
+HOTTEST = 1000.0  # °C: past any junction, case or test condition
+
+
+def _figures(value):
+    if isinstance(value, bool):
+        return
+    if isinstance(value, (int, float)):
+        yield float(value)
+    elif isinstance(value, (list, tuple)):
+        for inner in value:
+            yield from _figures(inner)
 
 
 class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _within_reason(self):
+        for name, value in self.__dict__.items():
+            for x in _figures(value):
+                if x != 0 and not LEAST_FIGURE <= abs(x) <= MOST_FIGURE:
+                    raise ValueError(f"{name} holds {x:g}, which is not a figure a device has")
+        return self
 
 
 class SourceKind(str, Enum):
@@ -64,6 +92,11 @@ class Curve(_Model):
             raise ValueError("current must be strictly increasing")
         if self.current[0] < 0:
             raise ValueError("current must be non-negative")
+        if any(v < 0 for v in self.value):
+            # A voltage drop or an energy below nought is a part that gives power out.
+            raise ValueError("value must be non-negative")
+        if not ABSOLUTE_ZERO <= self.tj <= HOTTEST:
+            raise ValueError(f"tj must lie between {ABSOLUTE_ZERO:g} and {HOTTEST:g} °C")
         return self
 
 
@@ -86,6 +119,12 @@ class ConductionModel(_Model):
     # How far one part may differ from another: the datasheet's maximum over its typical
     # value, where it gives both. Devices in parallel share current as unevenly as this allows.
     spread: float | None = Field(default=None, ge=1)
+    # Set where the datasheet gave the drop at one temperature and the curves at the others
+    # are the usual rise of the technology, a power of the absolute temperature: how far
+    # either way that power may be off. A result read away from the datasheet's temperature
+    # is then in doubt by what that could move it. None where the temperatures are the
+    # datasheet's own.
+    rise_doubt: float | None = Field(default=None, ge=0)
 
     @model_validator(mode="after")
     def _check(self) -> ConductionModel:
@@ -103,8 +142,8 @@ class SwitchingEnergy(_Model):
     """Energy per switching event against current and junction temperature."""
 
     curves: list[Curve]
-    v_ref: float = Field(gt=0, description="DC voltage the energies were measured at")
-    rg: float | None = None
+    v_ref: float = Field(gt=0, le=1e5, description="DC voltage the energies were measured at")
+    rg: float | None = Field(default=None, ge=0, le=1e6)
     gate_voltage: float | None = None
     # How the energy changes with the gate resistor: resistances in ohm, and the energy at
     # each as a multiple of the energy at rg. From the datasheet's own figure, at one current.
@@ -154,6 +193,8 @@ class FosterNetwork(_Model):
     def _check(self) -> FosterNetwork:
         if not self.r or any(x <= 0 for x in self.r):
             raise ValueError("r must be non-empty and positive")
+        if sum(self.r) > 1e3:
+            raise ValueError("r adds up to more than 1000 K/W, which no junction-to-case path is")
         if self.tau is not None:
             if len(self.r) != len(self.tau):
                 raise ValueError("r and tau must be the same length")
@@ -172,12 +213,14 @@ class ChargeModel(_Model):
     Charges in C. q_gd and q_oss are the values at v_ref.
     """
 
-    q_gs: float = Field(gt=0)
-    q_gd: float = Field(gt=0)
-    q_g_th: float = Field(ge=0, description="gate charge at threshold")
-    v_plateau: float = Field(gt=0, description="gate plateau voltage")
-    q_oss: float = Field(ge=0, description="output charge at v_ref; 0 when not known")
-    v_ref: float = Field(gt=0)
+    # A coulomb is far past the charge of any gate or output: the largest modules hold
+    # tens of microcoulombs.
+    q_gs: float = Field(gt=0, le=1e-2)
+    q_gd: float = Field(gt=0, le=1e-2)
+    q_g_th: float = Field(ge=0, le=1e-2, description="gate charge at threshold")
+    v_plateau: float = Field(gt=0, le=100, description="gate plateau voltage")
+    q_oss: float = Field(ge=0, le=1e-2, description="output charge at v_ref; 0 when not known")
+    v_ref: float = Field(gt=0, le=1e5)
     q_oss_scaling: Literal["linear", "sqrt", "table"] = Field(
         default="linear",
         description="how output charge follows voltage away from v_ref. sqrt: the charge of an "
@@ -188,18 +231,38 @@ class ChargeModel(_Model):
     oss_charge: list[float] | None = Field(
         default=None, description="output charge at each oss_voltage, C: the area under the output-capacitance curve"
     )
-    q_rr: float = Field(default=0.0, ge=0, description="reverse-recovery charge of the reverse path")
+    q_rr: float = Field(default=0.0, ge=0, le=1e-1, description="reverse-recovery charge of the reverse path")
     q_rr_current: float | None = Field(
         default=None,
         gt=0,
         description="current the recovery charge was measured at, A. Below it the charge is "
         "scaled down with current; left out, the full charge is used at any current above zero",
     )
+    q_g: float | None = Field(
+        default=None,
+        gt=0,
+        description="total gate charge at the gate voltage q_g_drive, C. What the gate holds above "
+        "the plateau, which a turn-off has to take out before anything happens, is this less "
+        "q_gs and q_gd. Left out, that charge is estimated and a dead time worked out from it "
+        "is said to be an estimate",
+    )
+    q_g_drive: float | None = Field(default=None, gt=0, description="gate voltage the total gate charge is given at, V")
     assumption: str | None = None
     source: Source
 
     @model_validator(mode="after")
     def _check(self) -> ChargeModel:
+        if (self.q_g is None) != (self.q_g_drive is None):
+            raise ValueError("a total gate charge and the gate voltage it is given at go together")
+        if (
+            self.q_g is not None
+            and self.q_g_drive is not None
+            and (self.q_g <= self.q_gs + self.q_gd or self.q_g_drive <= self.v_plateau)
+        ):
+            raise ValueError(
+                "the total gate charge has to be above the gate-source and gate-drain charges together, "
+                "and given at a gate voltage above the plateau"
+            )
         if self.q_g_th > self.q_gs:
             raise ValueError(
                 "gate charge at threshold cannot exceed gate-source charge. Some datasheets give the gate-source "
@@ -227,7 +290,7 @@ class Chip(_Model):
     reverse: ConductionModel | None = None  # mosfet: reverse voltage drop with the gate off
     charge: ChargeModel | None = None  # mosfet: for switching loss when e_on and e_off are absent
     thermal: FosterNetwork
-    rg_internal: float | None = Field(default=None, ge=0, description="the chip's own gate resistance, ohm")
+    rg_internal: float | None = Field(default=None, ge=0, le=1e4, description="the chip's own gate resistance, ohm")
 
     @model_validator(mode="after")
     def _check(self) -> Chip:
@@ -260,6 +323,7 @@ class Package(_Model):
     rth_case_sink: float | None = Field(
         default=None,
         ge=0,
+        le=1e3,
         description="case to heatsink, whole package, K/W. Left out, it is computed for a "
         "generic package of this kind on the layer named in `interface`; a discrete "
         "package whose outline is not given has none counted",
@@ -267,6 +331,7 @@ class Package(_Model):
     rth_mutual: float | None = Field(
         default=None,
         ge=0,
+        le=1e3,
         description="junction rise per watt dissipated in any other chip of the package, K/W; "
         "not on datasheets. Left out, it is computed for a generic package of this construction",
     )
@@ -285,23 +350,44 @@ class Package(_Model):
 
 
 class SwitchingTimes(_Model):
-    """Tabulated turn-off times of the switch, at the datasheet's own gate resistor."""
+    """Tabulated switching times of the switch, at the datasheet's own gate resistor."""
 
-    t_d_off: float = Field(gt=0, description="turn-off delay time, s")
-    t_f: float = Field(gt=0, description="fall time, s")
+    t_d_off: float = Field(gt=0, le=1e-2, description="turn-off delay time, s")
+    t_f: float = Field(gt=0, le=1e-2, description="fall time, s")
+    t_d_on: float | None = Field(default=None, gt=0, le=1e-2, description="turn-on delay time, s")
+    t_r: float | None = Field(default=None, gt=0, le=1e-2, description="rise time, s")
+    # The test the times were taken in, where the datasheet says: the switching event is
+    # worked out there too, and its times set beside these.
+    v_test: float | None = Field(default=None, gt=0, le=1e5, description="voltage switched in the test, V")
+    i_test: float | None = Field(default=None, gt=0, le=1e5, description="current switched in the test, A")
+    rg_test: float | None = Field(default=None, ge=0, le=1e6, description="gate resistor of the test, ohm")
     source: Source
 
 
 class Ratings(_Model):
-    v_max: float = Field(gt=0)
-    i_nominal: float = Field(gt=0)
-    tj_max: float = Field(gt=0, le=1000)
-    i_pulsed: float | None = Field(default=None, gt=0, description="pulsed or peak current rating, A")
-    t_sc: float | None = Field(default=None, gt=0, description="short-circuit withstand time, s")
+    # From a signal transistor to the largest module, with room on both sides.
+    v_max: float = Field(ge=1, le=1e5)
+    i_nominal: float = Field(ge=1e-3, le=1e5)
+    tj_max: float = Field(ge=25, le=HOTTEST)
+    i_pulsed: float | None = Field(default=None, ge=1e-3, le=1e6, description="pulsed or peak current rating, A")
+    t_sc: float | None = Field(default=None, gt=0, le=1, description="short-circuit withstand time, s")
+
+
+class Taken(_Model):
+    """A figure the user left empty when typing a part in, filled by a stated rule. The result
+    names it, and it caps the verdict at a caution: an assumed figure never gives a clean pass."""
+
+    figure: Literal["tj_max", "v_plateau", "q_gs", "v_ce0", "v_f0", "e_cold", "hot_tj"] = Field(
+        description="the typed figure's key, as the form names it; e_cold is the switching energies at 25 °C"
+    )
+    name: str = Field(min_length=1, max_length=80, description="the figure in words")
+    value: float | None = Field(default=None, description="the figure used, in unit; None where it is several")
+    unit: str = Field(default="", max_length=12)
+    rule: str = Field(min_length=1, max_length=200, description="how the figure was taken, in words")
 
 
 class Device(_Model):
-    schema_version: int = 1
+    schema_version: int = SCHEMA_VERSION
     vendor: str
     part_number: str
     technology: str
@@ -310,6 +396,19 @@ class Device(_Model):
     switch: Chip
     diode: Chip | None = None  # separate antiparallel diode; a mosfet conducts in reverse itself
     timing: SwitchingTimes | None = None
+    # Figures of a part typed in by hand that were left empty and taken by a rule. None (and
+    # left out of the file) for every part read from a datasheet or written by hand.
+    taken: list[Taken] | None = None
+
+    @field_validator("schema_version")
+    @classmethod
+    def _known_version(cls, version: int) -> int:
+        if version != SCHEMA_VERSION:
+            raise ValueError(
+                f"this file is of schema version {version}, and this tool reads version {SCHEMA_VERSION}: "
+                "it was written by another version of the tool"
+            )
+        return version
 
     @model_validator(mode="after")
     def _check(self) -> Device:
@@ -319,6 +418,22 @@ class Device(_Model):
         elif self.switch.kind is ChipKind.mosfet:
             if self.diode is not None:
                 raise ValueError("a mosfet has no separate diode chip; use its reverse model")
+            channel = self.switch.conduction
+            if len(channel.curves) == 1 and channel.rise_doubt is None:
+                # A channel's drop at one temperature only, as a hand-written file may give
+                # it: carried to the others as its technology usually rises, said to be
+                # assumed, as a datasheet read or a part typed in is.
+                from motionsim.device.rise import with_usual_rise
+
+                self.switch.conduction = with_usual_rise(
+                    channel.curves[0],
+                    self.technology,
+                    self.ratings.v_max,
+                    gate_voltage=channel.gate_voltage,
+                    basis=channel.basis,
+                    source=channel.source,
+                    spread=channel.spread,
+                )
         else:
             raise ValueError("switch must be an igbt or a mosfet")
         return self

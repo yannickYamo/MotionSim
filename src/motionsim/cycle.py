@@ -6,12 +6,9 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from motionsim.device.schema import Device
-from motionsim.drivers import MotorPoint, at_speed_and_torque
+from motionsim.drivers import MotorPoint
 from motionsim.engine.limits import hottest
-from motionsim.engine.solver import OperatingPoint, ThermalRunaway
-from motionsim.load import Load, Profile, Sample, sample
-from motionsim.motor.stage import Unreachable
+from motionsim.load import Sample
 
 
 @dataclass(frozen=True)
@@ -19,6 +16,20 @@ class Step:
     sample: Sample
     point: MotorPoint | None
     problem: str | None  # why this instant could not be solved
+    # Where the load's torque pulses through many turns in this instant: the point at the
+    # heaviest place of a turn, which the most current is counted from.
+    peak: MotorPoint | None = None
+
+    @property
+    def heaviest(self) -> MotorPoint | None:
+        return self.peak if self.peak is not None else self.point
+
+    @property
+    def solution(self) -> MotorPoint:
+        """The point of an instant that was solved; asked of one that was not, it says why."""
+        if self.point is None:
+            raise ValueError(self.problem or "this instant was not solved")
+        return self.point
 
 
 @dataclass(frozen=True)
@@ -49,44 +60,20 @@ class Cycle:
     @property
     def shaft_energy(self) -> float:
         """Net mechanical energy delivered at the motor shaft, J. Braking counts negative."""
-        return sum(s.point.stage.p_shaft * s.sample.duration for s in self.solved)
+        return sum(s.solution.stage.p_shaft * s.sample.duration for s in self.solved)
 
     @property
     def loss_energy(self) -> float:
         """Energy lost in the power stage and the motor windings, J."""
-        return sum((s.point.result.p_inverter + s.point.stage.p_motor_loss) * s.sample.duration for s in self.solved)
+        return sum(
+            (s.solution.result.p_inverter + s.solution.stage.p_motor_loss) * s.sample.duration for s in self.solved
+        )
 
     @property
     def dc_power(self) -> list[float]:
         """Power drawn from the DC link at each solved instant, W. Negative: returned to it."""
-        return [s.point.stage.p_electrical + s.point.result.p_inverter for s in self.solved]
+        return [s.solution.stage.p_electrical + s.solution.result.p_inverter for s in self.solved]
 
     @property
     def worst(self) -> Step:
-        return max(self.solved, key=lambda s: hottest(s.point.result))
-
-
-def run_cycle(
-    device: Device,
-    motor,
-    load: Load,
-    profile: Profile,
-    base: OperatingPoint,
-    per_segment: int = 12,
-) -> Cycle:
-    """Solve the power stage at each instant of a motion.
-
-    Each instant is solved as if it lasted forever. That is right for losses
-    and slightly high for junction temperature during short peaks, because a
-    chip takes a few milliseconds to tens of milliseconds to heat up.
-    """
-    steps = []
-    for s in sample(load, profile, per_segment):
-        try:
-            point = at_speed_and_torque(device, motor, s.motor_rpm, s.motor_torque, base)
-            steps.append(Step(s, point, None))
-        except Unreachable as exc:
-            steps.append(Step(s, None, str(exc)))
-        except ThermalRunaway:
-            steps.append(Step(s, None, "no stable junction temperature"))
-    return Cycle(steps)
+        return max(self.solved, key=lambda s: hottest(s.solution.result))

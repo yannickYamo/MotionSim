@@ -1,0 +1,401 @@
+{
+  "example": {
+    "v_supply": 400,
+    "why": "600 V, 30 A IGBT module: servo and industrial drives of this size run permanent-magnet motors",
+    "motors": {
+      "pmsm": {
+        "fit": "recommended",
+        "why": "600 V, 30 A IGBT module: servo and industrial drives of this size run permanent-magnet motors",
+        "values": {
+          "type": "pmsm",
+          "magnets": "surface",
+          "pole_pairs": 4,
+          "kv": 9.375,
+          "l": 0.003,
+          "rs": 0.35,
+          "i_max": 19.0
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 3000,
+          "torque": 5.93,
+          "f_sw": 16000
+        }
+      },
+      "bldc": {
+        "fit": "suits",
+        "why": "the same motors, driven in six steps",
+        "values": {
+          "type": "bldc",
+          "pole_pairs": 7,
+          "kt": 0.75,
+          "r": 0.9921,
+          "l": 0.001488,
+          "i_max": 26.88
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 2000,
+          "torque": 5.6,
+          "f_sw": 20000
+        }
+      },
+      "induction": {
+        "fit": "suits",
+        "why": "induction motors are wound for mains-level supplies like this one",
+        "values": {
+          "type": "induction",
+          "pole_pairs": 2,
+          "rs": 0.5628,
+          "rr": 0.4923,
+          "lm": 0.04503,
+          "lls": 0.00211,
+          "llr": 0.00211,
+          "i_magnetising": 12.64,
+          "i_max": 18.95
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 1400,
+          "torque": 23.4,
+          "f_sw": 8000
+        }
+      },
+      "synrm": {
+        "fit": "suits",
+        "why": "reluctance motors are wound for mains-level supplies like this one",
+        "values": {
+          "type": "synrm",
+          "pole_pairs": 2,
+          "ld": 0.05029,
+          "lq": 0.01029,
+          "rs": 0.5029,
+          "i_max": 19.44
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 1500,
+          "torque": 12.0,
+          "f_sw": 8000
+        }
+      },
+      "dc": {
+        "fit": "unusual",
+        "why": "a brushed motor needs two legs, so a third of this six-switch package would sit idle",
+        "values": {
+          "type": "dc",
+          "kt": 0.8333,
+          "r": 5.05,
+          "l": 0.007577,
+          "i_max": 26.4
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 2500,
+          "torque": 8.8,
+          "f_sw": 20000
+        }
+      },
+      "stepper": {
+        "fit": "unusual",
+        "why": "a stepper needs four legs: two of these packages, with two legs idle",
+        "values": {
+          "type": "stepper",
+          "steps_per_rev": 200,
+          "i_phase": 9.072,
+          "r": 2.315,
+          "l": 0.00643,
+          "holding_torque": 32.4
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 300,
+          "torque": 21.6,
+          "f_sw": 30000
+        }
+      },
+      "dc_series": {
+        "fit": "unusual",
+        "why": "a series motor needs two legs, so a third of this six-switch package would sit idle",
+        "values": {
+          "type": "dc_series",
+          "k": 0.07407,
+          "r": 4.629,
+          "i_max": 27.0
+        },
+        "start": {
+          "v_dc": 400,
+          "rpm": 2600,
+          "torque": 15.0,
+          "f_sw": 20000
+        }
+      }
+    }
+  },
+  "example-mosfet": {
+    "v_supply": 48,
+    "why": "100 V, 100 A silicon MOSFET: e-bikes, robots and power tools of this size run permanent-magnet motors",
+    "motors": {
+      "pmsm": {
+        "fit": "recommended",
+        "why": "100 V, 100 A silicon MOSFET: e-bikes, robots and power tools of this size run permanent-magnet motors",
+        "values": {
+          "type": "pmsm",
+          "magnets": "surface",
+          "pole_pairs": 7,
+          "kv": 78.12,
+          "l": 7.071e-5,
+          "rs": 0.02525,
+          "i_max": 63.36
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 3000,
+          "torque": 4.74,
+          "f_sw": 20000
+        }
+      },
+      "bldc": {
+        "fit": "suits",
+        "why": "the same motors, driven in six steps",
+        "values": {
+          "type": "bldc",
+          "pole_pairs": 7,
+          "kt": 0.09,
+          "r": 0.03636,
+          "l": 5.455e-5,
+          "i_max": 88.0
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 2000,
+          "torque": 2.2,
+          "f_sw": 20000
+        }
+      },
+      "induction": {
+        "fit": "unusual",
+        "why": "induction motors are wound for hundreds of volts; at about 48 V one would be a special winding",
+        "values": {
+          "type": "induction",
+          "pole_pairs": 2,
+          "rs": 0.01975,
+          "rr": 0.01728,
+          "lm": 0.00158,
+          "lls": 7.406e-5,
+          "llr": 7.406e-5,
+          "i_magnetising": 43.2,
+          "i_max": 64.8
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 1400,
+          "torque": 9.6,
+          "f_sw": 8000
+        }
+      },
+      "synrm": {
+        "fit": "unusual",
+        "why": "reluctance motors are wound for hundreds of volts; at about 48 V one would be a special winding",
+        "values": {
+          "type": "synrm",
+          "pole_pairs": 2,
+          "ld": 0.001849,
+          "lq": 0.0003783,
+          "rs": 0.01849,
+          "i_max": 63.45
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 1500,
+          "torque": 4.7,
+          "f_sw": 8000
+        }
+      },
+      "dc": {
+        "fit": "suits",
+        "why": "brushed permanent-magnet motors are low-voltage machines, as this device is",
+        "values": {
+          "type": "dc",
+          "kt": 0.1,
+          "r": 0.1778,
+          "l": 0.0002667,
+          "i_max": 90.0
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 2500,
+          "torque": 3.6,
+          "f_sw": 20000
+        }
+      },
+      "stepper": {
+        "fit": "suits",
+        "why": "steppers are low-voltage machines, as this device is",
+        "values": {
+          "type": "stepper",
+          "steps_per_rev": 200,
+          "i_phase": 30.8,
+          "r": 0.08182,
+          "l": 0.0002273,
+          "holding_torque": 13.2
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 300,
+          "torque": 8.8,
+          "f_sw": 30000
+        }
+      },
+      "dc_series": {
+        "fit": "suits",
+        "why": "series-wound motors run from batteries and from rectified mains alike",
+        "values": {
+          "type": "dc_series",
+          "k": 0.002667,
+          "r": 0.1667,
+          "i_max": 90.0
+        },
+        "start": {
+          "v_dc": 48,
+          "rpm": 2600,
+          "torque": 6.0,
+          "f_sw": 20000
+        }
+      }
+    }
+  },
+  "module-1200v-100a": {
+    "v_supply": 800,
+    "why": "1200 V, 100 A IGBT module: industrial drives of this size run induction motors",
+    "motors": {
+      "pmsm": {
+        "fit": "suits",
+        "why": "permanent-magnet motors are wound for any supply",
+        "values": {
+          "type": "pmsm",
+          "magnets": "surface",
+          "pole_pairs": 4,
+          "kv": 4.688,
+          "l": 0.001791,
+          "rs": 0.209,
+          "i_max": 63.65
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 3000,
+          "torque": 39.7,
+          "f_sw": 8000
+        }
+      },
+      "bldc": {
+        "fit": "suits",
+        "why": "the same motors, driven in six steps",
+        "values": {
+          "type": "bldc",
+          "pole_pairs": 7,
+          "kt": 1.5,
+          "r": 0.5847,
+          "l": 0.0008771,
+          "i_max": 91.2
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 2000,
+          "torque": 38.0,
+          "f_sw": 20000
+        }
+      },
+      "induction": {
+        "fit": "recommended",
+        "why": "1200 V, 100 A IGBT module: industrial drives of this size run induction motors",
+        "values": {
+          "type": "induction",
+          "pole_pairs": 2,
+          "rs": 0.2487,
+          "rr": 0.1756,
+          "lm": 0.05853,
+          "lls": 0.001756,
+          "llr": 0.001756,
+          "i_magnetising": 20.1,
+          "i_max": 61.77
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 1450,
+          "torque": 188.0,
+          "f_sw": 8000
+        }
+      },
+      "synrm": {
+        "fit": "suits",
+        "why": "reluctance motors are wound for mains-level supplies like this one",
+        "values": {
+          "type": "synrm",
+          "pole_pairs": 2,
+          "ld": 0.03018,
+          "lq": 0.006173,
+          "rs": 0.3018,
+          "i_max": 64.8
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 1500,
+          "torque": 80.0,
+          "f_sw": 8000
+        }
+      },
+      "dc": {
+        "fit": "unusual",
+        "why": "a brushed motor needs two legs, so a third of this six-switch package would sit idle",
+        "values": {
+          "type": "dc",
+          "kt": 1.667,
+          "r": 2.963,
+          "l": 0.004445,
+          "i_max": 90.0
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 2500,
+          "torque": 60.0,
+          "f_sw": 20000
+        }
+      },
+      "stepper": {
+        "fit": "unusual",
+        "why": "a stepper needs four legs: two of these packages, with two legs idle",
+        "values": {
+          "type": "stepper",
+          "steps_per_rev": 200,
+          "i_phase": 30.24,
+          "r": 1.389,
+          "l": 0.003858,
+          "holding_torque": 216.0
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 300,
+          "torque": 144.0,
+          "f_sw": 30000
+        }
+      },
+      "dc_series": {
+        "fit": "unusual",
+        "why": "a series motor needs two legs, so a third of this six-switch package would sit idle",
+        "values": {
+          "type": "dc_series",
+          "k": 0.04444,
+          "r": 2.778,
+          "i_max": 90.0
+        },
+        "start": {
+          "v_dc": 800,
+          "rpm": 2600,
+          "torque": 100.0,
+          "f_sw": 20000
+        }
+      }
+    }
+  }
+}

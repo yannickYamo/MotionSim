@@ -1,0 +1,38 @@
+name: A figure is wrong
+description: A loss, a temperature, a current or a verdict that disagrees with a datasheet, a measurement, another tool or a hand calculation.
+labels: [wrong figure]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful report there is. Please do not attach a datasheet or name a real part: describe it by kind and rating ("a 100 V, 2 mΩ silicon MOSFET") and give the figures themselves.
+  - type: textarea
+    id: figure
+    attributes:
+      label: The figure, and what MotionSim gives
+      description: Which quantity, at which operating point, and the value shown.
+      placeholder: "Turn-on loss of the switch at 48 V, 20 A, 20 kHz: 1.9 W"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What it should be, and where that comes from
+      description: The value you expect and its source, such as a datasheet table or figure (by its title), a measurement and how it was taken, another tool, or the calculation written out.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: The design file or the command
+      description: The file given to `motionsim design run`, the setup saved from the page, or the full command line.
+      render: yaml
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `motionsim --version` prints, or "the live page" with the date.
+    validations:
+      required: true

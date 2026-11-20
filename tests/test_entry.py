@@ -40,10 +40,15 @@ def test_a_typed_part_holds_the_figures_as_they_were_typed() -> None:
 def test_a_typed_part_loses_what_the_closed_form_says() -> None:
     """Conduction of a typed part against the resistance it was typed with."""
     d = from_figures({k: v for k, v in FIGURES.items() if k not in ("rds_on_hot", "rds_hot_tj")})
-    op = replace(fet_op(), i_rms=20.0, t_dead=0.0)
+    # Turning fast, so that the junction keeps one temperature through the turn.
+    op = replace(fet_op(), i_rms=20.0, t_dead=0.0, f_out=5000.0)
     r = solve(d, op)
-    # Each switch carries half the phase current's square, less what the dead time takes.
-    assert r.switch.conduction == pytest.approx(0.5 * 20.0**2 * 4.0e-3, rel=0.02)
+    # Each switch carries half the phase current's square, less what the dead time takes,
+    # through the 25 °C resistance risen as a silicon part's does, as the power 1.9 of the
+    # absolute temperature, to the junction's own temperature.
+    risen = ((r.tj_switch + 273.15) / 298.15) ** 1.9
+    assert risen > 1.05
+    assert r.switch.conduction == pytest.approx(0.5 * 20.0**2 * 4.0e-3 * risen, rel=0.02)
 
 
 @pytest.mark.parametrize(
@@ -53,16 +58,25 @@ def test_a_typed_part_loses_what_the_closed_form_says() -> None:
         ({"v_plateau": 2.0}, "v_plateau"),
         ({"rds_on_hot": 2.0}, "rds_on_hot"),
         ({"rth_jc": 62}, "rth_jc"),  # the junction-to-ambient figure in the wrong box
-        ({"q_gs": ""}, "q_gs"),
+        ({"q_gs": "abc"}, "q_gs"),
         ({"q_gd": "abc"}, "q_gd"),
         ({"oss_v": None}, "oss_v"),
-        ({"part_number": " "}, "part_number"),
+        ({"part_number": "x" * 81}, "part_number"),
     ],
 )
 def test_a_slip_is_refused_at_the_figure_it_sits_in(change, field) -> None:
     with pytest.raises(Mistyped) as caught:
         from_figures({**FIGURES, **change})
     assert caught.value.field == field
+
+
+def test_an_empty_name_and_an_empty_gate_source_charge_are_taken_not_refused() -> None:
+    """Once refused, these two are filled now (D160): the name by the kind, numbered; the
+    charge as 1.4 times the gate-drain charge, which the device carries as taken."""
+    device = from_figures({**FIGURES, "q_gs": "", "part_number": " ", "vendor": ""})
+    assert (device.vendor, device.part_number) == ("Typed", "MOSFET 1")
+    assert device.switch.charge.q_gs == pytest.approx(1.4 * FIGURES["q_gd"] * 1e-9)
+    assert [t.figure for t in device.taken or []] == ["q_gs"]
 
 
 def test_the_page_takes_a_typed_part_and_hands_back_its_file(tmp_path) -> None:
@@ -82,7 +96,7 @@ def test_the_command_line_builds_a_device_from_the_template(tmp_path, capsys) ->
     assert cli.main(["build", str(figures), "-o", str(device)]) == 0
     assert load_device(device).ratings.i_nominal == 100
     figures.write_text(figures.read_text().replace("rds_on: 4.0", "rds_on: 4000"))
-    assert cli.main(["build", str(figures), "-o", str(device)]) == 1
+    assert cli.main(["build", str(figures), "-o", str(device)]) == 2
     assert "milliohm" in capsys.readouterr().err
 
 
@@ -272,8 +286,7 @@ def test_the_board_through_the_page_and_the_command_line(tmp_path, capsys) -> No
         assert cli.main(["simulate", *common, *cooling]) == 0
     assert "power-stage loss" in capsys.readouterr().out
     for wrong in ([], ["--tair", "30"], ["--rth-ja", "45"], ["--tair", "30", "--rth-ja", "45", "--rth-heatsink", "4"]):
-        with pytest.raises(SystemExit):
-            cli.main(["simulate", *common, *wrong])
+        assert cli.main(["simulate", *common, *wrong]) == 2
 
 
 def test_the_dead_time_advice_says_what_common_firmware_would_cost(tmp_path) -> None:

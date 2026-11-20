@@ -26,8 +26,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.sparse import lil_matrix
-from scipy.sparse.linalg import splu
+
+
+# SciPy takes a good part of a second to load, and most runs never reach this: it is
+# loaded at the first call.
+def coo_matrix(*args, **kwargs):
+    from scipy.sparse import coo_matrix as loaded
+
+    return loaded(*args, **kwargs)
+
+
+def splu(*args, **kwargs):
+    from scipy.sparse.linalg import splu as loaded
+
+    return loaded(*args, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -80,17 +92,26 @@ def _assemble(plate: Plate, stack: Stack, cell: float):
     sideways = stack.k_plate * stack.t_plate
     down = stack.k_insulation / stack.t_insulation * dx * dy
     gx, gy = sideways * dy / dx, sideways * dx / dy
-    matrix = lil_matrix((nx * ny, nx * ny))
-    for j in range(ny):
-        for i in range(nx):
-            n = j * nx + i
-            diagonal = down
-            for di, dj, g in ((1, 0, gx), (-1, 0, gx), (0, 1, gy), (0, -1, gy)):
-                ii, jj = i + di, j + dj
-                if 0 <= ii < nx and 0 <= jj < ny:
-                    matrix[n, jj * nx + ii] = -g
-                    diagonal += g
-            matrix[n, n] = diagonal
+    # Every cell loses downwards and to each neighbour it has. Built a whole grid at a time:
+    # the diagonal adds its terms in the same order a cell-by-cell loop would, so the
+    # matrix is the same to the last bit.
+    across, along = np.meshgrid(np.arange(nx), np.arange(ny))
+    i, j = across.ravel(), along.ravel()
+    n = j * nx + i
+    diagonal = np.full(nx * ny, down)
+    rows, cols, values = [], [], []
+    for di, dj, g in ((1, 0, gx), (-1, 0, gx), (0, 1, gy), (0, -1, gy)):
+        ii, jj = i + di, j + dj
+        inside = (ii >= 0) & (ii < nx) & (jj >= 0) & (jj < ny)
+        rows.append(n[inside])
+        cols.append((jj * nx + ii)[inside])
+        values.append(np.full(int(inside.sum()), -g))
+        diagonal = np.where(inside, diagonal + g, diagonal)
+    rows.append(n)
+    cols.append(n)
+    values.append(diagonal)
+    size = nx * ny
+    matrix = coo_matrix((np.concatenate(values), (np.concatenate(rows), np.concatenate(cols))), shape=(size, size))
     return matrix.tocsc(), nx, ny, dx, dy
 
 

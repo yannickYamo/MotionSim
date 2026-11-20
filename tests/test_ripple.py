@@ -127,7 +127,10 @@ def test_discrete_outline_supplies_a_case_to_heatsink_resistance() -> None:
 
     r = solve(part("TO-247"), OP)
     r_cs = assumed.interface_resistance("TO-247", 30.0, "typical")
-    assert r.t_case == pytest.approx(OP.t_sink + r_cs * (r.switch.total + r.diode.total))
+    loss = r.switch.total + r.diode.total
+    mean_case = r.tj_switch - part("TO-247").switch.thermal.rth * r.switch.total
+    assert mean_case == pytest.approx(OP.t_sink + r_cs * loss)
+    assert 0 <= r.t_case - mean_case < 0.05 * r_cs * loss  # at its highest in a turn, a little above its mean
     assert any("computed for a TO-247 on grease" in a for a in r.assumptions)
     assert r.tj_peak_range[0] < r.tj_switch_peak < r.tj_peak_range[1]
     assert r.tj_switch > bare.tj_switch

@@ -20,7 +20,7 @@ What that kind of tool does not do is where this project begins.
 | The pain | What it does to the user | What MotionSim does |
 |---|---|---|
 | One vendor's parts only | Two parts from two vendors cannot be compared on equal terms | The model is built from the part's own datasheet, whoever made it |
-| A part exists only once someone has fitted it | A new or unusual part has no model | A datasheet, nine typed figures or your own double-pulse data make a model |
+| A part exists only once someone has fitted it | A new or unusual part has no model | A datasheet, a few typed figures or your own double-pulse data make a model |
 | Fitted coefficients, not shown | Nobody can check the model against the datasheet | Each value keeps the page it came from and its test conditions |
 | One number out | No way to tell an interpolated result from an extrapolated one | Every result says what the data supports and what is assumed |
 | An operating point the user must already know | Modulation index and power factor are what a specialist works out, not what a builder has | The user gives a motor, a supply and a load; the tool works out the operating point |
@@ -41,7 +41,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 - Margins a specialist applies without thinking are checked and explained: voltage against the supply, junction temperature, peak and stall current, dead time, results that rest on assumed data.
 - The output is a verdict with its reasons, and not only numbers.
 
-**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing nine figures from a datasheet, and two made-up parts to try, are there to make that first step short.
+**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing a few figures from a datasheet, and two made-up parts to try, are there to make that first step short.
 
 ## Data: the datasheet is the model
 
@@ -99,9 +99,13 @@ Tj = T_heatsink + R_case-to-heatsink · P_package + R_junction-to-case · P_chip
 
 **Heating between chips is computed, shown and replaceable.** In a module the chips share copper and warm each other, and datasheets rarely say by how much. Ignoring it is wrong in the unsafe direction. So it is computed from a heat-spreading model of a generic package of that construction, and the result reports the hottest junction as a range across the assumption. A maker's or a measured figure replaces it.
 
-**Defaults come from physics, not from any vendor's numbers.** Chip-to-chip heating, a package's case-to-heatsink resistance and the shape of a missing transient curve are worked out from standard outlines, handbook material properties and a chip size that follows from the current rating. Nothing is fitted to a vendor's tool or data. The price is a wider range than a vendor's calibrated figure would give. In exchange the tool works for any vendor's part and every default can be traced. [THERMAL_MODEL.md](THERMAL_MODEL.md) has the method and the figures.
+**Defaults come from physics, not from any vendor's numbers.** Chip-to-chip heating, a package's case-to-heatsink resistance and the shape of a missing transient curve are worked out from standard outlines, handbook material properties and a chip size that follows from the current rating and the technology. Nothing is fitted to a vendor's tool or data. The price is a wider range than a vendor's calibrated figure would give. In exchange the tool works for any vendor's part and every default can be traced. [THERMAL_MODEL.md](THERMAL_MODEL.md) has the method and the figures.
 
-**Limits apply to the peak junction temperature.** Ratings are stated for the peak within the output period, so that is what is held to the rating.
+**Limits apply to the peak junction temperature.** Ratings are stated for the peak within the output period, so that is what is held to the rating. Within the period each chip's loss is read at its own temperature at each instant, and standstill is the slow end of the same solution, not a separate case.
+
+**A missing transient curve is filled by conduction, and bounded.** Where a datasheet gives a resistance and no curve, the response is that of the column under the die, sized so that it ends at the datasheet's resistance. The top of the range takes the junction to follow the loss at once, which no response can exceed, so a result that passes at the top of its range passes whatever the real curve is.
+
+**A missing figure is given its technology's usual value, said to be assumed, and held in doubt.** An on-resistance with no hot figure rises as its kind of transistor does; a gate with no total charge is taken at the most its kind holds. Neither is offered as the datasheet's.
 
 **Temperature is followed through time, cautiously.** Through a motion each chip's own thermal path moves in time with its loss, and what the chips share follows with the heat capacity of the copper under them. Only the copper is counted, so the real package is slower and the result errs warm. Where nothing says at what rotor position a motor stops, it is taken to stop where the hottest chip is loaded most.
 

@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 from motionsim import cli, design, page
+from motionsim.design import report
 from motionsim.fit.typed import TEMPLATE
 
 ROOT = Path(__file__).parent.parent
@@ -31,7 +32,10 @@ def test_a_design_started_for_a_part_runs_as_it_is_and_says_what_the_page_says(t
     capsys.readouterr()
     assert cli.main(["design", "run", str(file), "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
-    assert out["outcome"] == "passes" and out["followed"] == "example-mosfet"
+    # The joint lowers what it lifted, and on a supply that takes nothing back that energy is a
+    # caution: the design point itself passes.
+    assert out["outcome"] == "passes with cautions" and out["followed"] == "example-mosfet"
+    assert [c["topic"] for c in out["motion"]["checks"] if c["level"] == "caution"] == ["braking"]
     assert set(out) >= {"fit", "stage", "verdict", "motion", "build", "drive", "setup", "devices"}
     # The same figures as the page's own steps, asked one by one.
     ws = page.Workspace(tmp_path / "ws")
@@ -65,8 +69,8 @@ def test_the_report_says_what_was_tested_the_verdict_and_what_it_rests_on(tmp_pa
         "## What this rests on",
     ):
         assert heading in text, heading
-    assert "**Outcome: passes.**" in text and "2000 rpm, 1.6 N·m" in text and "e+0" not in text
-    assert "| synthetic MOSFET-100V-100A | passes |" in text and "Verify by measurement" in text
+    assert "**Outcome: passes with cautions.**" in text and "3000 rpm, 4.74 N·m" in text and "e+0" not in text
+    assert "| made-up 100 V MOSFET | passes |" in text and "Verify by measurement" in text
 
 
 def test_what_cannot_be_run_is_said_in_place_not_thrown(tmp_path, capsys) -> None:
@@ -99,6 +103,75 @@ def test_a_part_that_does_not_pass_is_status_three_with_the_failing_check(tmp_pa
         and failed[0]["topic"] == "voltage"
         and "100 V rating" in failed[0]["message"]
     )
+
+
+def test_a_part_with_a_caution_at_the_design_point_passes_with_cautions(tmp_path, capsys) -> None:
+    """85 V on the 100 V part is above the 80% that leaves room for overshoot, and under the
+    rating: a caution, not a failure. The outcome says so, and the status is still 0."""
+    near = started(tmp_path, conditions={"v_dc": 85})
+    capsys.readouterr()
+    skip = ["--skip", "drive", "--skip", "motion", "--skip", "build"]
+    assert cli.main(["design", "run", str(near), "--json", *skip]) == 0
+    out = json.loads(capsys.readouterr().out)
+    (candidate,) = out["verdict"]["candidates"]
+    assert candidate["level"] == "caution" and out["outcome"] == "passes with cautions"
+    assert {c["topic"] for c in candidate["checks"] if c["level"] == "caution"} == {"voltage"}
+
+
+def test_a_motion_the_data_cannot_decide_does_not_lift_a_part_that_fails(tmp_path, capsys, monkeypatch) -> None:
+    """150 V on the 100 V part fails at the design point. A motion whose checks the data
+    cannot decide (made so here by hand) leaves it failing: status 3, never undecided's 4."""
+    real = design.cycle
+
+    def undecided(request, workspace):
+        found = real(request, workspace)
+        found["checks"] = [{**c, "level": "undecided"} if c["level"] == "fail" else c for c in found["checks"]]
+        return {**found, "level": "undecided"}
+
+    monkeypatch.setattr(design, "cycle", undecided)
+    over = started(tmp_path, conditions={"v_dc": 150})
+    capsys.readouterr()
+    assert cli.main(["design", "run", str(over), "--json", "--skip", "drive", "--skip", "build"]) == 3
+    out = json.loads(capsys.readouterr().out)
+    assert out["outcome"] == "does not pass" and out["motion"]["level"] == "undecided"
+    assert "fail" not in {c["level"] for c in out["motion"]["checks"]}
+
+
+def test_a_motor_load_and_profile_named_as_files_beside_the_design_are_read_from_there(tmp_path) -> None:
+    """The motor, the load and the profile named by file, beside the design and not where the
+    command runs: the design read is the same design with the three written into it."""
+    import shutil
+
+    folder = tmp_path / "beside"
+    folder.mkdir()
+    parts = {
+        "motor": "motor_robot_joint_pmsm.yaml",
+        "load": "load_robot_joint.yaml",
+        "profile": "profile_joint_move.yaml",
+    }
+    for name in parts.values():
+        shutil.copy(ROOT / "examples" / name, folder / name)
+    conditions = {"v_dc": 48, "rpm": 2000, "torque": 1.0, "f_sw": 20000, "cooling": "held", "t_sink": 60}
+    by_name = {"devices": ["example-mosfet"], "conditions": conditions, **parts}
+    written_in = {**by_name, **{key: yaml.safe_load((folder / name).read_text()) for key, name in parts.items()}}
+    ws = page.Workspace(tmp_path / "ws")
+    read = []
+    for file, setup in (("named.yaml", by_name), ("written.yaml", written_in)):
+        (folder / file).write_text(yaml.safe_dump(setup))
+        read.append(design.load_setup(folder / file, ws))
+    assert read[0] == read[1]
+    assert read[0]["motor"]["rs"] == 0.045 and read[0]["load"]["gear_ratio"] == 50
+    assert [s["duration"] for s in read[0]["profile"]["segments"]] == [0.3, 0.45, 0.3, 2.0]
+
+
+def test_a_design_names_up_to_five_devices(tmp_path) -> None:
+    """Five devices, the most compared at once, are a design; a sixth is refused by count."""
+    setup = design.starting_setup("example-mosfet", page.Workspace(tmp_path))
+    design.validate_setup({**setup, "devices": ["example-mosfet"] * 5})
+    with pytest.raises(design.Refusal) as caught:
+        design.validate_setup({**setup, "devices": ["example-mosfet"] * 6})
+    assert str(caught.value) == "6 devices are named, and 5 is the most compared at once"
+    assert caught.value.fix == "name up to 5" and caught.value.field == "devices"
 
 
 def test_devices_come_by_name_as_files_or_as_typed_figures_and_are_compared(tmp_path, capsys) -> None:
@@ -164,7 +237,7 @@ def test_several_motors_on_one_inverter_and_every_device_through_the_motion(tmp_
     assert second["i_peak"] == pytest.approx(first["i_peak"]) and second["level"] in ("ok", "caution")
     assert "refused" in third and "wound for" in third["fix"] + third["refused"]
     # The table holds a row a device and a row a motor, with the figures of the report.
-    listed = list(csv.DictReader(table.open()))
+    listed = list(csv.DictReader(table.read_text().splitlines()))
     assert [r["kind"] for r in listed] == ["device", "device", "motor", "motor", "motor"]
     assert float(listed[0]["loss_w"]) == pytest.approx(out["verdict"]["candidates"][0]["result"]["loss"])
     assert (
@@ -349,3 +422,35 @@ def test_a_start_that_is_not_a_record_is_refused_in_words(tmp_path, capsys) -> N
     assert cli.main(["design", "run", str(file), "--json"]) in (0, 2, 3, 4)
     said = capsys.readouterr()
     assert "start: {method: open_loop}" in said.out + said.err and "Traceback" not in said.out + said.err
+
+
+def test_the_design_mark_is_the_same_whether_a_figure_was_typed_or_written() -> None:
+    """The page sends what was typed as text and a design file holds a number: kv 100 typed
+    in and kv: 100.0 written down are one design, and carry one mark."""
+    from motionsim.design.setup_file import _canon
+
+    assert _canon({"motor": {"kv": "100"}}) == _canon({"motor": {"kv": 100.0}}) == _canon({"motor": {"kv": 100}})
+    assert _canon({"motor": {"kv": " 1e2 "}}) == _canon({"motor": {"kv": 100}})
+    assert _canon({"name": "my motor"}) != _canon({"name": "my  motor"})
+
+
+@pytest.mark.parametrize(("parallel", "said"), [(1, "1 device a switch"), (2, "2 devices a switch")])
+def test_the_report_says_how_many_devices_make_a_switch(tmp_path, parallel, said) -> None:
+    setup = design.starting_setup("example-mosfet", page.Workspace(tmp_path))
+    conditions = {**setup["conditions"], "parallel": parallel, "cooling": "held", "t_sink": 60}
+    result = {
+        "setup": {**setup, "conditions": conditions},
+        "devices": {
+            "example-mosfet": dict.fromkeys(("name", "technology", "switching"), "x")
+            | {"v_max": 100, "i_nominal": 50, "tj_max": 175}
+        },
+    }
+    switching = next(line for line in report._tested(result) if line.startswith("- Switching:"))
+    assert switching.endswith(f", {said}")
+
+
+def test_a_device_that_could_not_be_solved_is_reported_with_what_to_do() -> None:
+    lines = report._candidate_section(
+        {"name": "made-up part", "problem": "no stable temperature here.", "fix": "Lower the current.", "checks": []}
+    )
+    assert "No stable temperature here. Lower the current." in lines

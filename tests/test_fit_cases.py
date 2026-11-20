@@ -192,11 +192,12 @@ def test_a_resistance_curve_normalised_at_another_temperature_still_gives_the_ta
     assert resistance[175.0] == pytest.approx(4e-3 * 1.5 / 0.8)
 
 
-def test_a_resistance_tabulated_only_at_25_degrees_is_a_curve_at_25_degrees() -> None:
+def test_a_resistance_tabulated_only_at_25_degrees_keeps_its_figure_there_and_is_said_to_be_alone() -> None:
     conduction = build_device(fet()).switch.conduction
-    (only,) = conduction.curves
+    only = conduction.curves[0]
     assert only.tj == 25.0
     assert only.current == [0.0, 100.0] and only.value == pytest.approx([0.0, 4e-3 * 100.0])
+    assert conduction.rise_doubt is not None  # the curves above it are the technology's, not the datasheet's
     assert conduction.source.note == "on-resistance 0.004 SI at 25 °C only"
 
 
@@ -244,7 +245,7 @@ def refused(figures_: dict) -> Mistyped:
         ("i_rated", 0, "current rating has to be above zero"),
         ("rth_jc", -0.6, "junction-to-case resistance has to be above zero"),
         ("q_rr", -120, "reverse-recovery charge has to be above zero"),
-        ("q_rr_current", -50, "measured at a current of has to be above zero"),
+        ("q_rr_current", -50, "the current the recovery charge is measured at has to be above zero"),
     ],
 )
 def test_a_typed_figure_at_or_below_zero_is_refused_as_such_at_its_own_field(key, value, said) -> None:
@@ -270,9 +271,12 @@ def test_a_typed_output_capacitance_without_its_voltage_is_refused_at_the_voltag
 
 
 def test_a_kind_of_transistor_the_typed_form_does_not_know_is_refused() -> None:
-    error = refused({**TYPED, "technology": "Si IGBT"})
+    error = refused({**TYPED, "technology": "Ge BJT"})
     assert error.field == "technology"
-    assert str(error) == "the kind of transistor is one of Si MOSFET, SiC MOSFET, GaN HEMT"
+    assert str(error) == "the kind of transistor is one of Si MOSFET, SiC MOSFET, GaN HEMT, Si IGBT"
+    # An IGBT is typed with its own figures: a transistor's figures under its name lack the diode's.
+    error = refused({**TYPED, "technology": "Si IGBT"})
+    assert error.field == "rth_jc_diode" and str(error) == "junction-to-case resistance, diode is needed"
 
 
 def test_a_typed_output_charge_is_used_before_a_typed_output_capacitance() -> None:
@@ -801,3 +805,63 @@ def test_a_part_with_no_energy_and_no_gate_charges_is_built_from_its_switching_t
     assert any("recovery of the reverse path is left out" in line for line in solve(device, op).limits)
     drive = recommend.choose_gate_drive(device, op, 20.0)
     assert drive.kind == "datasheet" and drive.rg_on is None and "does not move them" in drive.lines[0]
+
+
+def test_a_thermal_resistance_printed_with_a_maximum_is_taken_at_the_maximum_and_losses_stay_typical() -> None:
+    both = build_device(fet(rth_jc_switch=row(Q.rth_jc_switch, 0.45, maximum=0.6)))
+    assert both.switch.thermal.r == [0.6]
+    assert "the datasheet's maximum; typical 0.45 K/W" in both.switch.thermal.source.note
+    alone = build_device(fet())
+    assert alone.switch.thermal.r == [0.6] and "no maximum beside it" in alone.switch.thermal.source.note
+    # The on-resistance stays the typical one, with the maximum kept as how far a part may lie from it.
+    wide = build_device(fet(rds_on=row(Q.rds_on, 4e-3, maximum=5e-3, i=50.0, tj=25.0)))
+    assert wide.switch.conduction.curves[0].value[-1] == pytest.approx(4e-3 * 100.0)
+    assert wide.switch.conduction.spread == pytest.approx(1.25)
+    from motionsim.engine import OperatingPoint, solve
+
+    op = OperatingPoint(
+        v_dc=48, i_rms=20, modulation_index=0.8, power_factor=0.9, f_sw=20000, t_sink=40, v_drive=10, rg_on=5, rg_off=3
+    )
+    assert any("typical values" in text and "1.25 times" in text for text in solve(wide, op).limits)
+    assert not any("typical values" in text for text in solve(alone, op).limits)
+
+
+# ---------- the total gate charge read from a table ----------
+
+
+def test_a_total_gate_charge_read_with_its_gate_voltage_goes_into_the_charge_model() -> None:
+    # 80 nC at a 10 V gate, above the 20 + 14 nC below and on the plateau: taken as printed.
+    charge = build_device(fet(row(Q.q_g, 80e-9, v=10.0))).switch.charge
+    assert charge.q_g == pytest.approx(80e-9) and charge.q_g_drive == 10.0
+
+
+def test_a_total_gate_charge_with_no_gate_voltage_is_left_out_and_said() -> None:
+    # The charge above the plateau is (Qg - Qgs - Qgd) over (Vg - Vplateau): without Vg it is
+    # no figure at all, so the dead time falls back to the estimate that says it is one.
+    charge = build_device(fet(row(Q.q_g, 80e-9))).switch.charge
+    assert charge.q_g is None and charge.q_g_drive is None
+    assert "total gate charge" in charge.source.note and "no gate voltage" in charge.source.note
+
+
+def test_a_total_gate_charge_not_above_the_charges_it_holds_is_refused_as_typed() -> None:
+    # 30 nC is under 20 + 14 nC: it holds both, so it cannot be smaller. Said as a typed part says it.
+    with pytest.raises(MissingData, match="not above the gate-source and gate-drain charges together"):
+        build_device(fet(row(Q.q_g, 30e-9, v=10.0)))
+    with pytest.raises(MissingData, match="gate voltage above the plateau"):
+        build_device(fet(row(Q.q_g, 80e-9, v=4.0)))  # 4 V is under the 4.6 V plateau
+
+
+def test_a_curve_below_the_printed_maximum_is_scaled_to_it_with_its_time_constants_kept() -> None:
+    """The curve is drawn for a typical part and ends at 4.7 K/W; the datasheet's maximum
+    beside it is 5.6 K/W. The network ends at 5.6, each stage 5.6 / 4.7 of the fit, and
+    its time constants are the fit's."""
+    curve = impedance_curve(Q.zth_jc_switch, 4.7)
+    fitted = build_device(igbt(curves=[curve])).switch.thermal
+    held = build_device(igbt(curves=[curve], rth_jc_switch=row(Q.rth_jc_switch, 4.7, maximum=5.6))).switch.thermal
+    assert sum(held.r) == pytest.approx(5.6, rel=1e-4)
+    assert held.tau == fitted.tau
+    assert [r / sum(held.r) for r in held.r] == pytest.approx([r / sum(fitted.r) for r in fitted.r], rel=1e-4)
+    assert "its shape kept" in held.source.note
+    # A maximum below where the curve ends leaves the curve as it was drawn.
+    low = build_device(igbt(curves=[curve], rth_jc_switch=row(Q.rth_jc_switch, 4.0, maximum=4.2))).switch.thermal
+    assert low.r == fitted.r

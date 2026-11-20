@@ -9,9 +9,38 @@ Every check the tool is held to, by how strong a claim it supports, strongest la
 
 Modules A, B and C in this document are three 600 V, 15 A IGBT modules with built-in drivers from one vendor. They are not named.
 
+## What holds each claim
+
+A claim here is held in one of three ways. A **test in CI** runs on every change and fails if the claim stops being true. A **script, not in CI** is in the repository and is run by hand. A **one-off** was done once, by hand or with a script and data that are not in the repository, usually because it needs a datasheet or a vendor's output that is not ours to distribute: it cannot be reproduced from the repository alone, and nothing fails if it stops being true.
+
+| Claim | How it is held | Where |
+|---|---|---|
+| Level A: the closed forms | test in CI, except two lines marked one-off | `tests/`, by the file each section names |
+| Level B: the periodic thermal response against time stepping; a slowly turning motor against the periodic solution | test in CI | `tests/test_ripple.py`, `tests/test_transient.py` |
+| Level B: 421 and 240 operating points against a separate calculation | one-off | script and points not in the repository |
+| Level C: datasheets against their own tables | plot areas and part of the curves by a test that runs only where the datasheets are present, so not in CI; the rest one-off | `tests/test_real_datasheets.py` |
+| Level C: Module A against its datasheet chart, Module C against its vendor's simulator | one-off, Module A's with an earlier state of the tool | the chart readings and the simulator's output are not in the repository |
+| The same three currents on the made-up module of the examples, as the code gives them today | rerun by hand on this version; no test holds them | the section on Module A |
+| Level D: one published inverter loss measurement | one-off | the measured figures are in the table below; the model's inputs are not in the repository |
+| The datasheets the reader has been tried on | one-off, one run each, checked by hand | nothing in the repository |
+| The reader's checks on recorded readings of made-up datasheets | test in CI, no key and no model call | `evals/reader`, the tests marked `reader_eval`; see "Reader accuracy eval" |
+| A typed part beside its read model | one-off | needs the datasheet |
+| 3,400 calls through the page's interface | one-off | script not in the repository |
+| The product's figures stay where they are | test in CI, to a relative 1e-9 | `tests/test_golden.py` |
+| What must hold at any operating point | test in CI | `tests/test_properties.py` |
+| A whole design from one file gives the page's figures | test in CI | `tests/test_design.py` |
+| The engine without the reader's libraries, through every route the page calls | test in CI | `tests/test_hosted.py` |
+| The engine in the browser gives the installed engine's figures | script in CI, to a relative 1e-9 | `web/scripts/engine-check.mjs` |
+| One fixed journey through the hosted page | script in CI | `web/scripts/journey.mjs` |
+| A device changed while an answer is on its way, the search for the largest load cancelled partway (the engine in the browser holds to having stopped), and two short random walks, on the local and the hosted page | script in CI | `web/scripts/race.mjs`, `walk.mjs` |
+| The search for the largest load reports each probe and ends in the answer it gave before; a page that stops waiting stops it on the server | test in CI | `tests/test_heavier_probes.py`, `tests/test_streamed.py` |
+| An answer kept for the report is the one worked out afresh, and never one for another request or device file | test in CI | `tests/test_remembered.py` |
+| The tour at four widths, and the long random walk | script, not in CI | `web/scripts/measure.mjs`, `walk.mjs` |
+| Lighthouse scores | one-off measurement | nothing in the repository |
+
 ## Level A: closed forms
 
-All of these are in `tests/` and pass.
+All of these are in `tests/` and run in CI, except the two lines that say they were checked once.
 
 ### Loss and temperature
 
@@ -99,9 +128,9 @@ Also checked: steady-state temperatures, the self-consistent temperature for an 
 - A stepper's electrical power equals winding loss plus shaft power at six points covering all four quadrants, standstill and zero torque.
 - The output period of a permanent-magnet and an induction motor is the same forwards and backwards.
 - The busiest package carries one third, two thirds or all of a three-leg stage's loss for one-leg, two-leg and three-leg packages.
-- Recovery charge is zero at no current and follows the current below its test point.
+- Recovery charge is zero at no current, follows the current below its test point and grows as the square root above it.
 - Output power stops at the stage's linear range.
-- 3,400 calls through the page's interface, with speeds, torques, voltages and frequencies from negative to fifty times nominal, bad motor values, and impossible loads and motions, each returned a finite result or a stated refusal.
+- Checked once, with a script that is not in the repository: 3,400 calls through the page's interface, with speeds, torques, voltages and frequencies from negative to fifty times nominal, bad motor values, and impossible loads and motions, each returned a finite result or a stated refusal.
 
 Checked term by term against hand calculation: IGBT and diode loss terms; FET conduction, overlap, output-charge and dead-time terms, to four digits; switching events in every symmetric scheme and in block and H-bridge drive in all quadrants; the temperature loop and the periodic peak against time stepping; permanent-magnet control against a brute-force search; induction, brushless DC and brushed DC power balance; the load model; the DC-link energy balance; the heat-spreading plate against its closed-form limit; and unit handling throughout.
 
@@ -165,19 +194,27 @@ Level A, in `tests/test_entry.py`:
 - With no heatsink the case of each package sits at the air's temperature plus its own resistance to air times its own loss.
 - Through the page: each kind of cooling asks for the figure it needs and refuses without it, and the motion follows the same cooling.
 
-One real 100 V transistor, typed in with the same table figures its read model holds, set beside that read model on a 48 V motor at 20 kHz: 1.98 W typed against 2.00 W read at 1 N·m, and 19.7 W against 19.8 W at 4 N·m. The read model has the body diode's curve and the output charge against voltage; the typed one has one figure for each, and at this voltage that costs under 1%. It says nothing about how well either matches the part.
+Figures left empty and a typed IGBT (`tests/test_typed_defaults.py`, `tests/test_typed_igbt.py`, `tests/test_cooling_offer.py`):
+
+- A typed transistor's highest junction temperature left empty is 175 °C for silicon and SiC and 150 °C for GaN; its plateau is 3.0 + 2 = 5.0 V and its gate-source charge 1.4 × 14 = 19.6 nC on the template, with the charge at threshold following as 11.76 nC. Each one taken is a note with its own code naming the value used, holds a verdict that otherwise passes at a caution, and names the box it goes in; a part with every figure given carries nothing taken, and its file is as before.
+- A typed IGBT built from the made-up module's figures holds its on-state lines and energies as typed. Its IGBT conduction is the hand formula for sine PWM with 0.80 V and 45 mΩ, 4.738 W, to 0.2%; its energies are the file's to 0.5%; its loss is the file's plus 1.2% ± 0.3%, the difference being the 25 °C line the file draws and the typed part does not. With the hot figures alone, the knee is 1.075 V, the energies are held hot, and the loss is 16% ± 1% above the file's, with the five figures taken said and the verdict held. Eleven slips are each refused at their box, among them a knee above its voltage, a cold energy above the hot one, a test voltage above the rating and an energy typed in joules. The command line builds the same part from `motionsim template igbt`.
+- The heatsink offered at 40 °C air is 20 W over the loss with the heatsink held at 60 °C, to 1e-12, and that heatsink, used, settles at 60 °C to 1 mK with the same loss to 1e-4; none is offered in air at 60 °C. The board offered keeps the top of the junction's range under 175 °C, and a board 2% smaller than the area found does not; where every board keeps it cool, the offer is the area the six packages' copper needs, 6 × 6.45 cm². A cooling taken from the offer gives the same loss as the same figure typed, and its verdict is held at a caution that names the box.
+
+Checked once, on a datasheet that is not in the repository: one real 100 V transistor, typed in with the same table figures its read model holds, set beside that read model on a 48 V motor at 20 kHz: 1.98 W typed against 2.00 W read at 1 N·m, and 19.7 W against 19.8 W at 4 N·m. The read model has the body diode's curve and the output charge against voltage; the typed one has one figure for each, and at this voltage that costs under 1%. It says nothing about how well either matches the part.
 
 ## Level B: independent numerical integration
 
-- The periodic thermal response is compared with a separate step-by-step integration of a three-stage network driven by half-sine power pulses. Peak temperature agrees within 0.5%.
-- A motor turning at 1.5 rpm, followed through three ten-second output periods in time, reaches the peak that the frequency-domain periodic solution gives, within 0.5 °C. The two share the loss waveform and nothing else.
-- The loss and temperature solver was set against a calculation written apart from it, by numerical integration over the output period: 421 operating points of an IGBT with its diode and 240 of a MOSFET, across six modulation schemes, modulation index 0.05 to 1.15, power factor -1 to 1, 2 to 40 kHz and 25 to 110 °C. Total loss agrees within 0.14%, each loss term within 0.4%, junction rise within 0.15%. The motors (currents, voltages, slip, field weakening found by a brute-force scan) agree within 0.01%; the link capacitor's current and the motor current's ripple, against a simulation of the switching itself, within 0.5%.
+- The periodic thermal response is compared with a separate step-by-step integration of a three-stage network driven by half-sine power pulses. Peak temperature agrees within 0.5%. In CI (`tests/test_ripple.py`).
+- A motor turning at 1.5 rpm, followed through three ten-second output periods in time, reaches the peak that the frequency-domain periodic solution gives, within 0.5 °C. The two share the loss waveform and nothing else. In CI (`tests/test_transient.py`).
+- Checked once, with a script and points that are not in the repository: the loss and temperature solver was set against a calculation written apart from it, by numerical integration over the output period: 421 operating points of an IGBT with its diode and 240 of a MOSFET, across six modulation schemes, modulation index 0.05 to 1.15, power factor -1 to 1, 2 to 40 kHz and 25 to 110 °C. Total loss agrees within 0.14%, each loss term within 0.4%, junction rise within 0.15%. The motors (currents, voltages, slip, field weakening found by a brute-force scan) agree within 0.01%; the link capacitor's current and the motor current's ripple, against a simulation of the switching itself, within 0.5%.
 
 ## Level C: external references
 
 ### Datasheets against their own tables
 
 A curve and a table are two statements of the same quantity in one document. Agreement confirms the axis reading, the digitising and the curve matching. It does not confirm the device data itself, and the table values were used to choose which curve is which, so these are consistency checks, not independent ones.
+
+The datasheets are their makers' property and are not in the repository, so the figures in this section cannot be reproduced from it. `tests/test_real_datasheets.py` holds the plot areas found and some of the curves below wherever a `datasheets/` folder has the files, and skips where it does not, as it does in CI. The rest are readings made once.
 
 **A 650 V discrete IGBT with its diode, vector figures.**
 
@@ -221,9 +258,11 @@ One datasheet, one drawing style. Synthetic pictures cover the cases in `tests/t
 
 ### Module A against its own datasheet chart
 
+**This comparison cannot be rerun from this repository.** The module's device file is not in it (the datasheet is its maker's), and the figures below are as recorded with an earlier state of the tool, before heating between chips and an assumed transient response were modelled. They are kept as a record of what was found, not as a statement of what the code gives today.
+
 The datasheet's Figure 15 gives maximum RMS current against case temperature at 300 V, modulation index 0.8, power factor 0.8, sinusoidal PWM, junction temperature at most 150 °C. The model was built only from the table values in the same datasheet. Chart values were read by eye, to about ±0.3 A. Output frequency is taken as 50 Hz; the chart does not state it.
 
-The datasheet has no transient thermal data, so the model cannot place the peak junction temperature. It gives two limits: the current if the peak is taken at its upper bound, and the current if only the average is limited.
+The datasheet has no transient thermal data. Two limits were computed: the current if the junction follows the loss at once (peak loss times the whole resistance, which is the top of the range the tool reports today), and the current if only the average is limited (`max_current(..., peak=False)`).
 
 | Case temperature | Switching | Peak at upper bound | Vendor chart | Average only |
 |---|---|---|---|---|
@@ -238,14 +277,23 @@ The datasheet has no transient thermal data, so the model cannot place the peak 
 | 110 °C | 16 kHz | 3.0 A | 5.1 A | 7.8 A |
 | 120 °C | 16 kHz | 2.3 A | 4.0 A | 6.2 A |
 
+The vendor chart lay inside the bracket at all ten points; limiting the average alone would have allowed 42 to 55% more current than the chart. The bracket was wide, roughly 0.6 to 1.5 times the chart value.
 
-**The vendor chart lies inside the bracket at all ten points.** Limiting the average alone would allow 42 to 55% more current than the chart.
+#### What the code does today, on a part that is in the repository
 
-The bracket is wide, roughly 0.6 to 1.5 times the chart value. That is what this datasheet can support: without transient thermal data the tool cannot say more.
+The same three figures for the made-up 600 V, 30 A module of the examples with its transient curve taken away, at 300 V, modulation index 0.8, power factor 0.8, 6 kHz, 50 Hz out, against the current its own curve allows. They are the output of `engine.limits.max_current` and of `solve(...).tj_peak_range`, and can be rerun:
+
+| Heatsink | Junction follows the loss at once (top of the range) | Assumed response (the estimate) | With its own transient curve | Average only |
+|---|---|---|---|---|
+| 60 °C | 13.7 A | 25.0 A | 25.3 A | 28.3 A |
+| 80 °C | 11.4 A | 21.1 A | 21.3 A | 24.0 A |
+| 100 °C | 8.8 A | 16.7 A | 16.8 A | 19.1 A |
+
+The estimate is within 1.5% of what the part's own curve gives. The top of the range is far below both because it also carries the widest heating between chips and the worst mounting, not the response alone.
 
 #### Diagnostic, not part of the model
 
-As a test of the explanation, a single thermal time constant was tried in place of the missing transient data:
+As a test of the explanation, a single thermal time constant was tried in place of the missing transient data, with the earlier state of the tool:
 
 | Time constant | Model against chart, across the ten points |
 |---|---|
@@ -255,30 +303,36 @@ As a test of the explanation, a single thermal time constant was tried in place 
 | 12 ms | 12 to 16% high |
 | 20 ms | 22 to 28% high |
 
-One value near 7 to 8 ms brings all ten points within the chart-reading error. That is consistent with the chart limiting peak junction temperature, and plausible for a small chip. It does not prove the explanation is complete: heating between chips is still not modelled and could trade off against the time constant. The value is not used anywhere in the tool, since it would be calibrating to the vendor's answer.
+One value near 7 to 8 ms brought all ten points within the chart-reading error. That is consistent with the chart limiting peak junction temperature, and plausible for a small chip. It does not prove the explanation is complete: heating between chips was not modelled then and trades off against the time constant. The value is not used anywhere in the tool, since it would be calibrating to the vendor's answer.
+
+How the response the tool now assumes compares, for a module of this size: on a ceramic substrate the junction reaches 63% of its resistance in about 17 ms (0.20, 0.50 and 0.99 of it at 1, 10 and 100 ms); as a moulded leadframe module, which is what Module A is, in about 0.2 s. A single 7 to 8 ms is faster than either. The leadframe figure is therefore slow against this one piece of evidence, with the caveat above about what the single time constant was standing in for, and it is the top of the range that covers such a module. This is the weakest point of the thermal model and is listed in its limits.
 
 Still unverified: the assumed curve shapes away from the 7.5 A test point, and any margin the vendor applied.
 
 ### Module C against its vendor's public simulator
+
+A comparison made once. The simulator's output is not redistributed, so the table cannot be reproduced from the repository.
 
 Six operating points at 300 V and modulation index 0.8, sinusoidal PWM. The model is built from the datasheet alone: its tables, and its on-state, diode, turn-on, recovery and transient thermal curves. Turn-off stays on the table, because the hot curve disagrees with it by 17%. Heating between chips is computed for a generic package with the construction left unknown. Nothing is fitted to the simulator. The simulator's temperatures start from the case, so the reference says that nothing lies between case and heatsink.
 
 | Point | Total loss, ours against simulator | Hottest junction, ours against simulator | Ours, range | Inside |
 |---|---|---|---|---|
 | 50 Hz, 6 kHz, pf 0.8 | 24.1 against 22.8 W, +6% | 112.8 against 112.6 °C, +0.2 | 105 to 129 | yes |
-| 50 Hz, 16 kHz, pf 0.8 | 35.7 against 31.7 W, +12% | 144.8 against 141.4 °C, +3.4 | 133 to 169 | yes |
+| 50 Hz, 16 kHz, pf 0.8 | 35.7 against 31.7 W, +13% | 144.8 against 141.4 °C, +3.4 | 133 to 169 | yes |
 | 50 Hz, 6 kHz, pf −0.8 | 24.9 against 23.8 W, +5% | 114.1 against 121.6 °C, −7.5 | 107 to 130 | yes |
 | 50 Hz, 16 kHz, pf 0.3 | 35.8 against 32.0 W, +12% | 142.3 against 140.6 °C, +1.7 | 130 to 167 | yes |
 | 5 Hz, 6 kHz, pf 0.8 | 24.1 against 22.8 W, +6% | 117.8 against 115.9 °C, +1.9 | 110 to 134 | yes |
-| 200 Hz, 6 kHz, pf 0.8 | 24.1 against 22.7 W, +7% | 111.9 against 111.3 °C, +0.6 | 104 to 128 | yes |
+| 200 Hz, 6 kHz, pf 0.8 | 24.1 against 22.7 W, +6% | 111.9 against 111.3 °C, +0.6 | 104 to 128 | yes |
 
-Where the switch is the hottest chip the junction is 0.2 to 3.4 °C high, on a loss 6 to 12% high. Where the diode is, it is 7.5 °C low: the diode's junction is 8 to 11 °C low at every point, which a single coupling figure for switch and diode alike cannot mend (the simulator's own is half as large again for the diode). Heating between chips is reckoned over the package's own face, 0.36 K/W here against the simulator's 0.5.
+Where the switch is the hottest chip the junction is 0.2 to 3.4 °C high, on a loss 6 to 13% high. Where the diode is, it is 7.5 °C low: the diode's junction is 8 to 11 °C low at every point, which a single coupling figure for switch and diode alike cannot mend (the simulator's own is half as large again for the diode). Heating between chips is reckoned over the package's own face, 0.36 K/W here against the simulator's 0.5.
 
 Turn-on at 6 kHz is 0.55 W a switch against the simulator's 0.41 W, a third high. The curve used is the higher of the high-side and low-side curves, which explains some of it and not all. The range is wide because the construction is unknown and every package input is varied together.
 
 Modules A and B could not be run in the same simulator. One part, one vendor, and the reference is a model, not a measurement. `motionsim validate` runs such a comparison from a file of reference points; the simulator's output is not redistributed here.
 
 ## Level D: one public measurement, and what it does and does not show
+
+A comparison made once. The measured figures below are from the published guide; the device model and the run that gave the model's column are not in the repository, since the model was read from a datasheet.
 
 A measured inverter loss, from a reference design a semiconductor maker publishes with its design guide. A 48 V three-phase inverter with five 100 V MOSFETs in parallel at each switch (30 in all) on a heatsink, sinusoidal PWM into an induction motor on a dynamometer, loss measured with a power analyzer from DC input to motor terminals at 8 and at 10 kHz, from 27 to 131 A rms.
 
@@ -299,7 +353,7 @@ What it shows:
 
 - The model is 10 to 31% below the measured loss, and further below as the current rises.
 - The measurement is of the whole inverter: board copper, connectors and snubbers are in it, and they are not in the model. The part of the measured loss that does not change with frequency is about three times the transistors' own conduction loss at 131 A, and grows with the square of the current: about 0.8 mΩ a phase of resistance outside the transistors would account for it. The guide gives no figure to check that against, so the conduction model is neither confirmed nor refuted by this.
-- The part that changes with frequency can be separated, from the two rows measured at the same current. At 27 A the measured loss rises by 1.6 W for each kHz and the model's by 1.1 W; at 131 A, 3.7 W against 4.8 W. So the switching estimate from gate and output charge is about 30% low at low current and 30% high at high current on this board. The snubbers, which lose the same at any current, are part of the first.
+- The part that changes with frequency can be separated, from the two rows measured at the same current. At 27 A the measured loss rises by 1.6 W for each kHz and the model's by 1.15 W; at 131 A, 3.7 W against 4.95 W. So the switching estimate from gate and output charge is about 30% low at low current and about a third high at high current on this board. The snubbers, which lose the same at any current, are part of the first.
 
 What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same maker's companion design (the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
 
@@ -324,11 +378,32 @@ No vendor's device data ships with this project, only made-up parts, and it favo
 | Discrete IGBT, scanned datasheet | an older 600 V part whose datasheet is page images | 19 table values, read from page images | Builds from table values. Its figures are not read. Diode recovery energy is estimated from the tabulated recovery charge. |
 | Rectifier (diode) bridge | not supported | | |
 
-Each row is one run checked by hand. The reader uses a language model and its output can differ between runs.
+Each row is one run checked by hand. The reader uses a language model and its output can differ between runs. The readings and the datasheets are not in the repository, so the table records what was seen once and nothing holds it.
+
+## Reader accuracy eval
+
+The reader is scored offline on thirteen made-up datasheets whose right answers are known, since each is drawn by code from a part made of closed-form curves: an IGBT with its diode, silicon, silicon carbide and gallium nitride transistors, and a six-pack module, written the ways real sheets differ (typical and maximum columns, units, footnoted conditions, logarithmic axes, a page that is only a picture, a table that runs on, a line that tries to give the reader orders). For each sheet there is one faithful recorded reading and twelve to sixteen readings with one named mistake each: 190 recordings in all. Each faithful reading is played again through the chat-completions path, a service on the same machine standing in for the model. Replaying them asks no model and needs no key; `evals/README.md` says how they are built and what they do not prove.
+
+The replay on this version (`python -m evals.reader.run`; the tests marked `reader_eval` hold it to the bars in CI):
+
+| Score | What it is | Bar | Replay |
+|---|---|---|---|
+| `values_read` | table values read exactly and left unflagged, faithful recordings | 1 | 1 |
+| `right_left_alone` | right values not flagged, all recordings | 1 | 1 |
+| `wrong_flagged` | wrong values flagged, all recordings | at least 0.95 | 1 |
+| `frames_found` | drawn plot areas found within 1 pt | 1 | 1 |
+| `curves_read` | drawn curves digitised and unflagged | at least 0.95 | 1 |
+| `curve_worst` | largest relative error of a digitised curve | at most 0.03 | 0.0104 |
+| `curve_rms` | largest root-mean-square relative error of a curve | at most 0.01 | 0.0015 |
+| `silently_wrong_curves` | curves more than 10% off and not flagged | 0 | 0 |
+| `loss_error` | inverter loss from the reading against loss from the part | at most 0.02 | 0.0001 |
+| `rise_error` | junction rise above the heatsink, likewise | at most 0.02 | 0.0004 |
+
+2,304 right values and 119 wrong ones were reported, and a device was built from each of the thirteen sheets. This shows that, given these answers, right and wrong, the checks behave. It says nothing of how often a real model reads a value wrong: that is the live mode, which costs money, is run by no test, and has not been run.
 
 ## The page and the tests
 
-The page is toured at four widths, from 1440 px down to 320 px, through every step and tab. It is also walked at random: a seeded sequence of whatever can be pressed, on a desk-width and a phone-width screen, with every placement check run after each press and nothing allowed to stay waiting. Six walks of thirty presses, about 180 surfaces a run. One fixed journey through the hosted page runs in CI at two widths: a first visit, a made-up part, every step to a verdict, a setting changed, a reload.
+The page is toured at four widths, from 1440 px down to 320 px, through every step and tab. It is also walked at random: a seeded sequence of whatever can be pressed, on a desk-width and a phone-width screen, with every placement check run after each press and nothing allowed to stay waiting. Six walks of thirty presses, about 180 surfaces a run. The tour (`web/scripts/measure.mjs`) and the full walk (`web/scripts/walk.mjs`) are run by hand against the local page; CI runs two walks of fifteen presses against the local page and the hosted one. One fixed journey through the hosted page runs in CI at two widths (`web/scripts/journey.mjs`): a first visit, a made-up part, every step to a verdict, a setting changed, a reload.
 
 The cooling, dead-time and typed-part code is held by tests whose expected values are worked out apart from the code: closed forms, literals from the published figures, and one path through the engine checked against another. Among them (`tests/test_entry.py`, `tests/test_values.py`):
 
@@ -341,20 +416,20 @@ The cooling, dead-time and typed-part code is held by tests whose expected value
 
 A whole design run from one file (`motionsim design run`) gives the figures the page's own steps give, asked one by one (`tests/test_design.py`).
 
-The figures the product exists for are held to the last digit (`tests/test_golden.py`): one operating point, three devices compared on one motor, the same comparison across switching frequency, a load's motion on two kinds of motor, what a device can drive, what to build around it, and a whole design with two devices. It says nothing about whether a figure is right, only that code moved or renamed has left it where it was; the same figures come out to the twelfth digit on Python 3.11 and 3.12.
+The figures the product exists for are held to a relative difference of 1e-9 (`tests/test_golden.py`): one operating point, three devices compared on one motor, the same comparison across switching frequency, a load's motion on two kinds of motor, what a device can drive, what to build around it, and a whole design with two devices. It says nothing about whether a figure is right, only that code moved or renamed has left it where it was. The same recorded figures are the reference on every Python version CI runs, 3.11 to 3.13, so the versions agree with each other to that tolerance.
 
 What must hold at any operating point is tried at points drawn at random (`tests/test_properties.py`): no loss is negative, more current or a faster switch never loses less, a hotter heatsink never leaves a cooler junction, two devices in parallel carrying twice the current lose twice what one does, and a comparison does not depend on the order its parts are named in.
 
 The engine is run as the hosted page loads it, with the datasheet reader's libraries absent, through every route the page calls (`tests/test_hosted.py`).
 
-The page in its hosted form scores 100 for accessibility, best practices and search in Lighthouse at desk and phone widths, with no layout shift as it loads. The tour fails on a control with no name, a request that fails while the page loads, a layout shift at load, a sentence squeezed beside something else, a refusal shown away from its figure, a chart without named axes and units, or drawing text under 9.5 px. It runs at four widths, from 1440 px down to 320 px, and checks that each step opens at its heading.
+The page in its hosted form scored 100 for accessibility, best practices and search in Lighthouse at desk and phone widths, with no layout shift as it loads. That is a measurement made by hand, not a check in CI. The tour fails on a control with no name, a request that fails while the page loads, a layout shift at load, a sentence squeezed beside something else, a refusal shown away from its figure, a chart without named axes and units, or drawing text under 9.5 px. It runs at four widths, from 1440 px down to 320 px, and checks that each step opens at its heading.
 
-What the page shows is held to what it would show afresh. A walk presses controls in an order nobody planned (tabs, steps, the device on the drawing, what is compared, values of a setting added and taken out), on two parts that differ so that one cannot pass for the other, and every fifth press it reloads the page from what it saved and compares every figure on show: a figure left over from before the last change, or one that belongs to another device, fails it. A second script chooses another device at four delays after one of the slow tabs is opened, in the local page and in the hosted one, and holds the page to the same test.
+What the page shows is held to what it would show afresh. A walk presses controls in an order nobody planned (tabs, steps, the device on the drawing, what is compared, values of a setting added and taken out), on two parts that differ so that one cannot pass for the other, and every fifth press it reloads the page from what it saved and compares every figure on show: a figure left over from before the last change, or one that belongs to another device, fails it. A second script (`web/scripts/race.mjs`) chooses another device at four delays after one of the slow tabs is opened, in the local page and in the hosted one, and holds the page to the same test. The same script asks for the largest load, cancels it after two probes, and holds the page to the probes it drew, the button and the focus given back at once, the stop said, and the engine free: in the browser, the engine says it stopped and posts at most the probe it was on; then the search asked again runs to its answer. CI runs the race and two short walks on both; the long walk is run by hand.
 
-The engine the hosted page runs inside the browser is the same Python as the installed one, and is held to it: 44 figures (every kind of motor at its starting point, a motion, a map) agree to better than one part in a thousand million, checked on every change (`web/scripts/engine-check.mjs`).
+The engine the hosted page runs inside the browser is the same Python as the installed one, and is held to it: 44 figures (every kind of motor at its starting point, a motion, a map) agree to a relative 1e-9, checked in CI on every change (`web/scripts/engine-check.mjs`).
 
 ## What these figures were produced with
 
-The engine's figures in this document were last produced with Python 3.12.3 (the tests also run on 3.11), NumPy 2.5.3, SciPy 1.18.1 and Pydantic 2.13.5. The package itself asks only for lower bounds; the product's figures are held to the last digit by `tests/test_golden.py`, so a version of a library that moves one fails there before it reaches a result.
+The engine's figures in this document were last produced with Python 3.12.3, NumPy 2.5.3, SciPy 1.18.1 and Pydantic 2.13.5. The tests run in CI on Python 3.11, 3.12 and 3.13, and once more on the oldest release of each library the package allows (NumPy 1.26.0, SciPy 1.11.1, Pydantic 2.6.0, PyYAML 6.0). The package itself asks only for lower bounds; the product's figures are held to a relative 1e-9 by `tests/test_golden.py`, so a version of a library that moves one fails there before it reaches a result.
 
 Reading a datasheet is different: it uses a language model, and two readings can differ. The model is named in `src/motionsim/observe/reader.py`; what was read is saved beside each device model, value by value with its page, and it is that saved reading, not a fresh one, that a result rests on.

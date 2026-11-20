@@ -1,5 +1,6 @@
 [build-system]
-requires = ["hatchling"]
+# 1.27 is the first hatchling that writes the licence expression and licence files (PEP 639).
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,26 +9,30 @@ dynamic = ["version"]
 description = "From a power transistor's datasheet, whichever vendor's, to the losses and junction temperatures of a motor drive"
 readme = "README.md"
 license = "Apache-2.0"
+license-files = ["LICENSE", "DISCLAIMER.md", "THIRD_PARTY.md"]
 authors = [{ name = "Yannick Maurice" }]
 requires-python = ">=3.11"
 keywords = ["power electronics", "inverter", "motor drive", "motor control", "PMSM", "BLDC", "IGBT", "MOSFET", "SiC", "GaN", "loss model", "thermal model", "power cycling", "datasheet"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+    "Typing :: Typed",
 ]
+# The engine, the command line and the page need these four and nothing else. Each floor is
+# the oldest release the tests pass on with Python 3.11; CI installs exactly these in its
+# lowest-dependencies job.
 dependencies = [
-    "numpy>=1.26",
-    "pydantic>=2.6",
+    "numpy>=1.26.0",
+    "pydantic>=2.6.0",
     "pyyaml>=6.0",
-    "scipy>=1.11",
-    "pdfplumber>=0.11",
-    "pypdfium2>=4.0",
-    "pillow>=10.0",
-    "anthropic>=0.80",
+    "scipy>=1.11.1",
 ]
 
 [project.urls]
@@ -37,7 +42,34 @@ Issues = "https://github.com/yannickYamo/MotionSim/issues"
 Changelog = "https://github.com/yannickYamo/MotionSim/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-cov", "hypothesis", "ruff==0.17.0", "pre-commit"]
+# Reading a datasheet PDF: pip install ".[reader]" in a clone, or
+# pip install "motionsim[reader] @ git+https://github.com/yannickYamo/MotionSim".
+# pdfplumber 0.11.0 itself asks for pypdfium2 4.18.0, so that is the floor here too.
+reader = [
+    "anthropic>=0.80.0",
+    "pdfplumber>=0.11.0",
+    "pillow>=10.0.0",
+    "pypdfium2>=4.18.0",
+]
+all = ["motionsim[reader]"]
+# Working on the code: the reader's libraries, since its tests need them, and the tools CI runs.
+dev = [
+    "motionsim[reader]",
+    "build",
+    "check-wheel-contents",
+    "hypothesis",
+    "mypy>=1.13",
+    "pip-audit",
+    "pre-commit",
+    "pytest>=8.0",
+    "pytest-cov",
+    "pytest-timeout",
+    "pytest-xdist",
+    "ruff==0.17.0",
+    "twine>=6.1",
+    "types-PyYAML",
+    "validate-pyproject[all]",
+]
 
 [project.scripts]
 motionsim = "motionsim.cli:main"
@@ -47,18 +79,71 @@ path = "src/motionsim/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/motionsim"]
+# The hosted page's Python runtime, where a build of the page left it: the wheel's page asks
+# the installed engine and never loads it.
+exclude = ["src/motionsim/webui/engine/pyodide"]
+
+# The made-up parts, motors and loads go into the wheel as motionsim/examples, so they are
+# there for someone who installed with pip and has no clone.
+[tool.hatch.build.targets.wheel.force-include]
+"examples" = "motionsim/examples"
+
+# The source distribution holds what it takes to build the wheel, run the tests and rebuild
+# the page: the package with the built page in it, the tests, the examples, the documents,
+# and the page's own sources (about half a megabyte; node_modules and the packed engine are
+# ignored files and stay out). The repository's own plumbing under .github stays out.
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/examples",
+    "/web",
+    "/docs/CASE_STUDY.md",
+    "/docs/DESIGN_DECISIONS.md",
+    "/docs/GUIDE.md",
+    "/docs/LIMITS.md",
+    "/docs/ROADMAP.md",
+    "/docs/THERMAL_MODEL.md",
+    "/docs/VALIDATION.md",
+    "/docs/images",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/CODE_OF_CONDUCT.md",
+    "/SECURITY.md",
+    "/AGENTS.md",
+    "/CITATION.cff",
+    "/LICENSE",
+    "/DISCLAIMER.md",
+    "/THIRD_PARTY.md",
+    "/Makefile",
+]
+exclude = ["/web/node_modules", "/web/public/engine", "/src/motionsim/webui/engine/pyodide"]
+
+# The two made-up parts are in the wheel twice on purpose: once where the engine and the
+# hosted page load them, once among the examples under the names the documents use.
+[tool.check-wheel-contents]
+ignore = ["W002"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# No test takes a minute; one that takes five is in a loop.
+timeout = 300
+# A warning is a failure. An exception goes below, one line each, with its reason.
+filterwarnings = ["error"]
+markers = [
+    "reader_eval: the datasheet reader's accuracy on recorded readings, run offline with no key (python -m evals.reader.run)",
+]
 
 [tool.ruff]
 line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]
-# The rules that find mistakes, and the ones that keep imports and idiom even. Complexity
-# rules are left for when the long functions have been split, not silenced one by one now.
-select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+# The rules that find mistakes, the ones that keep imports and idiom even, and four that keep
+# a function to a size that can be read: a complexity of 13 at most, 12 branches, 8 returns
+# and 45 statements.
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF", "C901", "PLR0911", "PLR0912", "PLR0915"]
 ignore = [
     "E501",    # a sentence for the user is not broken to fit a column
     "RUF001",  # the degree sign, the micro sign and the multiplication dot are meant
@@ -72,6 +157,14 @@ ignore = [
     "SIM108",  # an if and an else that each say something stay an if and an else
 ]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 13
+
+[tool.ruff.lint.pylint]
+max-branches = 12
+max-returns = 8
+max-statements = 45
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E731"]  # a one-line helper inside a test reads better as a lambda
 
@@ -80,6 +173,22 @@ source = ["motionsim"]
 branch = true
 
 [tool.coverage.report]
-# Measured at 81% with no real datasheets present (the reader's tests on them then skip).
-# Held a little under that, and raised as tests land.
-fail_under = 78
+# Measured at 95% of lines and branches with no real datasheets present (the reader's tests
+# on them then skip). Held two points under that, and raised as tests land.
+fail_under = 93
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/motionsim"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+# Stricter settings come in steps, each one switched on when the code passes it:
+#   1. check_untyped_defs = true
+#   2. disallow_untyped_defs = true, package by package through [[tool.mypy.overrides]],
+#      starting with motionsim.engine and motionsim.device
+#   3. strict = true
+
+# Libraries that publish no type information. PyYAML has it in types-PyYAML, in the dev extra.
+[[tool.mypy.overrides]]
+module = ["scipy.*", "pdfplumber.*", "pypdfium2.*"]
+ignore_missing_imports = true

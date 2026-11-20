@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import csv
 import json
-import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -49,8 +48,9 @@ def test_what_takes_from_the_voltage_a_stage_can_give() -> None:
     assert _usable(device, replace(base, t_dead=10e-6), 0.0) == pytest.approx(0.84)
     # Two in parallel carrying 40 A: 20 A each, 1.6 V of 150 V.
     assert _usable(device, replace(base, parallel=2), 40.0) == pytest.approx(1 - 1.6 / 150)
-    # On 8 V with 20 A and 12.5 µs: 1 − 0.2 − 1.6/4 = 0.4, and a stage gives no less than half.
-    assert _usable(device, replace(base, v_dc=8, t_dead=12.5e-6), 20.0) == pytest.approx(0.5)
+    # On 8 V with 20 A and 12.5 µs: 1 − 0.2 − 1.6/4 = 0.4. Less than half is refused, not given as half.
+    with pytest.raises(ValueError, match="40% of the voltage is left"):
+        _usable(device, replace(base, v_dc=8, t_dead=12.5e-6), 20.0)
 
 
 def test_switching_energy_follows_the_datasheets_figure_of_energy_against_voltage() -> None:
@@ -144,11 +144,11 @@ def test_the_heatsink_limit_given_on_the_command_line_is_the_one_used(capsys) ->
         (["--tair", "30", "--rth-ja", "45", "--copper", "2"], "--copper needs --board-area"),
         (["--tsink", "60", "--tair", "30"], "--tair needs the way to the air"),
         (["--tsink", "60", "--tair", "30", "--rth-heatsink", "2"], "give one cooling"),
-        (["--tair", "30", "--rth-heatsink", "-5"], "has to be above zero"),
+        (["--tair", "30", "--rth-heatsink", "-5"], "heatsink thermal resistance cannot be below 0.001"),
         (["--rth-ja", "45"], "needs the air's temperature"),
     ],
 )
-def test_cooling_flags_that_do_not_add_up_are_refused_with_the_reason(flags, said) -> None:
+def test_cooling_flags_that_do_not_add_up_are_refused_with_the_reason(flags, said, capsys) -> None:
     common = [
         "simulate",
         str(MOSFET),
@@ -171,8 +171,8 @@ def test_cooling_flags_that_do_not_add_up_are_refused_with_the_reason(flags, sai
         "--tdead",
         "1.5e-7",
     ]
-    with pytest.raises(SystemExit, match=re.escape(said)):
-        cli.main([*common, *flags])
+    assert cli.main([*common, *flags]) == 2  # a refusal, as every input that cannot work is
+    assert said in capsys.readouterr().err
 
 
 # ---------- the page ----------
@@ -239,7 +239,8 @@ def two(tmp_path):
     setup = {
         **setup,
         "devices": ["example-mosfet", "example"],
-        "conditions": {**setup["conditions"], "v_dc": 150},
+        # A point light enough for the 30 A part to carry it.
+        "conditions": {**setup["conditions"], "v_dc": 150, "t_sink": 50, "torque": 1.6},
         "repeats": 3,
         "t_ambient": 25,
     }
@@ -257,7 +258,7 @@ def test_the_part_that_passes_is_the_one_followed_whichever_was_named_first(two,
     asked = []
     real = page.cycle
     monkeypatch.setattr(
-        page, "cycle", lambda data, w: (asked.append((data["device"], data.get("repeats"))), real(data, w))[1]
+        design, "cycle", lambda data, w: (asked.append((data["device"], data.get("repeats"))), real(data, w))[1]
     )
     out = design.run(setup, ws, steps=("verdict", "motion", "build"))
     by_id = {c["id"]: c for c in out["verdict"]["candidates"]}
@@ -362,8 +363,8 @@ def test_a_file_named_like_a_made_up_part_does_not_take_its_place(tmp_path) -> N
     assert ws.device("example").technology == "Si IGBT" and ws.device("example-file").technology == "Si MOSFET"
 
 
-def test_a_heatsink_limit_with_no_heatsink_to_size_is_not_passed_over_in_silence() -> None:
-    with pytest.raises(SystemExit, match="one is sized only with --tambient"):
+def test_a_heatsink_limit_with_no_heatsink_to_size_is_not_passed_over_in_silence(capsys) -> None:
+    assert (
         cli.main(
             [
                 "cycle",
@@ -384,6 +385,9 @@ def test_a_heatsink_limit_with_no_heatsink_to_size_is_not_passed_over_in_silence
                 "80",
             ]
         )
+        == 2
+    )
+    assert "one is sized only with --tambient" in capsys.readouterr().err
 
 
 # ---------- two parts that both run, the first of which does not pass ----------

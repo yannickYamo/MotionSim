@@ -6,46 +6,81 @@ Nothing leaves the machine except a datasheet read, which is a call to the
 language model made with the user's own key, and only when asked for.
 
 The server holds no model of its own: every number comes from the engine.
-What it adds is the shape the page needs, and the reason and the fix when an
-input cannot work.
+Every request goes through the service's one dispatch, which also decides what
+is a refusal and what is a fault; what is added here is HTTP.
 """
 
 from __future__ import annotations
 
+import gzip
 import json
 import logging
 import re
+import select
+import socket
 import tempfile
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import unquote
 
 from motionsim.device import save_device
-from motionsim.engine import ThermalRunaway
-from motionsim.page import (  # noqa: F401  (re-exported: the server is the page's interface over HTTP)
+from motionsim.errors import Refusal
+from motionsim.files import MOST_BYTES
+from motionsim.service.answers import RUNAWAY, answer, finite, without_paths
+from motionsim.service.build import recommendations
+from motionsim.service.motion import cycle
+from motionsim.service.presets import setup
+from motionsim.service.routes import ROUTES, STREAMS, call, dispatch, known, stream
+from motionsim.service.validate import asked
+from motionsim.service.verdict import proposal, speed_torque, stage
+from motionsim.service.workspace import (
     EXAMPLE,
-    ROUTES,
-    RUNAWAY,
-    UNWORKABLE,
-    Refused,
     Workspace,
     add_device,
     add_measurement,
     add_typed,
-    asked,
-    call,
     curves,
-    cycle,
-    finite,
-    proposal,
-    recommendations,
-    setup,
-    speed_torque,
-    stage,
-    unworkable,
+    free_key,
 )
 
-MAX_BODY = 40 * 1024 * 1024  # bytes; the largest request the page can send
+# By the names this module has always handed on: the server is the service over HTTP.
+Refused = Refusal
+__all__ = [
+    "EXAMPLE",
+    "MAX_BODY",
+    "MAX_JSON",
+    "ROUTES",
+    "RUNAWAY",
+    "Handler",
+    "Refused",
+    "Server",
+    "Workspace",
+    "add_device",
+    "add_measurement",
+    "add_typed",
+    "asked",
+    "call",
+    "curves",
+    "cycle",
+    "make_handler",
+    "proposal",
+    "read_datasheet",
+    "recommendations",
+    "serve",
+    "setup",
+    "speed_torque",
+    "stage",
+]
+
+MAX_BODY = 40 * 1024 * 1024  # bytes; the largest request the page can send: a datasheet
+MAX_JSON = 1024 * 1024  # bytes; the largest request of names and values, which is a few kilobytes
+# Requests that carry a file's text inside their JSON: held to the size of such a file.
+MAX_FILE_JSON = MOST_BYTES + MAX_JSON
+CARRY_FILES = ("/api/device", "/api/measure")
+# A search answered a step at a time is asked for at its own address with this after it.
+STREAMED = "/stream"
+IDLE = 30.0  # seconds a connection may say nothing before it is dropped
 WEB_ROOT = Path(__file__).parent / "webui"
 MIME = {
     ".html": "text/html; charset=utf-8",
@@ -56,43 +91,36 @@ MIME = {
     ".json": "application/json",
     ".png": "image/png",
     ".ico": "image/x-icon",
+    ".wasm": "application/wasm",
+    ".txt": "text/plain; charset=utf-8",
+}
+# What the page may load and talk to: itself. The engine in the browser is WebAssembly,
+# the charts set styles inline, and small pictures come as data.
+# The page's own policy (web/index.html), sent as a header, which a browser holds to before
+# the page's first line: the same directives, less the runtime's address, which a page
+# served from here never loads, and with no framing, which only a header can forbid.
+POLICY = (
+    "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; "
+    "base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
+)
+# A page on this machine is nobody's to index.
+ROBOTS = b"User-agent: *\nDisallow: /\n"
+ONLY_LOCAL = {"error": "this address answers only its own page"}
+TOO_LARGE = {
+    "refused": "that file is too large to be a datasheet",
+    "fix": "datasheets are a few megabytes; check the file",
+    "field": "",
+}
+TOO_LARGE_JSON = {
+    "refused": "the request is too large to be one the page sends",
+    "fix": "a request of figures is a few kilobytes: send the figures, not a file, or bring a file through its own box",
+    "field": "",
 }
 
 
-def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
-    """Read a datasheet PDF and build its device model. A paid language-model call."""
-    from motionsim.observe import provider
-
-    try:
-        provider.chosen()
-    except provider.NoReader as none:
-        raise Refused(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
-    if not body.startswith(b"%PDF"):
-        raise Refused("that file is not a PDF", "drop the datasheet's PDF file")
-    from motionsim.fit import MissingData, build_device
-    from motionsim.observe import save_observations
-    from motionsim.observe.digitise import digitise_curves  # needs the PDF libraries: only when a datasheet is read
-    from motionsim.observe.reader import ReaderRefused, read_document, read_tables, reader_name
-    from motionsim.observe.verify import check
-
-    key = re.sub(r"[^a-z0-9]+", "-", Path(name).stem.lower()).strip("-") or "datasheet"
-    with tempfile.TemporaryDirectory() as folder:
-        pdf = Path(folder) / f"{key}.pdf"
-        pdf.write_bytes(body)
-        try:
-            document, pages = read_document(pdf)
-            obs = check(read_tables(pages), document, pages, reader=reader_name())
-            obs.curves = digitise_curves(str(pdf), obs)
-        except ReaderRefused as exc:
-            raise Refused(str(exc), "try another datasheet") from None
-        except (
-            Exception
-        ) as exc:  # the reader, the model call or the PDF: whatever it was, the user is told and it is kept
-            log.exception("reading a datasheet failed (%s)", type(exc).__name__)
-            raise Refused(
-                f"the datasheet could not be read: {exc}", "check the key and the file, then try again"
-            ) from None
-    save_observations(obs, workspace.folder / f"{key}.observations.yaml")
+def _what_was_read(obs) -> dict:
+    """How much was read from a datasheet, and each value or curve its checks flagged."""
     flagged = [
         {"what": o.quantity.value, "page": o.page, "why": "; ".join(o.flags)} for o in obs.observations if o.flags
     ] + [
@@ -100,16 +128,64 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
         for c in obs.curves
         if c.flags
     ]
-    read = {
+    return {
         "from_images": len(obs.document.transcribed),
         "values": len(obs.observations),
         "curves": len([c for c in obs.curves if not c.flags]),
         "flagged": flagged,
     }
+
+
+def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
+    """Read a datasheet PDF and build its device model. A paid language-model call."""
+    import warnings
+
+    from motionsim.observe import provider, run
+
+    try:
+        run.ready()
+        provider.chosen()
+    except provider.NoReader as none:
+        raise Refusal(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
+    if not body.startswith(b"%PDF"):
+        raise Refusal("that file is not a PDF", "drop the datasheet's PDF file")
+    from motionsim.fit import MissingData, build_device
+    from motionsim.observe import save_observations
+
+    # A key about to cross a network unencrypted: said in the terminal that runs the page
+    # and handed to the page with the answer.
+    said = [warning] if (warning := run.key_warning()) else []
+    for line in said:
+        log.warning("%s", line)
+    # Never under the name of one of the made-up parts: a datasheet called example.pdf is
+    # the user's part, and must not stand where the example does.
+    key = free_key(re.sub(r"[^a-z0-9]+", "-", Path(name).stem.lower()).strip("-"), "datasheet")
+    with tempfile.TemporaryDirectory() as folder:
+        pdf = Path(folder) / f"{key}.pdf"
+        pdf.write_bytes(body)
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", provider.KeyInTheClear)  # said above, once
+                reading = run.read_datasheet(pdf, say=lambda line: log.info("%s", line))
+        except provider.NoReader as none:
+            raise Refusal(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
+        except provider.ReaderRefused as exc:
+            raise Refusal(str(exc), "try another datasheet") from None
+        except provider.ReaderFailed as exc:
+            # The reader's own one line: the service, the key or the file, with what to do
+            # for that cause. Anything else that goes wrong in there is a fault of the tool,
+            # and is reported as one.
+            raise Refusal(
+                f"the datasheet could not be read: {without_paths(str(exc))}",
+                exc.fix or "check the key and the file, then try again",
+            ) from None
+    obs = reading.observations
+    save_observations(obs, workspace.folder / f"{key}.observations.yaml")
+    read = {**_what_was_read(obs), "summary": reading.summary(), "warnings": said}
     try:
         device = build_device(obs)
     except MissingData as exc:
-        raise Refused(
+        raise Refusal(
             f"the datasheet was read ({read['values']} values) but a model cannot be built: {exc}",
             "the values read are saved; this datasheet lacks something the model needs",
         ) from None
@@ -117,131 +193,239 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
     return {"device": workspace.summary(key, device), "read": read}
 
 
-def make_handler(workspace: Workspace):
-    class Handler(BaseHTTPRequestHandler):
-        server_version = "motionsim"
+def takes_gzip(accepted: str) -> bool:
+    """Whether an Accept-Encoding header takes gzip: named (or as x-gzip) with a weight above
+    nought, or, where it is not named, any coding taken by a * above nought (RFC 9110, 12.5.3)."""
+    weights: dict[str, float] = {}
+    for item in accepted.split(","):
+        coding, *params = (part.strip() for part in item.split(";"))
+        if not coding:
+            continue
+        q = 1.0
+        for param in params:
+            name, _, value = param.partition("=")
+            if name.strip().lower() == "q":
+                try:
+                    q = float(value.strip())
+                except ValueError:
+                    q = 0.0
+        weights[coding.lower()] = q
+    for name in ("gzip", "x-gzip"):
+        if name in weights:
+            return weights[name] > 0
+    return weights.get("*", 0.0) > 0
 
-        def log_message(self, *args) -> None:  # the terminal stays quiet
-            pass
 
-        def _send(self, status: int, body: bytes, kind: str) -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
+class Handler(BaseHTTPRequestHandler):
+    """One request to the local page. The workspace is the server's."""
+
+    server_version = "motionsim"
+    sys_version = ""
+    timeout = IDLE  # a connection that says nothing does not hold a thread for ever
+
+    def version_string(self) -> str:  # the tool's name, and nothing about what runs it
+        return self.server_version
+
+    def log_message(self, *args) -> None:  # the terminal stays quiet
+        pass
+
+    @property
+    def port(self) -> int:
+        """The port this server answers on."""
+        _, port = self.request.getsockname()[:2]
+        return int(port)
+
+    @property
+    def workspace(self) -> Workspace:
+        return self.server.workspace  # type: ignore[attr-defined]
+
+    def _packed(self, body: bytes, kind: str) -> tuple[bytes, dict[str, str]]:
+        """The body as it goes: text of more than a kilobyte is sent gzipped to a browser that
+        takes it, as any host of the built page sends it, so the page opens as quickly here."""
+        textual = kind.startswith(("text/", "application/json", "image/svg"))
+        takes = takes_gzip(self.headers.get("Accept-Encoding") or "")
+        if not (textual and len(body) > 1024):
+            return body, {}
+        if not takes:
+            return body, {"Vary": "Accept-Encoding"}
+        return gzip.compress(body, compresslevel=6, mtime=0), {"Content-Encoding": "gzip", "Vary": "Accept-Encoding"}
+
+    def _send(self, status: int, body: bytes, kind: str, extra: dict[str, str] | None = None) -> None:
+        body, packing = self._packed(body, kind)
+        extra = {**packing, **(extra or {})}
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Content-Security-Policy", POLICY)
+        for name, value in (extra or {}).items():
+            self.send_header(name, value)
+        self.end_headers()
+        if self.command != "HEAD":
             self.wfile.write(body)
 
-        def _json(self, payload, status: int = 200) -> None:
-            self._send(status, json.dumps(finite(payload)).encode(), "application/json")
+    def _json(self, payload, status: int = 200) -> None:
+        self._send(status, json.dumps(finite(payload)).encode(), "application/json")
 
-        def _guarded(self, work) -> None:
-            try:
-                self._json(work())
-            except Refused as exc:
-                self._json({"refused": exc.reason, "fix": exc.fix, "field": exc.field}, 422)
-            except ThermalRunaway:
-                self._json(RUNAWAY, 422)
-            except OverflowError:
-                self._json(
-                    {
-                        "refused": "a figure is too large or too small to work with",
-                        "fix": "check the figures given",
-                        "field": "",
-                    },
-                    422,
-                )
-            except UNWORKABLE as exc:
-                log.info("refused %s: %r", self.path.split("?")[0], exc)
-                self._json(unworkable(exc), 422)
-            except Exception as exc:  # a fault of ours: say so plainly, keep serving, keep where it happened
-                log.exception("fault answering %s", self.path.split("?")[0])
-                self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+    def _local(self) -> bool:
+        """Only this machine's own page may talk to the engine.
 
-        def _local(self) -> bool:
-            """Only this machine's own page may talk to the engine.
+        Another site open in the same browser could otherwise post to this
+        address, and a datasheet read spends the user's own key. The Host
+        header must name this machine, and a request that says where it came
+        from must have come from this page.
+        """
+        port = self.port
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        origin = self.headers.get("Origin")
+        if self.headers.get("Host") not in allowed:
+            return False
+        # The whole origin, its scheme too: this page is served over plain HTTP, and a page of
+        # the same name and port served any other way is not it.
+        return origin is None or origin in {f"http://{host}" for host in allowed}
 
-            Another site open in the same browser could otherwise post to this
-            address, and a datasheet read spends the user's own key. The Host
-            header must name this machine, and a request that says where it came
-            from must have come from this page.
-            """
-            allowed = {f"127.0.0.1:{self.server.server_address[1]}", f"localhost:{self.server.server_address[1]}"}
-            origin = self.headers.get("Origin")
-            if self.headers.get("Host") not in allowed:
-                return False
-            return origin is None or origin.split("://", 1)[-1] in allowed
+    def _file(self, path: str) -> None:
+        """A file of the built page; any other address is the page itself, which then
+        shows the step the address names."""
+        if path == "/robots.txt":
+            return self._send(200, ROBOTS, MIME[".txt"])
+        target = (WEB_ROOT / path.lstrip("/")).resolve()
+        if path in ("/", "") or not target.is_file() or WEB_ROOT.resolve() not in target.parents:
+            target = WEB_ROOT / "index.html"
+        if not target.is_file():
+            return self._send(HTTPStatus.NOT_FOUND, b"the page has not been built", MIME[".txt"])
+        self._send(200, target.read_bytes(), MIME.get(target.suffix, "application/octet-stream"))
 
-        def do_GET(self) -> None:
-            if not self._local():
-                return self._json({"error": "this address answers only its own page"}, 403)
-            path = self.path.split("?")[0]
-            if path == "/engine/mode.json":  # the page asks where its engine is: here
-                return self._json({"server": True})
-            if path == "/api/setup":
-                return self._guarded(lambda: setup(workspace))
-            if path.startswith("/api/device/"):
-                return self._guarded(lambda: curves(path.rsplit("/", 1)[1], workspace))
-            if path.startswith("/api/"):
-                return self._json({"error": "no such address, or one that is posted to"}, 404)
-            target = (WEB_ROOT / path.lstrip("/")).resolve()
-            if path in ("/", "") or not target.is_file() or WEB_ROOT.resolve() not in target.parents:
-                target = WEB_ROOT / "index.html"
-            if not target.is_file():
-                return self._send(HTTPStatus.NOT_FOUND, b"the page has not been built", "text/plain")
-            self._send(200, target.read_bytes(), MIME.get(target.suffix, "application/octet-stream"))
+    def do_GET(self) -> None:
+        if not self._local():
+            return self._json(ONLY_LOCAL, 403)
+        path = self.path.split("?")[0]
+        if path == "/engine/mode.json":  # the page asks where its engine is: here
+            return self._json({"server": True})
+        if path == "/api/setup" or path.startswith("/api/device/"):
+            status, body = dispatch(path, {}, self.workspace)
+            return self._json(body, status)
+        if path.startswith("/api/"):
+            return self._json({"error": "no such address, or one that is posted to"}, 404)
+        self._file(path)
 
-        def do_POST(self) -> None:
-            if not self._local():
-                return self._json({"error": "this address answers only its own page"}, 403)
-            path, _, query = self.path.partition("?")
-            try:
-                length = int(self.headers.get("Content-Length") or 0)
-            except ValueError:
-                length = -1
-            if length < 0:
-                return self._json({"error": "the request does not say how long it is"}, 400)
-            if length > MAX_BODY:
-                return self._json(
-                    {
-                        "refused": "that file is too large to be a datasheet",
-                        "fix": "datasheets are a few megabytes; check the file",
-                        "field": "",
-                    },
-                    422,
-                )
-            body = self.rfile.read(length)
-            if path == "/api/read":
-                name = dict(p.split("=", 1) for p in query.split("&") if "=" in p).get("name", "datasheet.pdf")
-                from urllib.parse import unquote
+    do_HEAD = do_GET  # the same headers, and no body: see _send
 
-                return self._guarded(lambda: read_datasheet(unquote(name), body, workspace))
-            if path not in ROUTES and path not in ("/api/device", "/api/measure", "/api/typed"):
-                return self._json({"error": "no such address"}, 404)
-            try:
-                data = json.loads(body or b"{}")
-            except (ValueError, RecursionError):
-                return self._json({"error": "the request was not JSON"}, 400)
-            if not isinstance(data, dict):
-                return self._json({"error": "the request has to be a JSON object"}, 400)
-            if path == "/api/device":
-                return self._guarded(lambda: add_device(data.get("name", ""), data.get("text", ""), workspace))
-            if path == "/api/typed":
-                return self._guarded(lambda: add_typed(data.get("figures"), workspace))
-            if path == "/api/measure":
-                return self._guarded(
-                    lambda: add_measurement(
-                        data.get("device", ""), data.get("name", ""), data.get("text", ""), workspace
-                    )
-                )
+    def do_OPTIONS(self) -> None:
+        if not self._local():
+            return self._json(ONLY_LOCAL, 403)
+        self._send(204, b"", MIME[".txt"], {"Allow": "GET, HEAD, POST, OPTIONS"})
 
-            def answer():
-                asked(path, data)  # a request that lacks what its address needs is refused in words
-                return ROUTES[path](data, workspace)
+    def _body(self, most: int, too_large: dict) -> bytes | None:
+        """What was posted, or None once the reason it cannot be taken has been sent. A body
+        longer than its kind of request has is refused before a byte of it is read."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if length < 0:
+            self._json({"error": "the request does not say how long it is"}, 400)
+            return None
+        if length > most:
+            self.close_connection = True  # the body is not read, so the connection cannot be kept
+            self._json(too_large, 422)
+            return None
+        return self.rfile.read(length)
 
-            self._guarded(answer)
+    def do_POST(self) -> None:
+        if not self._local():
+            return self._json(ONLY_LOCAL, 403)
+        path, _, query = self.path.partition("?")
+        if path == "/api/read":
+            body = self._body(MAX_BODY, TOO_LARGE)
+            if body is None:
+                return None
+            pdf: bytes = body
+            name = dict(p.split("=", 1) for p in query.split("&") if "=" in p).get("name", "datasheet.pdf")
+            status, said = answer(lambda: read_datasheet(unquote(name), pdf, self.workspace), path)
+            return self._json(said, status)
+        streamed = path.endswith(STREAMED) and path.removesuffix(STREAMED) in STREAMS
+        if streamed:
+            path = path.removesuffix(STREAMED)
+        # Where the request is going is known before its body is read: one to nowhere is
+        # answered at once, and never waited on.
+        if not known(path):
+            self.close_connection = True
+            return self._json({"error": "no such address"}, 404)
+        body = self._body(MAX_FILE_JSON if path in CARRY_FILES else MAX_JSON, TOO_LARGE_JSON)
+        if body is None:
+            return None
+        try:
+            data = json.loads(body or b"{}")
+        except (ValueError, RecursionError):
+            return self._json({"error": "the request was not JSON"}, 400)
+        if not isinstance(data, dict):
+            return self._json({"error": "the request has to be a JSON object"}, 400)
+        if streamed:
+            return self._stream(path, data)
+        status, said = dispatch(path, data, self.workspace)
+        self._json(said, status)
 
-    return Handler
+    def _gone(self) -> bool:
+        """Whether the page has stopped waiting: its request is read whole, so anything the
+        connection has to say now is that it was closed."""
+        try:
+            readable, _, _ = select.select([self.connection], [], [], 0)
+            return bool(readable) and self.connection.recv(1, socket.MSG_PEEK) == b""
+        except (OSError, ValueError):
+            return True
+
+    def _stream(self, path: str, data: dict) -> None:
+        """A search answered a line at a time, each line a JSON object: a step as it finishes,
+        then the answer. A page that stops waiting stops the search before its next step."""
+        self.close_connection = True  # the answer's end is the connection's
+        self.send_response(200)
+        for name, value in (
+            ("Content-Type", "application/x-ndjson"),
+            ("Cache-Control", "no-store"),
+            ("X-Content-Type-Options", "nosniff"),
+            ("Content-Security-Policy", POLICY),
+            ("Connection", "close"),
+        ):
+            self.send_header(name, value)
+        self.end_headers()
+        lines = stream(path, data, self.workspace)
+        try:
+            for line in lines:
+                if self._gone():
+                    break
+                self.wfile.write(json.dumps(finite(line)).encode() + b"\n")
+                self.wfile.flush()
+        except (ConnectionError, TimeoutError):
+            pass  # the page went away mid-line: nothing is left to say to it
+        finally:
+            lines.close()
+
+
+class Server(ThreadingHTTPServer):
+    """The local server, with the workspace its requests are answered from."""
+
+    daemon_threads = True
+
+    def __init__(self, address: tuple[str, int], workspace: Workspace, handler: type = Handler) -> None:
+        self.workspace = workspace
+        super().__init__(address, handler)
+
+    def handle_error(self, request, client_address) -> None:
+        """A page closed or reloaded while its answer was on the way is not a fault: nothing
+        is printed for it. Anything else is logged with where it happened."""
+        import sys
+
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (ConnectionError, TimeoutError)):
+            return
+        log.exception("fault serving a request")
+
+
+def make_handler(workspace: Workspace) -> type[Handler]:
+    """The handler for one workspace, for a server built by hand."""
+    return type("Handler", (Handler,), {"workspace": workspace})
 
 
 # Faults and timings only: never a device file, a datasheet's content or a key.
@@ -250,9 +434,10 @@ log = logging.getLogger("motionsim")
 
 def serve(port: int = 4310, folder: str | Path | None = None, open_browser: bool = True) -> None:
     workspace = Workspace(Path(folder) if folder else Path.home() / ".motionsim" / "devices")
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(workspace))
-    address = f"http://127.0.0.1:{port}/"
-    print(f"motionsim is at {address}  (devices in {workspace.folder}; Ctrl+C to stop)")
+    httpd = Server(("127.0.0.1", port), workspace)
+    address = f"http://127.0.0.1:{httpd.server_address[1]}/"
+    # Said at once, also where the output is a pipe: whoever started this waits for the line.
+    print(f"motionsim is at {address}  (devices in {workspace.folder}; Ctrl+C to stop)", flush=True)
     if open_browser:
         import webbrowser
 

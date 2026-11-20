@@ -7,19 +7,24 @@ import numpy as np
 from motionsim.device.schema import FosterNetwork
 
 
-def zth(network: FosterNetwork, t: np.ndarray | float) -> np.ndarray:
-    """Thermal impedance at time t after a power step, in K/W."""
-    if network.tau is None:
-        raise ValueError("this thermal model has no time constants; only steady state is known")
-    t = np.asarray(t, dtype=float)
-    r = np.asarray(network.r)
-    tau = np.asarray(network.tau)
-    return (r * (1 - np.exp(-t[..., None] / tau))).sum(axis=-1)
+def harmonics(r, tau, samples: int, period: float) -> np.ndarray:
+    """Thermal impedance of a set of stages at each harmonic of a waveform of this many
+    samples that repeats every period, K/W. A period without end is a waveform that is
+    held still at each of its samples: every harmonic then sees the whole resistance.
+    A stage with no time constant follows at once."""
+    r = np.asarray(r, dtype=float)
+    tau = np.asarray(tau, dtype=float)
+    if not np.isfinite(period):
+        return np.full(samples // 2 + 1, r.sum(), dtype=complex)
+    omega = 2 * np.pi * np.fft.rfftfreq(samples, d=period / samples)
+    return (r / (1 + 1j * omega[:, None] * tau)).sum(axis=1)
 
 
-def steady_state_rise(network: FosterNetwork, power: float) -> float:
-    """Junction temperature rise over case for a constant power, in K."""
-    return network.rth * power
+def through(impedance: np.ndarray, power: np.ndarray) -> np.ndarray:
+    """The rise a repeating power waveform settles to through an impedance given at each of
+    its harmonics (see harmonics), at the same instants, K."""
+    power = np.asarray(power, dtype=float)
+    return np.fft.irfft(np.fft.rfft(power) * impedance, n=power.size)
 
 
 def periodic_rise(network: FosterNetwork, power: np.ndarray, period: float) -> np.ndarray | None:
@@ -33,12 +38,7 @@ def periodic_rise(network: FosterNetwork, power: np.ndarray, period: float) -> n
     if network.tau is None:
         return None
     power = np.asarray(power, dtype=float)
-    spectrum = np.fft.rfft(power)
-    omega = 2 * np.pi * np.fft.rfftfreq(power.size, d=period / power.size)
-    r = np.asarray(network.r)
-    tau = np.asarray(network.tau)
-    impedance = (r / (1 + 1j * omega[:, None] * tau)).sum(axis=1)
-    return np.fft.irfft(spectrum * impedance, n=power.size)
+    return through(harmonics(network.r, network.tau, power.size, period), power)
 
 
 def repeating_rise(r, tau, power: np.ndarray, dt: float) -> np.ndarray:

@@ -35,9 +35,15 @@ for route, body in (
     ("/api/cycle", {**start, "device": "example-mosfet"}),
     ("/api/recommend", {**start, "device": "example-mosfet"}),
     ("/api/capability", {**start, "device": "example-mosfet"}),
+    ("/api/event", {**start, "device": "example-mosfet", "event": {"layout": "l_loop_nh: 9"}}),
     ("/api/map", {**start, "device": "example-mosfet", "rpm_max": 3000, "torque_max": 2, "n": 5}),
     ("/api/report", start),
-    ("/api/typed", {"figures": {"part_number": "X", "v_rated": 100, "i_rated": 100, "tj_max": 175, "rth_jc": 0.6,
+    ("/api/largest", {**start, "device": "example-mosfet"}),
+    ("/api/loads", {"kind": "pmsm", "rpm": 2000, "torque": 1.6, "v_dc": 48}),
+    ("/api/device", {"name": "mine.device.yaml", "text": Path("src/motionsim/example_mosfet.yaml").read_text()}),
+    ("/api/measure", {"device": "example", "name": "pulse.json",
+                      "text": Path("examples/double_pulse_example.json").read_text()}),
+    ("/api/typed", {"figures": {"technology": "Si MOSFET", "part_number": "X", "v_rated": 100, "i_rated": 100, "tj_max": 175, "rth_jc": 0.6,
                                 "rds_on": 4, "v_th": 3, "v_plateau": 4.6, "q_gs": 20, "q_gd": 14}}),
 ):
     answer = json.loads(page.call(route, json.dumps(body), ws))

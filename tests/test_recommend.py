@@ -30,12 +30,16 @@ def test_dead_time_from_gate_charge_is_the_three_intervals_of_turn_off() -> None
     c = device.switch.charge
     c_iss = c.q_gs / c.v_plateau
     v_th = c.v_plateau * c.q_g_th / c.q_gs
-    expected = (
-        op.rg_off * c_iss * log(op.v_drive / c.v_plateau)
-        + c.q_gd * op.rg_off / c.v_plateau
-        + op.rg_off * c_iss * log(c.v_plateau / v_th)
-    )
+    # The part gives no total gate charge: above its plateau a GaN gate is taken to hold at
+    # most 1.3 times the capacitance it has below, and usually 1.1 times.
+    assert c.q_g is None and "gan" in device.technology.lower()
+    after = c.q_gd * op.rg_off / c.v_plateau + op.rg_off * c_iss * log(c.v_plateau / v_th)
+    expected = op.rg_off * 1.3 * c_iss * log(op.v_drive / c.v_plateau) + after
+    shortest = op.rg_off * 1.1 * c_iss * log(op.v_drive / c.v_plateau) + after
     r = recommend.dead_time(device, op, driver_mismatch=20e-9)
+    assert r.value["estimated"] == 1.0
+    assert r.value["t_dead_least"] == pytest.approx(max(1.2 * (1.1 * shortest + 20e-9), 20e-9))
+    assert any("an estimate" in text for text in r.lines) and not any("at least" in text for text in r.lines)
     # A tenth longer when hot, the mismatch given, the margin on the sum, and never under the floor.
     gan = "gan" in device.technology.lower()
     floor = 20e-9 if gan else 100e-9  # written out: the test must not read the answer from the code
@@ -187,3 +191,71 @@ def test_a_chosen_gate_resistor_is_never_below_the_transistors_own() -> None:
     device.switch.rg_internal = 0.5 * min(free.value["rg_on"], free.value["rg_off"])
     part = recommend.gate_resistors(device, op, 20.0)
     assert part.value == free.value and any("leaving" in line for line in part.lines)
+
+
+def test_with_the_total_gate_charge_the_delay_is_the_gate_discharging_to_its_plateau() -> None:
+    """A gate of 100 nC at 10 V with 30 nC to the plateau at 5 V and 20 nC across it holds
+    50 nC above the plateau, 10 nF over those 5 V. Through 4 Ω it comes down from 10 V to
+    5 V in 4 Ω × 10 nF × ln 2 = 27.73 ns. The voltage then rises in 20 nC × 4 Ω / 5 V = 16 ns,
+    and the current falls as the gate goes from 5 V to its 3 V threshold with 30 nC / 5 V =
+    6 nF: 4 Ω × 6 nF × ln(5/3) = 12.26 ns. Together 55.99 ns."""
+    device = fet()
+    charge = device.switch.charge.model_copy(
+        update=dict(q_gs=30e-9, q_gd=20e-9, q_g_th=18e-9, v_plateau=5.0, q_g=100e-9, q_g_drive=10.0)
+    )
+    device = device.model_copy(
+        update={"technology": "Si MOSFET", "switch": device.switch.model_copy(update={"charge": charge})}
+    )
+    assert recommend.turn_off_time(device, 10.0, 4.0) == pytest.approx((27.73e-9, 16e-9, 12.26e-9), rel=1e-3)
+    r = recommend.dead_time(device, fet_op(i_rms=0.0, v_drive=10.0, rg_off=4.0), driver_mismatch=60e-9)
+    assert r.value == {"t_dead": pytest.approx(1.2 * (1.1 * 55.99e-9 + 60e-9), rel=1e-3)}
+    assert any("at least" in text for text in r.lines) and not any("estimate" in text for text in r.lines)
+    # The same gate with no total charge given: silicon, so 2.5 times the 6 nF at most, and
+    # the result says it is an estimate and where the usual 1.6 times would put it.
+    bare = charge.model_copy(update=dict(q_g=None, q_g_drive=None))
+    device = device.model_copy(update={"switch": device.switch.model_copy(update={"charge": bare})})
+    assert recommend.turn_off_time(device, 10.0, 4.0)[0] == pytest.approx(4.0 * 15e-9 * 0.693147, rel=1e-4)
+    r = recommend.dead_time(device, fet_op(i_rms=0.0, v_drive=10.0, rg_off=4.0), driver_mismatch=60e-9)
+    most = 4.0 * 15e-9 * 0.693147 + 16e-9 + 12.26e-9
+    usual = 4.0 * 9.6e-9 * 0.693147 + 16e-9 + 12.26e-9
+    assert r.value["t_dead"] == pytest.approx(1.2 * (1.1 * most + 60e-9), rel=1e-3)
+    assert r.value["t_dead_least"] == pytest.approx(1.2 * (1.1 * usual + 60e-9), rel=1e-3)
+    assert r.value["estimated"] == 1.0
+    assert not any("shortest" in text or "at least" in text for text in r.lines)
+
+
+@pytest.mark.parametrize("where", ["built-in", "examples folder"])
+def test_the_example_transistors_dead_time_is_worked_out_from_its_total_gate_charge(where) -> None:
+    """The example transistor gives 72 nC at 10 V, with 20 and 14 nC below and across a 4.6 V
+    plateau: (72 - 20 - 14) nC over (10 - 4.6) V is 7.04 nF above the plateau, and through
+    8 ohm the gate falls from 10 V to the plateau in 8 * 7.04 nF * ln(10 / 4.6) = 43.7 ns.
+    Nothing about it is an estimate, so no short end is given."""
+    from pathlib import Path
+
+    from motionsim.device.io import load_device
+    from motionsim.service.workspace import EXAMPLES
+
+    examples = Path(__file__).parent.parent / "examples"
+    device = load_device(
+        EXAMPLES["example-mosfet"] if where == "built-in" else examples / "synthetic_mosfet_100v_100a.yaml"
+    )
+    delay, rise, _ = recommend.turn_off_time(device, 10.0, 8.0, recommend.above_plateau(device)[1])
+    assert delay == pytest.approx(8 * (72e-9 - 20e-9 - 14e-9) / (10 - 4.6) * log(10 / 4.6), rel=1e-9)
+    assert rise == pytest.approx(14e-9 * 8 / 4.6, rel=1e-9)
+    op = OperatingPoint(
+        v_dc=48, i_rms=30, modulation_index=0.8, power_factor=0.9, f_sw=20e3, t_sink=60, v_drive=10, rg_on=8, rg_off=8
+    )
+    found = recommend.dead_time(device, op)
+    assert "estimated" not in found.value and "t_dead_least" not in found.value
+
+
+def test_no_dead_time_is_worked_out_for_a_drive_that_only_reaches_the_plateau() -> None:
+    """A gate driven to its plateau voltage, and no higher, never turns the transistor fully
+    on: there is no turn-off to time. Just above the plateau there is."""
+    device = fet()
+    plateau = device.switch.charge.v_plateau
+    at = recommend.dead_time(device, fet_op(i_rms=0.0, v_drive=plateau))
+    assert at.value == {} and at.lines == [
+        f"gate drive voltage {plateau:g} V does not exceed the plateau ({plateau:g} V)"
+    ]
+    assert recommend.dead_time(device, fet_op(i_rms=0.0, v_drive=plateau + 0.1)).value["t_dead"] > 0

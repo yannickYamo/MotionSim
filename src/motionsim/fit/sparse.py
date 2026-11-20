@@ -4,6 +4,8 @@ Many IPM and module datasheets give one saturation voltage and one set of
 switching energies at a single test current. A point fixes the model at that
 current; the shape away from it has to be assumed, and each assumption is
 written into the device file next to the table it affects.
+
+The rows read are in readings.py and the switching energies in energy.py.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ import numpy as np
 from motionsim.device.schema import (
     Basis,
     Chip,
+    ChipKind,
     ConductionModel,
     Curve,
     Device,
@@ -21,11 +24,69 @@ from motionsim.device.schema import (
     Ratings,
     ReviewStatus,
     Source,
-    SwitchingEnergy,
+    SourceKind,
+)
+from motionsim.fit.energy import (
+    CHARGE_ASSUMPTION,
+    ENERGY_ASSUMPTION,
+    ENERGY_BETWEEN,
+    MISSING_VOLTAGE,
+    RECOVERY_SHARE,
+    RECOVERY_VOLTAGE_ASSUMPTION,
+    TO_CHARGE,
+    TO_ZERO,
+    c_inside,
+    energy_of,
+    recovery_energy_of,
+    turn_on_at_no_current,
 )
 from motionsim.fit.foster import fit_foster
-from motionsim.observe.schema import CurveObservation, Observation, ObservationSet, Quantity
-from motionsim.text import written
+from motionsim.fit.readings import (
+    MissingData,
+    NoGateCharge,
+    _by_temperature,
+    _current,
+    _source,
+    curve_at,
+    curve_source,
+    digitised_curves,
+    typical,
+    usable_rows,
+)
+from motionsim.observe.schema import Observation, ObservationSet, Quantity
+from motionsim.text import rounded
+
+__all__ = [
+    "CHARGE_ASSUMPTION",
+    "CONDUCTION_ASSUMPTION",
+    "ENERGY_ASSUMPTION",
+    "ENERGY_BETWEEN",
+    "FOSTER_MAX_ERROR",
+    "KNEE_FRACTION",
+    "MISSING_VOLTAGE",
+    "RECOVERY_SHARE",
+    "RECOVERY_VOLTAGE_ASSUMPTION",
+    "TO_CHARGE",
+    "TO_ZERO",
+    "MissingData",
+    "NoGateCharge",
+    "build_device",
+    "c_inside",
+    "curve_at",
+    "curve_source",
+    "digitised_curves",
+    "energy_of",
+    "extra_ratings",
+    "internal_gate",
+    "recovery_energy_of",
+    "single_value",
+    "spread_of",
+    "thermal_of",
+    "timing_of",
+    "turn_on_at_no_current",
+    "typical",
+    "usable_rows",
+]
 
 # Share of the tabulated on-state voltage taken as the zero-current knee; the
 # rest is resistive. Bipolar on-state curves at half to full rated current
@@ -35,105 +96,21 @@ KNEE_FRACTION = 0.5
 CONDUCTION_ASSUMPTION = (
     f"below the first table point the shape is assumed: a knee of {KNEE_FRACTION:.0%} of that voltage plus a resistance"
 )
-ENERGY_ASSUMPTION = "energy assumed linear between table points and down to zero"
-
-
-class MissingData(ValueError):
-    """The datasheet does not give what a model needs."""
-
-
-class NoGateCharge(MissingData):
-    """No gate-source charge at all, as distinct from gate charges that are there and faulty."""
-
-
-def usable_rows(obs: ObservationSet, quantity: Quantity, *, allow_flagged: bool) -> list[Observation]:
-    rows = [o for o in obs.observations if o.quantity is quantity and o.typ is not None]
-    if not allow_flagged:
-        rows = [o for o in rows if o.status is not ReviewStatus.flagged]
-    return rows
-
-
-def _by_temperature(rows: list[Observation], name: str) -> dict[float, list[Observation]]:
-    """Points grouped by junction temperature, coldest first, each group ordered by current."""
-    groups: dict[float, dict[float, Observation]] = {}
-    for o in rows:
-        if o.current_a and o.tj_c is not None:
-            groups.setdefault(o.tj_c, {}).setdefault(o.current_a, o)
-    if not groups:
-        raise MissingData(f"no usable {name} point with a test current and temperature")
-    return {t: [groups[t][i] for i in sorted(groups[t])] for t in sorted(groups)}
-
-
-def _source(obs: ObservationSet, rows: list[Observation]) -> Source:
-    status = ReviewStatus.verified if all(o.status is ReviewStatus.verified for o in rows) else ReviewStatus.unverified
-    values = ", ".join(f"{o.printed_typ} {o.unit} at {o.current_a:g} A and {o.tj_c:g} °C" for o in rows)
-    return Source(
-        kind="datasheet",
-        document=obs.document.file,
-        page=rows[0].page,
-        note=f"table values: {values}",
-        status=status,
-    )
-
-
-_CURVE = {
-    Quantity.vce_sat: Quantity.vce_curve,
-    Quantity.vf: Quantity.vf_curve,
-    Quantity.e_on: Quantity.e_on_curve,
-    Quantity.e_off: Quantity.e_off_curve,
-    Quantity.e_rr: Quantity.e_rr_curve,
-}
-
-
-def digitised_curves(obs: ObservationSet, quantity: Quantity, allow: bool) -> list[CurveObservation]:
-    """Digitised curves for a quantity, one per temperature, coldest first.
-
-    When a curve was set aside and the tables cover a temperature the remaining
-    curves do not, none are returned: the tables then give the fuller picture.
-    """
-    by_temperature: dict[float, CurveObservation] = {}
-    set_aside = False
-    for c in obs.curves:
-        if c.quantity is not _CURVE.get(quantity) or c.tj_c is None or len(c.x) < 5:
-            continue
-        if allow or c.status is not ReviewStatus.flagged:
-            by_temperature.setdefault(c.tj_c, c)
-        else:
-            set_aside = True
-    tabulated = {o.tj_c for o in usable_rows(obs, quantity, allow_flagged=allow) if o.current_a and o.tj_c is not None}
-    if set_aside and tabulated - set(by_temperature):
-        return []
-    return [by_temperature[t] for t in sorted(by_temperature)]
-
-
-def curve_source(obs: ObservationSet, curves: list[CurveObservation], extra: str = "") -> Source:
-    worst = max((c.anchor_error or 0.0) for c in curves)
-    status = (
-        ReviewStatus.verified if all(c.status is ReviewStatus.verified for c in curves) else ReviewStatus.unverified
-    )
-    return Source(
-        kind="datasheet",
-        document=obs.document.file,
-        page=curves[0].page,
-        figure=curves[0].label,
-        note=f"digitised curves, within {worst:.1%} of the tabulated values{extra}",
-        status=status,
-    )
 
 
 def _conduction(obs: ObservationSet, quantity: Quantity, name: str, allow: bool) -> ConductionModel:
     digitised = digitised_curves(obs, quantity, allow)
     if digitised:
         return ConductionModel(
-            curves=[Curve(tj=c.tj_c, current=c.x, value=c.y) for c in digitised],
+            curves=[curve_at(c, c.x, c.y) for c in digitised],
             source=curve_source(obs, digitised),
         )
     groups = _by_temperature(usable_rows(obs, quantity, allow_flagged=allow), name)
     curves = [
         Curve(
             tj=tj,
-            current=[0.0] + [o.current_a for o in rows],
-            value=[KNEE_FRACTION * rows[0].typ] + [o.typ for o in rows],
+            current=[0.0] + [_current(o) for o in rows],
+            value=[KNEE_FRACTION * typical(rows[0])] + [typical(o) for o in rows],
         )
         for tj, rows in groups.items()
     ]
@@ -143,66 +120,6 @@ def _conduction(obs: ObservationSet, quantity: Quantity, name: str, allow: bool)
         assumption=CONDUCTION_ASSUMPTION,
         source=_source(obs, [o for rows in groups.values() for o in rows]),
     )
-
-
-MISSING_VOLTAGE = "test voltage is missing"
-RECOVERY_VOLTAGE_ASSUMPTION = (
-    "test voltage not stated; taken as the switch's switching-test voltage, "
-    "since recovery is measured in the same circuit as the switch"
-)
-
-
-_TEST_RESISTOR = {Quantity.e_on: Quantity.rg_on_test, Quantity.e_off: Quantity.rg_off_test}
-
-
-def energy_of(
-    obs: ObservationSet,
-    quantity: Quantity,
-    name: str,
-    allow: bool,
-    *,
-    assumed_voltage: float | None = None,
-) -> SwitchingEnergy:
-    """An energy table, with the gate resistor it was measured with where the datasheet says."""
-    table = _energy_table(obs, quantity, name, allow, assumed_voltage=assumed_voltage)
-    wanted = _TEST_RESISTOR.get(quantity)
-    rows = [] if wanted is None else [o for o in usable_rows(obs, wanted, allow_flagged=allow) if o.typ]
-    if not rows:
-        return _with_voltage_figure(obs, quantity, table)
-    table = table.model_copy(update={"rg": rows[0].typ})
-    # The datasheet's figure of energy against gate resistance, as a multiple of the energy
-    # at the table's own resistor. It was accepted only because it passes through that point.
-    wanted = {Quantity.e_on: Quantity.e_on_rg_curve, Quantity.e_off: Quantity.e_off_rg_curve}[quantity]
-    figures_ = [c for c in obs.curves if c.quantity is wanted and c.x and not c.flags]
-    if figures_:
-        c = figures_[0]
-        at = float(np.interp(table.rg, c.x, c.y))
-        if at > 0:
-            table = table.model_copy(
-                update={
-                    "rg_values": c.x,
-                    "rg_factor": [float(f"{written(v / at, 5)}") for v in c.y],
-                }
-            )
-    return _with_voltage_figure(obs, quantity, table)
-
-
-def _with_voltage_figure(obs: ObservationSet, quantity: Quantity, table: SwitchingEnergy) -> SwitchingEnergy:
-    """The datasheet's figure of energy against voltage, as a multiple of the energy at the
-    table's test voltage. Accepted only because it passes through that point."""
-    wanted = {Quantity.e_on: Quantity.e_on_v_curve, Quantity.e_off: Quantity.e_off_v_curve}.get(quantity)
-    found = [c for c in obs.curves if c.quantity is wanted and c.x and not c.flags]
-    if not found or not c_inside(found[0].x, table.v_ref):
-        return table
-    c = found[0]
-    at = float(np.interp(table.v_ref, c.x, c.y))
-    if at <= 0:
-        return table
-    return table.model_copy(update={"v_values": c.x, "v_factor": [float(f"{written(v / at, 5)}") for v in c.y]})
-
-
-def c_inside(xs: list[float], value: float) -> bool:
-    return bool(xs) and xs[0] <= value <= xs[-1]
 
 
 def spread_of(obs: ObservationSet, quantity: Quantity, allow: bool) -> float | None:
@@ -216,7 +133,7 @@ def spread_of(obs: ObservationSet, quantity: Quantity, allow: bool) -> float | N
             and o.max >= o.typ
             and (allow or o.status is not ReviewStatus.flagged)
         ):
-            return float(f"{written(o.max / o.typ, 4)}")
+            return rounded(o.max / o.typ, 4)
     return None
 
 
@@ -245,116 +162,6 @@ def extra_ratings(obs: ObservationSet, allow: bool) -> dict:
     return out
 
 
-def _energy_table(
-    obs: ObservationSet,
-    quantity: Quantity,
-    name: str,
-    allow: bool,
-    *,
-    assumed_voltage: float | None = None,
-) -> SwitchingEnergy:
-    """Energy table from digitised curves when they exist, else from table points.
-
-    assumed_voltage fills in a test voltage the datasheet omits.
-    """
-    digitised = digitised_curves(obs, quantity, allow)
-    extra = "; taken to zero at zero current"
-    if digitised and assumed_voltage is not None and not any(c.test_voltage_v for c in digitised):
-        digitised = [c.model_copy(update={"test_voltage_v": assumed_voltage}) for c in digitised]
-        extra += f"; {RECOVERY_VOLTAGE_ASSUMPTION}"
-    digitised = [c for c in digitised if c.test_voltage_v]
-    if digitised:
-        for note in dict.fromkeys(n for c in digitised for n in c.notes):
-            extra += f"; {note}"
-        return SwitchingEnergy(
-            curves=[Curve(tj=c.tj_c, current=[0.0] + c.x, value=[0.0] + c.y) for c in digitised],
-            v_ref=digitised[0].test_voltage_v,
-            source=curve_source(obs, digitised, extra),
-        )
-    rows = usable_rows(obs, quantity, allow_flagged=allow)
-    if assumed_voltage is not None and not allow:
-        # A row set aside only because its test voltage is missing can be used with the
-        # assumed one. A row flagged for anything else stays out.
-        rows = [
-            o
-            for o in obs.observations
-            if o.quantity is quantity
-            and o.typ is not None
-            and (o.status is not ReviewStatus.flagged or o.flags == [MISSING_VOLTAGE])
-        ]
-    assumption = ENERGY_ASSUMPTION
-    if assumed_voltage is not None and rows and not any(o.voltage_v for o in rows):
-        rows = [o.model_copy(update={"voltage_v": assumed_voltage}) for o in rows]
-        assumption = f"{ENERGY_ASSUMPTION}; {RECOVERY_VOLTAGE_ASSUMPTION}"
-    rows = [o for o in rows if o.voltage_v]
-    groups = _by_temperature(rows, name)
-    first = next(iter(groups.values()))[0]
-    used = [o for rows in groups.values() for o in rows if o.voltage_v == first.voltage_v]
-    groups = _by_temperature(used, name)
-    return SwitchingEnergy(
-        curves=[
-            Curve(
-                tj=tj,
-                current=[0.0] + [o.current_a for o in rows],
-                value=[0.0] + [o.typ for o in rows],
-            )
-            for tj, rows in groups.items()
-        ],
-        v_ref=first.voltage_v,
-        basis=Basis.point,
-        assumption=assumption,
-        source=_source(obs, used),
-    )
-
-
-def recovery_energy_of(obs: ObservationSet, allow: bool, switch_voltage: float) -> SwitchingEnergy | None:
-    """Recovery energy of a diode packaged with its IGBT, or None when there is no usable value."""
-    try:
-        return energy_of(obs, Quantity.e_rr, "recovery energy", allow, assumed_voltage=switch_voltage)
-    except MissingData:
-        return _recovery_from_charge(obs, allow, switch_voltage)
-
-
-RECOVERY_SHARE = 0.25
-CHARGE_ASSUMPTION = (
-    "recovery energy estimated as a quarter of the recovery charge times the voltage: the "
-    "datasheet gives the charge and no energy; assumed linear in current down to zero"
-)
-
-
-def _recovery_from_charge(obs: ObservationSet, allow: bool, switch_voltage: float) -> SwitchingEnergy | None:
-    """Recovery energy of a diode whose datasheet gives its recovery charge and no energy.
-
-    While the diode recovers it carries the falling recovery current against a voltage that
-    is still rising, so it takes a part of charge times voltage and the switch takes the
-    rest, which the switch's own turn-on energy already holds. A quarter is the usual
-    estimate of the diode's part.
-    """
-    rows = [
-        o.model_copy(update={"tj_c": 25.0 if o.tj_c is None else o.tj_c})
-        for o in usable_rows(obs, Quantity.q_rr, allow_flagged=allow)
-        if o.current_a and o.typ
-    ]
-    if not rows:
-        return None
-    groups = _by_temperature(rows, "recovery charge")
-    v_ref = rows[0].voltage_v or switch_voltage
-    return SwitchingEnergy(
-        curves=[
-            Curve(
-                tj=tj,
-                current=[0.0] + [o.current_a for o in at],
-                value=[0.0] + [RECOVERY_SHARE * o.typ * v_ref for o in at],
-            )
-            for tj, at in groups.items()
-        ],
-        v_ref=v_ref,
-        basis=Basis.point,
-        assumption=CHARGE_ASSUMPTION,
-        source=_source(obs, [o for at in groups.values() for o in at]),
-    )
-
-
 def single_value(obs: ObservationSet, quantity: Quantity, name: str, allow: bool) -> Observation:
     rows = usable_rows(obs, quantity, allow_flagged=allow)
     if not rows:
@@ -375,33 +182,67 @@ _ZTH = {
 }
 
 
+def _printed_rth(obs: ObservationSet, quantity: Quantity, name: str, allow: bool) -> tuple[Observation, float, str]:
+    """The junction-to-case resistance a design is held to, the row it is read from, and
+    which of its figures that is.
+
+    A datasheet's maximum is the one its maker stands behind: where both are printed the
+    maximum is taken. Losses stay on typical values, which is what their curves are drawn with.
+    """
+    row = single_value(obs, quantity, name, allow)
+    least = typical(row)
+    worst = row.max is not None and row.max > least
+    value = row.max if row.max is not None and worst else least
+    which = f"the datasheet's maximum; typical {least:g} K/W" if worst else "no maximum beside it"
+    return row, float(value), which
+
+
 def thermal_of(obs: ObservationSet, quantity: Quantity, name: str, allow: bool) -> FosterNetwork:
-    """Transient network from a digitised curve when one exists, else the resistance alone."""
+    """Transient network from a digitised curve when one exists, else the resistance alone.
+
+    A curve is drawn for a typical part and ends at its typical resistance. Where the
+    resistance printed beside it, the maximum where there is one, is higher, the network is
+    scaled to it with its time constants kept: the shape in time is the curve's and the
+    steady figure the one the maker stands behind.
+    """
+    try:
+        printed: tuple[Observation, float, str] | None = _printed_rth(obs, quantity, name, allow)
+    except MissingData:
+        printed = None
     for curve in obs.curves:
         usable = allow or curve.status is not ReviewStatus.flagged
         if curve.quantity is _ZTH[quantity] and usable and len(curve.x) >= 5:
-            fit = fit_foster(curve.x, curve.y)
+            fit = fit_foster(np.asarray(curve.x), np.asarray(curve.y))
             if fit.worst_error <= FOSTER_MAX_ERROR:
+                note = f"{len(fit.r)}-stage fit to the single-pulse curve, worst error {fit.worst_error:.1%}"
+                r = [float(v) for v in fit.r]
+                end = sum(r)
+                if printed is not None and printed[1] > end:
+                    k = printed[1] / end
+                    r = [v * k for v in r]
+                    note += f"; scaled by {k:.3g} to {printed[1]:g} K/W, {printed[2]}, its shape kept"
                 return FosterNetwork(
-                    r=[float(f"{written(v, 5)}") for v in fit.r],
-                    tau=[float(f"{written(v, 5)}") for v in fit.tau],
+                    r=[rounded(v, 5) for v in r],
+                    tau=[rounded(v, 5) for v in fit.tau],
                     source=Source(
-                        kind="datasheet",
+                        kind=SourceKind.datasheet,
                         document=obs.document.file,
                         page=curve.page,
                         figure=curve.label,
-                        note=(f"{len(fit.r)}-stage fit to the single-pulse curve, worst error {fit.worst_error:.1%}"),
+                        note=note,
                         status=curve.status,
                     ),
                 )
-    row = single_value(obs, quantity, name, allow)
+    if printed is None:
+        raise MissingData(f"no usable {name}")
+    row, value, which = printed
     return FosterNetwork(
-        r=[row.typ],
+        r=[value],
         source=Source(
-            kind="datasheet",
+            kind=SourceKind.datasheet,
             document=obs.document.file,
             page=row.page,
-            note=f"junction-to-case resistance only ({row.typ:g} K/W); no transient data",
+            note=f"junction-to-case resistance only ({value:g} K/W, {which}); no transient data",
             status=row.status,
         ),
     )
@@ -415,12 +256,14 @@ def timing_of(obs: ObservationSet, allow: bool):
     falls = usable_rows(obs, Quantity.t_f, allow_flagged=allow)
     if not delays or not falls:
         return None
-    delay, fall = max(delays, key=lambda o: o.typ), max(falls, key=lambda o: o.typ)
+    delay, fall = max(delays, key=typical), max(falls, key=typical)
     return SwitchingTimes(
-        t_d_off=delay.typ,
-        t_f=fall.typ,
+        t_d_off=typical(delay),
+        t_f=typical(fall),
+        v_test=delay.voltage_v or None,
+        i_test=delay.current_a or None,
         source=Source(
-            kind="datasheet",
+            kind=SourceKind.datasheet,
             document=obs.document.file,
             page=delay.page,
             note=f"turn-off delay {delay.printed_typ} {delay.unit}, fall time "
@@ -431,6 +274,9 @@ def timing_of(obs: ObservationSet, allow: bool):
 
 def build_device(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
     """Device model from tabulated points. Flagged observations are left out unless allowed."""
+    if obs.flags and not allow_flagged:
+        # The kind decides which model is built at all: there is nothing to leave out.
+        raise MissingData(f"{obs.flags[0]}: check the kind of transistor against the datasheet")
     if obs.technology in ("Si MOSFET", "SiC MOSFET", "GaN HEMT"):
         from motionsim.fit.fet import build_fet
 
@@ -444,14 +290,19 @@ def build_device(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
         part_number=obs.part_number,
         technology=obs.technology,
         ratings=Ratings(
-            v_max=single_value(obs, Quantity.v_rated, "voltage rating", a).typ,
-            i_nominal=single_value(obs, Quantity.i_rated, "current rating", a).typ,
-            tj_max=single_value(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
+            v_max=typical(single_value(obs, Quantity.v_rated, "voltage rating", a)),
+            i_nominal=typical(single_value(obs, Quantity.i_rated, "current rating", a)),
+            tj_max=typical(single_value(obs, Quantity.tj_max, "maximum junction temperature", a)),
             **extra_ratings(obs, a),
         ),
-        package=Package(topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline),
+        package=Package(
+            topology=obs.topology,
+            integrated_driver=obs.integrated_driver,
+            # Read from the document as words; the device model refuses a name it does not hold.
+            outline=obs.outline,  # type: ignore[arg-type]
+        ),
         switch=Chip(
-            kind="igbt",
+            kind=ChipKind.igbt,
             conduction=_conduction(obs, Quantity.vce_sat, "saturation voltage", a).model_copy(
                 update={"spread": spread_of(obs, Quantity.vce_sat, a)}
             ),
@@ -461,7 +312,7 @@ def build_device(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
             thermal=thermal_of(obs, Quantity.rth_jc_switch, "switch thermal resistance", a),
         ),
         diode=Chip(
-            kind="diode",
+            kind=ChipKind.diode,
             conduction=_conduction(obs, Quantity.vf, "diode forward voltage", a),
             e_rr=recovery_energy_of(obs, a, e_on.v_ref),
             thermal=thermal_of(obs, Quantity.rth_jc_diode, "diode thermal resistance", a),

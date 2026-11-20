@@ -95,7 +95,7 @@ def test_igbt_thermal_impedance_plateaus() -> None:
         assert z.max() == pytest.approx(table, rel=0.04)
 
 
-def test_epc_normalised_resistance_curve() -> None:
+def test_gan_normalised_resistance_curve() -> None:
     p = page(GAN, 4)
     frame = match_frames(p, find_frames(p), ["Figure 9"])["Figure 9"]
     curves = spanning(curves_in(p, frame), frame)

@@ -1,30 +1,64 @@
 // Numbers as an engineer writes them: three significant figures, a real unit, no false precision.
 
-export function sig(value: number, digits = 3): string {
-  if (!Number.isFinite(value)) return "–";
-  if (value === 0) return "0";
-  const magnitude = Math.floor(Math.log10(Math.abs(value)));
-  const decimals = Math.max(0, digits - 1 - magnitude);
-  return value.toFixed(Math.min(decimals, 6));
+/** A figure that is missing: the engine gave none, or what it gave is not a number. Never
+ *  written as a figure, since "0 °C" for a temperature that is not known reads as a result. */
+const missing = (value: unknown): boolean => typeof value !== "number" || !Number.isFinite(value);
+const NONE = "–";
+
+/** The power of ten of a value once it is rounded to the digits shown: 0.09996 is 0.100. */
+const magnitudeOf = (value: number, digits: number): number =>
+  Math.floor(Math.log10(Math.abs(Number(value.toPrecision(digits)))));
+
+export function sig(value: number | null | undefined, digits = 3): string {
+  if (missing(value)) return NONE;
+  const v = value as number;
+  if (v === 0) return "0";
+  const decimals = Math.max(0, digits - 1 - magnitudeOf(v, digits));
+  // Past six decimals the plain form would drop the figures it is there to show.
+  return decimals > 6 ? v.toExponential(digits - 1) : v.toFixed(decimals);
 }
 
 /** A figure the engine worked out, to three figures however large: 1378 J is 1380 J. Not for
  *  a figure the user typed, which is shown as typed. */
-export const fig = (value: number, digits = 3): string => (Number.isFinite(value) ? sig(Number(value.toPrecision(digits)), digits) : sig(value));
+export const fig = (value: number | null | undefined, digits = 3): string =>
+  missing(value) ? NONE : sig(Number((value as number).toPrecision(digits)), digits);
 
-const PREFIX: [number, string][] = [[1e6, "M"], [1e3, "k"], [1, ""], [1e-3, "m"], [1e-6, "µ"], [1e-9, "n"]];
+const PREFIX: [number, string][] = [
+  [1e6, "M"],
+  [1e3, "k"],
+  [1, ""],
+  [1e-3, "m"],
+  [1e-6, "µ"],
+  [1e-9, "n"],
+  [1e-12, "p"],
+];
 
-/** 0.00012 H becomes "120 µH". */
-export function eng(value: number, unit: string, digits = 3): string {
-  if (!Number.isFinite(value)) return "–";
+/** 0.00012 H becomes "120 µH". The prefix is chosen for the figure as it is shown, so that
+ *  999.6 µH is "1.00 mH" and not "1000 µH". */
+export function eng(value: number | null | undefined, unit: string, digits = 3): string {
+  if (missing(value)) return NONE;
   if (value === 0) return `0 ${unit}`;
-  const [scale, prefix] = PREFIX.find(([s]) => Math.abs(value) >= s) ?? PREFIX[PREFIX.length - 1];
-  return `${sig(value / scale, digits)} ${prefix}${unit}`;
+  const shown = Number((value as number).toPrecision(digits));
+  const [scale, prefix] = PREFIX.find(([s]) => Math.abs(shown) >= s) ?? PREFIX[PREFIX.length - 1];
+  return `${sig(shown / scale, digits)} ${prefix}${unit}`;
 }
 
-export const watts = (w: number) => (Math.abs(w) >= 1000 ? `${sig(w / 1000)} kW` : `${sig(w)} W`);
-export const degrees = (t: number) => `${Math.round(t)} °C`;
-export const percent = (x: number, digits = 1) => `${(100 * x).toFixed(digits)} %`;
+export function watts(w: number | null | undefined): string {
+  if (missing(w)) return NONE;
+  const shown = Number((w as number).toPrecision(3));
+  return Math.abs(shown) >= 1000 ? `${sig((w as number) / 1000)} kW` : `${sig(w)} W`;
+}
+
+export const degrees = (t: number | null | undefined): string =>
+  missing(t) ? NONE : `${Math.round(t as number) || 0} °C`;
+
+export const percent = (x: number | null | undefined, digits = 1): string =>
+  missing(x) ? NONE : `${(100 * (x as number)).toFixed(digits)} %`;
+
+/** A whole number with its thousands set apart by a thin space, which the page reads back:
+ *  20 000, never 20,000, which half the world reads as twenty. */
+export const whole = (value: number): string =>
+  missing(value) ? NONE : String(Math.round(value)).replace(/\B(?=(\d{3})+(?!\d))/g, "\u202f");
 
 export function escape(text: string): string {
   return text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

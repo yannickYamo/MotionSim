@@ -1,0 +1,911 @@
+{
+  "stage": {
+    "stage": {
+      "positions": 6,
+      "i_peak": 19.347161554568572,
+      "p_shaft": 335.1032163829113,
+      "p_electrical": 350.89177607051334,
+      "p_motor_loss": 15.78855968760221,
+      "scheme": "space-vector PWM",
+      "summary": [
+        { "label": "field weakening", "value": 0.0, "unit": "yes/no" },
+        { "label": "phase current", "value": 13.680531521726547, "unit": "A rms" },
+        { "label": "phase voltage", "value": 8.68098516893151, "unit": "V rms" },
+        { "label": "modulation index", "value": 0.5115319566942765, "unit": "" },
+        { "label": "power factor", "value": 0.9848723606010418, "unit": "" },
+        { "label": "output frequency", "value": 233.33333333333331, "unit": "Hz" }
+      ],
+      "notes": [],
+      "roles": [
+        {
+          "name": "phase leg",
+          "count": 6,
+          "forward": 0.3350112670936311,
+          "reverse": 0.1649887329063689,
+          "switching": 1.0
+        }
+      ]
+    },
+    "advice": {
+      "lines": [
+        "Power stage: a three-phase inverter, 6 switches.",
+        "Current: 19.3 A peak at the design point, 19.3 A holding the same torque at standstill. Start with devices rated for 38.7 A or more: the rating on a datasheet's first page assumes a case held at 25 \u00b0C, which no real heatsink does.",
+        "Voltage: 60 V parts are the least that keeps a 48 V supply under 80% of the rating. 80 V parts leave room for switching overshoot and for the link voltage rising when the motor brakes.",
+        "Technology: silicon MOSFETs are the usual choice at this voltage. GaN transistors are worth a look when switching above about 100 kHz or when board area decides: they lose less per switching event and take less space.",
+        "On-resistance: about 6.25 m\u03a9 or less when hot keeps conduction loss near 1% of the motor's power; that is about 3.47 m\u03a9 on the datasheet's 25 \u00b0C line.",
+        "Packaging: discrete MOSFETs with a gate-driver IC (3 half-bridge channels, bootstrap supplies for the high side), or a driver with the MOSFETs built in at a few amps."
+      ],
+      "v_minimum": 60,
+      "v_comfortable": 80,
+      "i_peak": 19.347161554568572,
+      "i_stall": 19.34714717560972
+    }
+  },
+  "proposal": {
+    "candidates": [
+      {
+        "id": "example-mosfet",
+        "name": "made-up 100 V MOSFET",
+        "technology": "Si MOSFET",
+        "level": "ok",
+        "problem": null,
+        "fix": "",
+        "result": {
+          "loss": 4.51702607588007,
+          "conduction": 3.0760467590796705,
+          "switching": 1.4409793168003986,
+          "efficiency": 0.9872906184410719,
+          "tj_peak": 60.80887057654856,
+          "tj_range": [60.67145219120833, 61.095047100228086],
+          "range_lead": "mounting",
+          "tj_max": 175.0,
+          "t_case": 60.30113507172534,
+          "t_sink": 60.0,
+          "validity": "assumed",
+          "notes": [
+            "the stage gives 99.0% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that",
+            "switching loss: estimated from gate and output charge, not from measured energy; gate charge at threshold not tabulated; taken as gate-source charge times threshold voltage over plateau voltage",
+            "output charge: scaled as the square root of voltage from 50 V to 48 V",
+            "reverse conduction: built from table points up to 100 A; reverse voltage taken as constant at its one tabulated point; it rises with current, so dead-time loss is underestimated",
+            "reverse conduction: only characterised at 25 \u00b0C, used at 61 \u00b0C"
+          ],
+          "limits": ["losses use each chip's average temperature over the output period"],
+          "assumptions": [
+            "case-to-heatsink resistance computed for a TO-220 on grease: 0.40 K/W (0.16 to 0.80)",
+            "no transient thermal data: the temperature swing within the period uses the response computed for a generic TO-220"
+          ],
+          "warnings": [],
+          "hottest": {
+            "conduction": 0.47933368054446135,
+            "turn_on": 0.12382883164959596,
+            "turn_off": 0.11633438781713715,
+            "dead_time": 0.03334077930215039,
+            "recovery": 0.0,
+            "diode_conduction": 0.0,
+            "diode_recovery": 0.0,
+            "total": 0.7528376793133449
+          },
+          "positions": [
+            {
+              "name": "phase leg",
+              "count": 6,
+              "conduction": 0.47933368054446135,
+              "turn_on": 0.12382883164959596,
+              "turn_off": 0.11633438781713715,
+              "dead_time": 0.03334077930215039,
+              "recovery": 0.0,
+              "diode_conduction": 0.0,
+              "diode_recovery": 0.0,
+              "total": 0.7528376793133449,
+              "tj": 60.80887057654856,
+              "tj_switch": 60.80887057654856,
+              "tj_diode": 60.80887057654856,
+              "tj_switch_mean": 60.75283100566875,
+              "tj_diode_mean": 60.75283100566875
+            }
+          ]
+        },
+        "stall_tj": 61.629930075380365,
+        "margin": 113.90495289977191,
+        "stall_margin": 112.74099445076385,
+        "switching": {
+          "kind": "from charge",
+          "text": "estimated from gate and output charge, with 3.8 \u03a9 on, 8 \u03a9 off at 10 V drive"
+        },
+        "efficiency": 0.9428669587223154,
+        "checks": [
+          { "level": "ok", "topic": "voltage", "message": "supply is 48% of the 100 V rating" },
+          {
+            "level": "ok",
+            "topic": "temperature",
+            "message": "junction peaks at 61 \u00b0C, 114 \u00b0C below its rating"
+          },
+          { "level": "ok", "topic": "current", "message": "peak current 19.3 A against a 100 A rating" },
+          {
+            "level": "ok",
+            "topic": "data",
+            "message": "inside the data given; part of it is table points or an estimate from charge, with the shape between them assumed: listed under data support"
+          },
+          {
+            "level": "ok",
+            "topic": "ripple",
+            "message": "the motor current carries 2.52 A of ripple, peak to peak, at the switching frequency: 13% of its 19.3 A peak"
+          },
+          {
+            "level": "ok",
+            "topic": "link capacitor",
+            "message": "the DC-link capacitor carries 8.68 A rms of ripple at the switching frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top"
+          },
+          {
+            "level": "ok",
+            "topic": "trip",
+            "message": "if the drive stops switching at 2000 rpm, the motor's back-EMF is 20 V between lines, below the supply: a trip there does no harm to the link"
+          }
+        ],
+        "needs": [
+          "6 packages for the 6 switches",
+          "6 gate-driver channels, 3 of them for high-side switches that need a floating supply (bootstrap or isolated)",
+          "each channel delivers at least 6.8 mW of gate power and about 2.6 A at turn-on"
+        ],
+        "gate": {
+          "kind": "chosen",
+          "v_drive": 10.0,
+          "rg_on": 3.8,
+          "rg_off": 8.0,
+          "lines": [
+            "gate drive taken as 10 V, usual for a Si MOSFET",
+            "loop inductance taken as 20 nH for the overshoot limit: give your board's to tighten this",
+            "gate resistors chosen for the lowest loss the limits allow: the smallest that keep the voltage slew rate and the turn-off overshoot in bounds",
+            "turn-on: at least 3.8 ohm in total, set by voltage slew rate under 5 V/ns",
+            "turn-on: the transistor's own gate resistance is 1.2 ohm of that, leaving 2.6 ohm for the driver and the external resistor",
+            "turn-off: at least 8 ohm in total, set by overshoot within 80% of the 100 V rating",
+            "turn-off: the transistor's own gate resistance is 1.2 ohm of that, leaving 6.8 ohm for the driver and the external resistor",
+            "these are total values: the driver's own resistance and the transistor's internal one count towards them",
+            "dead time taken as 150 ns, the shortest a drive with this gate drive would be set to: its loss is counted. Much firmware runs 300 to 800 ns by default; give yours if it is longer"
+          ],
+          "t_dead": 1.5e-7
+        },
+        "pwm": {
+          "current": 19.283612318517008,
+          "duty": 0.7135726176615095,
+          "p_on": 1.9128697170382087,
+          "e_on": 1.6102229949176456e-5,
+          "e_off": 1.687031015775095e-5,
+          "f_sw": 20000.0,
+          "position": "phase leg"
+        },
+        "link": { "capacitor_rms": 8.68024322231928, "ripple_pp": 2.52028620514312 }
+      },
+      {
+        "id": "example",
+        "name": "made-up 600 V IGBT",
+        "technology": "Si IGBT",
+        "level": "caution",
+        "problem": null,
+        "fix": "",
+        "result": {
+          "loss": 57.89548782484874,
+          "conduction": 51.7484033500387,
+          "switching": 6.147084474810052,
+          "efficiency": 0.8583725743479416,
+          "tj_peak": 87.85392938363185,
+          "tj_range": [76.90955689689633, 112.63553607294725],
+          "range_lead": "between chips",
+          "tj_max": 150.0,
+          "t_case": 65.78954878248487,
+          "t_sink": 60.0,
+          "validity": "interpolated",
+          "notes": [
+            "the stage gives 89.6% of the ideal output voltage (dead time, shortest pulse and the devices' own drop); the motor's reach is worked out with that",
+            "turn-on energy: scaled linearly from 300 V test voltage to 48 V",
+            "turn-off energy: scaled linearly from 300 V test voltage to 48 V",
+            "recovery energy: scaled linearly from 300 V test voltage to 48 V"
+          ],
+          "limits": ["losses use each chip's average temperature over the output period"],
+          "assumptions": [
+            "heating between chips computed for a generic module, construction not given: 0.21 K/W (0.00 to 0.68) per watt in each other chip"
+          ],
+          "warnings": [],
+          "hottest": {
+            "conduction": 6.134460757877239,
+            "turn_on": 0.45171471236207184,
+            "turn_off": 0.42254462811680815,
+            "dead_time": 0.0,
+            "recovery": 0.0,
+            "diode_conduction": 2.4902731337958772,
+            "diode_recovery": 0.1502547386561286,
+            "total": 9.649247970808124
+          },
+          "positions": [
+            {
+              "name": "phase leg",
+              "count": 6,
+              "conduction": 6.134460757877239,
+              "turn_on": 0.45171471236207184,
+              "turn_off": 0.42254462811680815,
+              "dead_time": 0.0,
+              "recovery": 0.0,
+              "diode_conduction": 2.4902731337958772,
+              "diode_recovery": 0.1502547386561286,
+              "total": 9.649247970808124,
+              "tj": 87.85392938363185,
+              "tj_switch": 87.85392938363185,
+              "tj_diode": 84.74776733706912,
+              "tj_switch_mean": 85.7499568562738,
+              "tj_diode_mean": 83.37908474730578
+            }
+          ]
+        },
+        "stall_tj": 108.59781335158752,
+        "margin": 37.36446392705275,
+        "stall_margin": 16.03655846325927,
+        "switching": { "kind": "measured", "text": "measured at 300 V; brought to 48 V in proportion" },
+        "efficiency": 0.8197496497070126,
+        "checks": [
+          { "level": "ok", "topic": "voltage", "message": "supply is 8% of the 600 V rating" },
+          {
+            "level": "ok",
+            "topic": "temperature",
+            "message": "junction peaks at 88 \u00b0C (77 to 113 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 37 \u00b0C below its rating"
+          },
+          { "level": "ok", "topic": "current", "message": "peak current 19.3 A against a 30 A rating" },
+          { "level": "ok", "topic": "data", "message": "inside the datasheet's own curves" },
+          {
+            "level": "ok",
+            "topic": "ripple",
+            "message": "the motor current carries 2.52 A of ripple, peak to peak, at the switching frequency: 13% of its 19.3 A peak"
+          },
+          {
+            "level": "ok",
+            "topic": "link capacitor",
+            "message": "the DC-link capacitor carries 8.68 A rms of ripple at the switching frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top"
+          },
+          {
+            "level": "ok",
+            "topic": "trip",
+            "message": "if the drive stops switching at 2000 rpm, the motor's back-EMF is 20 V between lines, below the supply: a trip there does no harm to the link"
+          },
+          {
+            "level": "caution",
+            "topic": "standstill",
+            "message": "holding this torque at standstill: junction peaks at 109 \u00b0C (97 to 134 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), only 16 \u00b0C below the 150 \u00b0C rating"
+          }
+        ],
+        "needs": [
+          "1 package for the 6 switches",
+          "6 gate-driver channels, 3 of them for high-side switches that need a floating supply (bootstrap or isolated)"
+        ],
+        "gate": {
+          "kind": "datasheet",
+          "v_drive": null,
+          "rg_on": null,
+          "rg_off": null,
+          "lines": [
+            "the losses are the datasheet's measured switching energy, at the gate resistor its test conditions give: start with that value",
+            "a larger resistor switches slower and loses more than shown here; a smaller one loses less but raises overshoot and interference",
+            "dead time taken as 1 \u00b5s, usual for an IGBT: the datasheet gives no turn-off times to work one out from. It takes from the voltage the stage can give. Give yours if it differs"
+          ],
+          "t_dead": 1e-6
+        },
+        "pwm": {
+          "current": 19.283612318517008,
+          "duty": 0.7135726176615095,
+          "p_on": 30.28464005241626,
+          "e_on": 7.670248570895706e-5,
+          "e_off": 6.127559585414346e-5,
+          "f_sw": 20000.0,
+          "position": "phase leg"
+        },
+        "link": { "capacitor_rms": 8.68024322231928, "ripple_pp": 2.52028620514312 }
+      }
+    ],
+    "explain": [
+      "made-up 100 V MOSFET has the lowest power-stage loss among the devices that pass: 4.5 W.",
+      "made-up 600 V IGBT loses 53.4 W more (1182%).",
+      "The switching loss of made-up 600 V IGBT is measured and that of made-up 100 V MOSFET is estimated from charge: the order between them rests on unlike data."
+    ],
+    "level": 0.05
+  },
+  "loads": {
+    "loads": [
+      {
+        "id": "joint",
+        "label": "Robot joint",
+        "about": "A weight on an arm behind a gearbox: swings up, then holds against gravity",
+        "load": {
+          "gear_ratio": 50.0,
+          "gear_efficiency": 0.85,
+          "motor_inertia": 3.82e-5,
+          "inertia": 0.866,
+          "friction_coulomb": 4.0,
+          "gravity": { "mass": 13.9, "arm": 0.25 }
+        },
+        "fields": ["mass", "arm", "gear_ratio", "gear_efficiency", "inertia", "friction_coulomb", "start_angle_deg"],
+        "segments": [
+          { "duration": 0.3, "speed_start": 0, "speed_end": 20.0 },
+          { "duration": 0.45, "speed_start": 20.0, "speed_end": 20.0 },
+          { "duration": 0.3, "speed_start": 20.0, "speed_end": 0 },
+          { "duration": 2.0, "speed_start": 0, "speed_end": 0 }
+        ],
+        "start_angle_deg": 0,
+        "link": "Driven through a 50:1 gear: the load's top speed of 20 rpm is 1,000 rpm at the motor, against your design speed of 2,000 rpm."
+      },
+      {
+        "id": "fan",
+        "label": "Fan or pump",
+        "about": "Torque grows with the square of speed; light at the start, full at top speed",
+        "load": {
+          "gear_ratio": 1,
+          "gear_efficiency": 1,
+          "motor_inertia": 3.82e-5,
+          "inertia": 0.00458,
+          "fan_coefficient": 2.92e-5,
+          "friction_coulomb": 0.032
+        },
+        "fields": ["fan_coefficient", "inertia", "friction_coulomb", "gear_ratio"],
+        "segments": [
+          { "duration": 4, "speed_start": 0, "speed_end": 2000.0 },
+          { "duration": 6, "speed_start": 2000.0, "speed_end": 2000.0 },
+          { "duration": 4, "speed_start": 2000.0, "speed_end": 0 }
+        ],
+        "start_angle_deg": 0,
+        "link": "Driven directly on the motor shaft: the load's top speed of 2,000 rpm is 2,000 rpm at the motor, against your design speed of 2,000 rpm."
+      },
+      {
+        "id": "vehicle",
+        "label": "Wheeled vehicle",
+        "about": "A mass on wheels: pulls away, cruises against drag, brakes and gives energy back",
+        "load": {
+          "gear_ratio": 4.5,
+          "gear_efficiency": 0.95,
+          "motor_inertia": 3.82e-5,
+          "vehicle": {
+            "mass": 21.6,
+            "wheel_radius": 0.15,
+            "rolling_resistance": 0.015,
+            "drag_area": 0.328,
+            "slope_percent": 0
+          }
+        },
+        "fields": ["v_mass", "wheel_radius", "gear_ratio", "rolling_resistance", "drag_area", "slope_percent"],
+        "segments": [
+          { "duration": 6.0, "speed_start": 0, "speed_end": 444.0 },
+          { "duration": 6, "speed_start": 444.0, "speed_end": 444.0 },
+          { "duration": 3, "speed_start": 444.0, "speed_end": 0 }
+        ],
+        "start_angle_deg": 0,
+        "link": "Driven through a 4.5:1 gear: the load's top speed of 444 rpm is 1,998 rpm at the motor, against your design speed of 2,000 rpm. That is 25.1 km/h on the road."
+      },
+      {
+        "id": "drum",
+        "label": "Washer drum",
+        "about": "A heavy drum on a belt: tumbles one way and the other, then spins up",
+        "load": {
+          "gear_ratio": 1.7,
+          "gear_efficiency": 0.9,
+          "motor_inertia": 3.82e-5,
+          "inertia": 0.0636,
+          "friction_coulomb": 0.816
+        },
+        "fields": ["inertia", "friction_coulomb", "gear_ratio", "gear_efficiency"],
+        "segments": [
+          { "duration": 1, "speed_start": 0, "speed_end": 45.0 },
+          { "duration": 3, "speed_start": 45.0, "speed_end": 45.0 },
+          { "duration": 1, "speed_start": 45.0, "speed_end": 0 },
+          { "duration": 1, "speed_start": 0, "speed_end": -45.0 },
+          { "duration": 3, "speed_start": -45.0, "speed_end": -45.0 },
+          { "duration": 1, "speed_start": -45.0, "speed_end": 0 },
+          { "duration": 8, "speed_start": 0, "speed_end": 1170.0 },
+          { "duration": 4, "speed_start": 1170.0, "speed_end": 1170.0 },
+          { "duration": 8, "speed_start": 1170.0, "speed_end": 0 }
+        ],
+        "start_angle_deg": 0,
+        "link": "Driven through a 1.7:1 gear: the load's top speed of 1,170 rpm is 1,989 rpm at the motor, against your design speed of 2,000 rpm."
+      },
+      {
+        "id": "conveyor",
+        "label": "Conveyor or compressor",
+        "about": "A steady torque at any speed, there from the first turn",
+        "load": {
+          "gear_ratio": 1,
+          "gear_efficiency": 1,
+          "motor_inertia": 3.82e-5,
+          "inertia": 0.00306,
+          "constant_torque": 1.12
+        },
+        "fields": ["constant_torque", "inertia", "gear_ratio", "gear_efficiency"],
+        "segments": [
+          { "duration": 2, "speed_start": 0, "speed_end": 2000.0 },
+          { "duration": 6, "speed_start": 2000.0, "speed_end": 2000.0 },
+          { "duration": 2, "speed_start": 2000.0, "speed_end": 0 }
+        ],
+        "start_angle_deg": 0,
+        "link": "Driven directly on the motor shaft: the load's top speed of 2,000 rpm is 2,000 rpm at the motor, against your design speed of 2,000 rpm."
+      }
+    ]
+  },
+  "cycle": {
+    "time": [
+      0.024999999999999998, 0.049999999999999996, 0.075, 0.09999999999999999, 0.12499999999999999, 0.15, 0.175,
+      0.19999999999999998, 0.22499999999999998, 0.24999999999999997, 0.27499999999999997, 0.3, 0.33749999999999997,
+      0.37499999999999994, 0.4124999999999999, 0.4499999999999999, 0.4874999999999999, 0.5249999999999999,
+      0.5624999999999999, 0.5999999999999999, 0.6374999999999998, 0.6749999999999998, 0.7124999999999998,
+      0.7499999999999998, 0.7749999999999998, 0.7999999999999998, 0.8249999999999998, 0.8499999999999999,
+      0.8749999999999999, 0.8999999999999999, 0.9249999999999999, 0.95, 0.975, 1.0, 1.025, 1.0499999999999998,
+      1.2166666666666666, 1.3833333333333333, 1.55, 1.7166666666666668, 1.8833333333333335, 2.0500000000000003,
+      2.216666666666667, 2.3833333333333333, 2.55, 2.7166666666666663, 2.883333333333333, 3.0499999999999994
+    ],
+    "tj": [
+      60.03486487808999, 60.03625880505527, 60.051983759132874, 60.058091768080004, 60.067993547748806,
+      60.07399182575568, 60.081610906378806, 60.08818554167674, 60.09614354794511, 60.10652350200744, 60.11375551168151,
+      60.12357637948531, 60.12556797382961, 60.13476939676979, 60.14557025921917, 60.15760448803118, 60.17064019380815,
+      60.18445367262873, 60.19881563522602, 60.21348718883676, 60.2282227638076, 60.24277375169376, 60.2568924021654,
+      60.27033892833924, 60.26277480956927, 60.264244721025506, 60.26571706580325, 60.267505564353336,
+      60.269415850602094, 60.27129367672867, 60.27213517326444, 60.27342012574918, 60.27500447692215,
+      60.276276895195764, 60.27789427116706, 60.25408780721776, 60.34965613730005, 60.392362703924846, 60.4123598346934,
+      60.42172417543944, 60.4261095214882, 60.42816327311404, 60.42912512820584, 60.42957562255159, 60.42978662490657,
+      60.42988545832563, 60.42993175387016, 60.4299534405834
+    ],
+    "steady": [
+      60.13082351174393, 60.12436535600516, 60.12469535677358, 60.1269311125206, 60.130385839362, 60.13491382924504,
+      60.14052574451918, 60.14726425470619, 60.155203685635996, 60.16442577097059, 60.1750063359047, 60.18702156802279,
+      60.15490438303245, 60.17199556703799, 60.18976337843289, 60.20794521021839, 60.226266297690444, 60.2444346331316,
+      60.26215435863066, 60.27912979715168, 60.29507206801112, 60.3097054161857, 60.322772836236524, 60.334044779302694,
+      60.272036703430835, 60.27599410624443, 60.27893304453295, 60.281018251307806, 60.28241156649926,
+      60.28326834364602, 60.283737815803846, 60.283978228811456, 60.284173731608774, 60.284704092611044,
+      60.286884813408676, 60.30066269641336, 60.641367094927396, 60.641367094927396, 60.641367094927396,
+      60.641367094927396, 60.641367094927396, 60.641367094927396, 60.641367094927396, 60.641367094927396,
+      60.641367094927396, 60.641367094927396, 60.641367094927396, 60.641367094927396
+    ],
+    "t_sink": [
+      60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0,
+      60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0,
+      60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0, 60.0
+    ],
+    "sink_name": "heatsink",
+    "rpm": [
+      41.66666666666666, 124.99999999999999, 208.3333333333333, 291.66666666666663, 374.99999999999994,
+      458.3333333333333, 541.6666666666665, 624.9999999999999, 708.3333333333334, 791.6666666666666, 875.0,
+      958.3333333333334, 999.9999999999999, 999.9999999999999, 999.9999999999999, 999.9999999999999, 999.9999999999999,
+      999.9999999999999, 999.9999999999999, 999.9999999999999, 999.9999999999999, 999.9999999999999, 999.9999999999999,
+      999.9999999999999, 958.3333333333334, 875.0, 791.6666666666666, 708.3333333333334, 624.9999999999999,
+      541.6666666666667, 458.3333333333333, 375.0, 291.66666666666663, 208.3333333333333, 125.00000000000007,
+      41.66666666666662, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+    ],
+    "torque": [
+      0.2501438979088535, 0.25364255977395395, 0.2606395920890007, 0.2711334129509353, 0.28511915237252367,
+      0.30258565845898167, 0.32351151379498416, 0.34786007620307613, 0.375573570509947, 0.4065662763131771,
+      0.4407168820317225, 0.4778601086773734, 0.3716474049721591, 0.42981487211875125, 0.4859126542421939,
+      0.5395948898612904, 0.5905306101422944, 0.6384057794318274, 0.6829252313911104, 0.7238144887945943,
+      0.7608214557733287, 0.7937179720698245, 0.8223012197219122, 0.8463949735029224, 0.7072223643433417,
+      0.7172835064924783, 0.7248740575908771, 0.7304260972776079, 0.7343363900040778, 0.7369626803723488,
+      0.7386210653751503, 0.7395842164492485, 0.740080246717611, 0.7402920446519822, 0.7403569234262274,
+      0.7403664645700297, 0.8018378529411764, 0.8018378529411764, 0.8018378529411764, 0.8018378529411764,
+      0.8018378529411764, 0.8018378529411764, 0.8018378529411764, 0.8018378529411764, 0.8018378529411764,
+      0.8018378529411764, 0.8018378529411764, 0.8018378529411764
+    ],
+    "p_stage": [
+      0.6806235044353051, 0.6866699243179173, 0.6973949090542022, 0.7129528676027199, 0.7335741950246365,
+      0.7595628005466715, 0.7912878716833155, 0.8291731278322293, 0.8736809981936224, 0.9252919723859955,
+      0.9844754349689668, 1.051653394832737, 0.8724252339513807, 0.9678077317472373, 1.0670006413446402,
+      1.1685417809941272, 1.270871450797463, 1.372364330139577, 1.4713628284670943, 1.5662122662034117,
+      1.6552955702671717, 1.7370694260469273, 1.8100971604857259, 1.8730829012590684, 1.526618696760355,
+      1.5488347786164407, 1.565397726630704, 1.5772105035448059, 1.5851467200789053, 1.5900226202198233,
+      1.5925756347596705, 1.5934522288933546, 1.5932007498403655, 1.5922599969741258, 1.5909637916691064,
+      1.5895365764617333, 1.7414480756399777, 1.7414480756399777, 1.7414480756399777, 1.7414480756399777,
+      1.7414480756399777, 1.7414480756399777, 1.7414480756399777, 1.7414480756399777, 1.7414480756399777,
+      1.7414480756399777, 1.7414480756399777, 1.7414480756399777
+    ],
+    "i_peak": [
+      3.024734880364979, 3.0670380980947347, 3.151652568873988, 3.278541604140185, 3.4476566139013105,
+      3.6588633291194306, 3.911897405872229, 4.2063166626809165, 4.541433542492553, 4.916197284276794,
+      5.329144347560457, 5.778278662288143, 4.493958484652748, 5.197309767701549, 5.87565363676327, 6.524774099343475,
+      7.140679147900716, 7.719593780786951, 8.257925610882541, 8.752357741443905, 9.199840379663472, 9.597615045896127,
+      9.943260964244601, 10.234596491383195, 8.551719881448232, 8.673370071732721, 8.765161497661145, 8.832298006664574,
+      8.879578088697428, 8.911331000320049, 8.931396755094514, 8.943049016858982, 8.949029174070931, 8.951596494699176,
+      8.952392679584458, 8.95250800477619, 9.695796844892403, 9.695796844892403, 9.695796844892403, 9.695796844892403,
+      9.695796844892403, 9.695796844892403, 9.695796844892403, 9.695796844892403, 9.695796844892403, 9.695796844892403,
+      9.695796844892403, 9.695796844892403
+    ],
+    "start": {
+      "applies": "method",
+      "method": "sensor",
+      "lines": [
+        "the drive knows where the rotor is from the first instant, so it applies only the current the torque needs"
+      ]
+    },
+    "life": {
+      "repeats": null,
+      "hours": null,
+      "swing": 0.0,
+      "swing_mean": 60.17906659457273,
+      "swing_share": 0.0,
+      "swings": 0,
+      "chip": "phase leg, switch",
+      "within_turn": false
+    },
+    "inrush": null,
+    "p_dc": [
+      2.1579889091324134, 4.403620554118432, 6.802639094583327, 9.447638259129711, 12.431543647281577,
+      15.847307694468885, 19.78737526654727, 24.342858922785876, 29.60235799831635, 35.650361089746724,
+      42.56517264524473, 50.41631782945832, 40.643103669886706, 47.11728757865054, 53.40784789473327,
+      59.470504793111125, 65.26182968125036, 70.73966122063909, 75.86352307512699, 80.59503808159285, 84.89833075193273,
+      88.74041429883219, 92.091551857848, 94.92559111513023, 75.58564307162801, 70.44647227914427, 64.90034949483562,
+      59.048105549673565, 52.973124401016406, 46.742509203945275, 40.408538539038055, 34.010333981706964,
+      27.575669667936673, 21.12286483934618, 14.662743550084935, 8.200612120957466, 5.706744485996134,
+      5.706744485996134, 5.706744485996134, 5.706744485996134, 5.706744485996134, 5.706744485996134, 5.706744485996134,
+      5.706744485996134, 5.706744485996134, 5.706744485996134, 5.706744485996134, 5.706744485996134
+    ],
+    "summary": {
+      "duration": 3.05,
+      "peak": 60.4299534405834,
+      "forever": 60.641367094927396,
+      "tj_max": 175.0,
+      "mean_loss": 1.583898393926899,
+      "shaft_energy": 47.48565074509242,
+      "loss_energy": 15.171942592855553,
+      "rms_torque": 0.7414488188216118,
+      "returned": 0.0,
+      "returned_peak": 0.0,
+      "v_link_peak": null,
+      "c_needed": null,
+      "sink_peak": 60.0,
+      "capacitor_rms": 1.5820052386585195,
+      "capacitor_rms_worst": 3.798206461755758,
+      "ripple_pp_worst": 1.6426314538222917
+    },
+    "checks": [
+      { "level": "ok", "topic": "voltage", "message": "supply is 48% of the 100 V rating" },
+      {
+        "level": "ok",
+        "topic": "temperature",
+        "message": "junction peaks at 60 \u00b0C (60 to 61 \u00b0C across the thermal assumptions), 114 \u00b0C below its rating"
+      },
+      { "level": "ok", "topic": "current", "message": "peak current 10.2 A against a 100 A rating" },
+      {
+        "level": "ok",
+        "topic": "data",
+        "message": "inside the data given; part of it is table points or an estimate from charge, with the shape between them assumed: listed under data support"
+      },
+      {
+        "level": "ok",
+        "topic": "ripple",
+        "message": "the motor current carries 1.64 A of ripple, peak to peak, at the switching frequency: 16% of its 10.2 A peak"
+      },
+      {
+        "level": "ok",
+        "topic": "link capacitor",
+        "message": "the DC-link capacitor carries 3.8 A rms of ripple at the switching frequency: its ripple-current rating has to be at least that. The supply's own ripple comes on top"
+      },
+      {
+        "level": "ok",
+        "topic": "trip",
+        "message": "if the drive stops switching at 1000 rpm, the motor's back-EMF is 10 V between lines, below the supply: a trip there does no harm to the link"
+      }
+    ]
+  },
+  "map": {
+    "rpm": [666.6666666666666, 1333.3333333333335, 2000.0, 2666.666666666667, 3333.3333333333335, 4000.0],
+    "torque": [0.5, 1.0, 1.5, 2.0, 2.5, 3.0],
+    "loss": [
+      [
+        1.08749382957132, 1.098131903094643, 1.1065932961083416, 1.1121469758405127, 1.1161745991040857,
+        1.1209232433533267
+      ],
+      [
+        2.3000697311593172, 2.31016829600699, 2.317840893708119, 2.322471700538735, 2.325779853707781,
+        2.3298431834852265
+      ],
+      [
+        4.07652945098565, 4.086419195467694, 4.0937088982422445, 4.0978183706279685, 4.100824931885605,
+        4.104541913541904
+      ],
+      [6.422357940389965, 6.432141703602783, 6.439162587131849, 6.442882446298, 6.445755621854982, 6.449300352767462],
+      [9.345156094133605, 9.354886279797084, 9.36168067437794, 9.365085644318501, 9.367909141606297, 9.371386486464438],
+      [
+        12.854639279177256, 12.864348201457943, 12.87093251614307, 12.874077106840833, 12.876909967017916,
+        12.880390833362798
+      ]
+    ],
+    "tj": [
+      [
+        60.19347434458843, 60.19525541529899, 60.196427157669035, 60.19691541241561, 60.19707451699986,
+        60.197367038250555
+      ],
+      [
+        60.410103269104965, 60.4124368120887, 60.41371574857351, 60.41407755716976, 60.41403774786444,
+        60.414071095493014
+      ],
+      [
+        60.72726024924541, 60.730871926193736, 60.73275191288021, 60.733342024297194, 60.73337326018311,
+        60.73333808166035
+      ],
+      [61.1461886545336, 61.15182745912578, 61.15478775689124, 61.15593543587281, 61.15627848988737, 61.15634369173819],
+      [
+        61.668508984333535, 61.676996996166295, 61.68155206745092, 61.68361514365514, 61.68451844801974,
+        61.68485791953883
+      ],
+      [62.29623472774132, 62.30847709634169, 62.31519948184912, 62.31857233693035, 62.32031990140492, 62.32112794689942]
+    ],
+    "efficiency": [
+      [
+        0.9299512404929723, 0.9635628912336358, 0.9753330610982643, 0.9813466953151033, 0.9849990865157768,
+        0.9874457987326181
+      ],
+      [
+        0.8918318090305773, 0.9427592819013861, 0.9610634095532552, 0.9704948830539228, 0.976246758947414,
+        0.9801176389235923
+      ],
+      [
+        0.8536499409271594, 0.9210075719505705, 0.9458934987195247, 0.9588546685558175, 0.9668052499633597,
+        0.9721782252286048
+      ],
+      [
+        0.8178755392122353, 0.8997863038124171, 0.9308674889071472, 0.9472327609659968, 0.957332184183734,
+        0.9641848891284526
+      ],
+      [
+        0.7846843649304432, 0.8793321067859358, 0.9161725221457793, 0.935779346305565, 0.9479520968531022,
+        0.9562441707964856
+      ],
+      [
+        0.7539197393180508, 0.8596798357945632, 0.9018545017499261, 0.9245361369805564, 0.9387013959642766,
+        0.9483880741474235
+      ]
+    ],
+    "reason": [
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""],
+      ["", "", "", "", "", ""]
+    ],
+    "tj_max": 175.0
+  },
+  "recommend": {
+    "items": [
+      {
+        "topic": "gate resistors",
+        "value": { "rg_on": 3.8, "rg_off": 8.0 },
+        "lines": [
+          "gate drive taken as 10 V, usual for a Si MOSFET",
+          "loop inductance taken as 20 nH for the overshoot limit: give your board's to tighten this",
+          "the gate driver's peak current is not considered: give it to include it",
+          "turn-on: at least 3.8 ohm in total, set by voltage slew rate under 5 V/ns",
+          "turn-on: the transistor's own gate resistance is 1.2 ohm of that, leaving 2.6 ohm for the driver and the external resistor",
+          "turn-off: at least 8 ohm in total, set by overshoot within 80% of the 100 V rating",
+          "turn-off: the transistor's own gate resistance is 1.2 ohm of that, leaving 6.8 ohm for the driver and the external resistor",
+          "at these values a switching event at 19.3 A costs about 16.1 \u00b5J turning on and 16.9 \u00b5J turning off; both grow with the resistor",
+          "the results use these values, since you gave none"
+        ]
+      },
+      {
+        "topic": "dead time",
+        "value": { "t_dead": 1.474294312574579e-7, "loss_at_common": 4.944546735743722 },
+        "lines": [
+          "the delay is a low estimate: the gate holds more charge above the plateau than this model knows of, which the margin is there to cover",
+          "turning off through 8 ohm takes about 66 ns: 27 ns before anything happens, 24 ns for the voltage to rise, 15 ns for the current to fall (from the gate charges)",
+          "a tenth longer when hot, plus 50 ns for the two gate-driver channels not answering together (usual for a half-bridge driver; give yours to tighten this), with a margin of 1.2 times: 147 ns",
+          "at least 147 ns",
+          "open motor-control firmware often runs 300 to 800 ns by default: at 500 ns the stage would lose 4.94 W, 0.43 W more than at the 150 ns used here"
+        ]
+      },
+      {
+        "topic": "modulation",
+        "value": { "saving": 0.7086027045682348 },
+        "lines": [
+          "space-vector PWM, the usual scheme for this motor: 4.52 W",
+          "discontinuous PWM loses 3.81 W, 0.709 W less (16%): it stops switching each leg for part of the cycle",
+          "the price is more current ripple and motor noise, most at low speed; drives commonly change to it only above about half speed"
+        ]
+      },
+      {
+        "topic": "heatsink",
+        "value": {
+          "rth_sink": 11.461756717332293,
+          "t_sink": 100.0,
+          "loss": 5.2347996454390735,
+          "sink_limit": 100.0,
+          "rth_ja": 50.45666275024414
+        },
+        "lines": [
+          "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 103 \u00b0C, 72 \u00b0C under its 175 \u00b0C rating",
+          "it then carries 5.23 W into 40 \u00b0C air: 11 K/W or lower, heatsink to ambient",
+          "With no heatsink at all, a package may have up to 50 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 \u00b0C under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
+        ]
+      }
+    ]
+  },
+  "capability": {
+    "rpm": [0.0, 200.0, 500.0, 1000.0, 1500.0, 2000.0, 2500.0, 3000.0, 4000.0],
+    "edge": [
+      {
+        "torque": 7.484375,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 87.53010141599715,
+        "current": 90.50081540447587
+      },
+      {
+        "torque": 7.482547760009766,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.08607013952886,
+        "current": 90.4788661861728
+      },
+      {
+        "torque": 7.483278477564454,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.12117784479135,
+        "current": 90.48776708727382
+      },
+      {
+        "torque": 7.484009266478278,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.21632146674986,
+        "current": 90.49660710371924
+      },
+      {
+        "torque": 7.484740126758206,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.28554622022793,
+        "current": 90.50542144307937
+      },
+      {
+        "torque": 7.482912797625696,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.3258706304482,
+        "current": 90.48321524783883
+      },
+      {
+        "torque": 7.483643550828589,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.3636022064276,
+        "current": 90.49204838442178
+      },
+      {
+        "torque": 7.484374375394099,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.39202926992229,
+        "current": 90.50099426747916
+      },
+      {
+        "torque": 7.027198967990874,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.29147195501804,
+        "current": 90.48968681978357
+      }
+    ],
+    "design": {
+      "rpm": 2000.0,
+      "torque": 7.482912797625696,
+      "why": "the motor itself: its current limit, or its reach on this supply",
+      "tj": 73.3258706304482,
+      "current": 90.48321524783883,
+      "share": 0.2138204791732539,
+      "power": 1567.2175914982622,
+      "rated": 100.0
+    },
+    "f_sw": [5000.0, 10000.0, 20000.0, 40000.0, 80000.0],
+    "by_f_sw": [
+      {
+        "torque": 7.484375,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 72.55837970562887,
+        "current": 90.50088413363419
+      },
+      {
+        "torque": 7.482547760009766,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 72.80071607915096,
+        "current": 90.47880414435295
+      },
+      {
+        "torque": 7.483278477564454,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.32721480799543,
+        "current": 90.48763408079382
+      },
+      {
+        "torque": 7.484009266478278,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 74.38373077512095,
+        "current": 90.4964647502643
+      },
+      {
+        "torque": 7.484740126758206,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 76.4937186248358,
+        "current": 90.50529615280728
+      }
+    ],
+    "t_sink": [40.0, 60.0, 80.0, 100.0],
+    "by_t_sink": [
+      {
+        "torque": 7.484375,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 51.80614290305606,
+        "current": 90.50088413363419
+      },
+      {
+        "torque": 7.482547760009766,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 73.32452889614632,
+        "current": 90.47880414435295
+      },
+      {
+        "torque": 7.483278477564454,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 94.85183523960896,
+        "current": 90.48763408079382
+      },
+      {
+        "torque": 7.484009266478278,
+        "why": "the motor itself: its current limit, or its reach on this supply",
+        "tj": 116.37978919368156,
+        "current": 90.4964647502643
+      }
+    ]
+  },
+  "fit": {
+    "v_supply": 48.0,
+    "top_rpm": 34603.887341827154,
+    "i_peak": 90.50945259488374,
+    "i_rated": 100.0,
+    "torque": 7.485089291840268,
+    "level": "ok",
+    "lines": [
+      { "level": "ok", "text": "from 48 V this motor reaches the 2,000 rpm of the design point" },
+      {
+        "level": "ok",
+        "text": "at its current limit this motor draws 90.5 A peak for 7.49 N\u00b7m, within the part's 100 A rating"
+      }
+    ]
+  },
+  "reading": {
+    "summary": {
+      "id": "example-mosfet",
+      "name": "made-up 100 V MOSFET",
+      "technology": "Si MOSFET",
+      "v_max": 100.0,
+      "i_nominal": 100.0,
+      "tj_max": 175.0,
+      "i_pulsed": null,
+      "t_sc": null,
+      "positions": 1,
+      "integrated_driver": false,
+      "example": true,
+      "switching": "estimated from gate and output charge",
+      "support": "table points and assumed shapes",
+      "needs_gate_drive": true
+    },
+    "conduction": {
+      "unit": "V",
+      "basis": "curve",
+      "assumption": null,
+      "source": "made up: on-resistance from the tables: 4 m\u03a9 at 25 \u00b0C, 7.2 m\u03a9 at 125 \u00b0C",
+      "page": null,
+      "curves": [
+        { "tj": 25.0, "x": [0.0, 100.0], "y": [0.0, 0.4] },
+        { "tj": 125.0, "x": [0.0, 100.0], "y": [0.0, 0.72] }
+      ]
+    },
+    "e_on": null,
+    "e_off": null,
+    "reverse": {
+      "unit": "V",
+      "basis": "point",
+      "assumption": "reverse voltage taken as constant at its one tabulated point; it rises with current, so dead-time loss is underestimated",
+      "source": "made up: 0.9 V at 100 A, gate off",
+      "page": null,
+      "curves": [{ "tj": 25.0, "x": [0.0, 100.0], "y": [0.9, 0.9] }]
+    },
+    "diode": null,
+    "e_rr": null,
+    "thermal": {
+      "r": [0.6],
+      "tau": null,
+      "source": "made up: junction-to-case resistance only (0.6 K/W); no transient data"
+    },
+    "reading": null
+  }
+}

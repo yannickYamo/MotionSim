@@ -1,7 +1,35 @@
-# Before a commit: the code formatted, and the lint rules that find mistakes. `pre-commit install` once.
+# Before a commit: the code formatted, the lint rules that find mistakes, and files left
+# tidy. `pre-commit install` once. Each hook is held to an exact commit; the tag it is, is
+# beside it.
+# Built files, recorded figures, the lock file and the font with its licence are left as they are.
+exclude: ^(src/motionsim/webui/|tests/golden/|web/public/fonts/|web/package-lock\.json$)
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.0
+    rev: 44b5042edab9382aba712eed4f9c7bab7a3d6a3e # frozen: v0.17.0, the ruff of pyproject.toml
     hooks:
       - id: ruff-format
-      - id: ruff
+      - id: ruff-check
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        # Two spaces at the end of a line are a line break in Markdown.
+        args: [--markdown-linebreak-ext=md]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=600]
+  # The type check takes longer than a commit should, so it runs when asked for:
+  # `pre-commit run mypy --hook-stage manual --all-files`. CI runs it on every push.
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy src/motionsim
+        language: system
+        pass_filenames: false
+        types: [python]
+        stages: [manual]

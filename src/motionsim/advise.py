@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from motionsim.motor.stage import Unreachable
+from motionsim.motor_class import starting_class
 from motionsim.text import written
 
 # Blocking-voltage ratings parts are commonly made in.
@@ -42,6 +44,96 @@ def _class_at_least(volts: float) -> int:
     return VOLTAGE_CLASSES[-1]
 
 
+def _current_line(i_peak: float, i_stall: float | None, margin: float) -> str:
+    design_for = max(i_peak, i_stall or 0.0)
+    stall = "" if i_stall is None else f", {written(i_stall, 3)} A holding the same torque at standstill"
+    return (
+        f"Current: {written(i_peak, 3)} A peak at the design point{stall}. Start with devices rated "
+        f"for {written(margin * design_for, 3)} A or more: the rating on a datasheet's first "
+        "page assumes a case held at 25 °C, which no real heatsink does."
+    )
+
+
+def _voltage_lines(v_dc: float, v_minimum: int, v_comfortable: int, share: float, comfortable: float) -> list[str]:
+    top = VOLTAGE_CLASSES[-1]
+    if v_dc > comfortable * top:
+        # Past what the highest class covers with room to spare: say what share it is, not that it fits.
+        beyond = "more than the rating itself" if v_dc > top else f"{v_dc / top:.0%} of the rating"
+        return [
+            f"Voltage: {top} V parts are the highest class listed here, and a {v_dc:g} V supply is {beyond}: "
+            f"above the {comfortable:.0%} that leaves room for overshoot and braking. "
+            "This supply is beyond what these devices are made for."
+        ]
+    if v_comfortable > v_minimum:
+        return [
+            f"Voltage: {v_minimum} V parts are the least that keeps a {v_dc:g} V supply under "
+            f"{share:.0%} of the rating. {v_comfortable} V parts leave room for switching "
+            "overshoot and for the link voltage rising when the motor brakes."
+        ]
+    return [
+        f"Voltage: {v_minimum} V parts keep a {v_dc:g} V supply under "
+        f"{comfortable:.0%} of the rating, with room for overshoot and braking."
+    ]
+
+
+def _low_voltage_technology(r_target: float, loss_share: float) -> list[str]:
+    return [
+        "Technology: silicon MOSFETs are the usual choice at this voltage. GaN transistors "
+        "are worth a look when switching above about 100 kHz or when board area decides: "
+        "they lose less per switching event and take less space.",
+        f"On-resistance: about {written(r_target * 1e3, 3)} mΩ or less when hot keeps conduction "
+        f"loss near {loss_share:.0%} of the motor's power; that is about "
+        f"{written(r_target / HOT_RESISTANCE * 1e3, 3)} mΩ on the datasheet's 25 °C line.",
+    ]
+
+
+def _high_voltage_technology(v_comfortable: int, f_sw: float, r_crossover: float) -> list[str]:
+    ceiling = "20 kHz" if v_comfortable <= 650 else "16 kHz"
+    wide = "silicon-carbide MOSFETs" if v_comfortable > 650 else "silicon-carbide or GaN transistors"
+    if f_sw > 20e3:
+        lines = [
+            f"Technology: at {f_sw / 1e3:g} kHz switching loss leads, which favours {wide}. "
+            f"IGBTs are the low-cost choice up to about {ceiling}."
+        ]
+    else:
+        lines = [
+            f"Technology: IGBTs with a diode are the low-cost choice at {f_sw / 1e3:g} kHz. "
+            f"{wide[0].upper() + wide[1:]} lose less when the drive spends most of its time "
+            "well below peak current, and at higher switching frequency."
+        ]
+    lines.append(
+        f"An IGBT drops about {IGBT_DROP:g} V whatever the current. A transistor conducts "
+        f"with less loss than that at your peak current only if its resistance, hot, is "
+        f"below about {written(r_crossover * 1e3, 3)} mΩ."
+    )
+    if v_comfortable <= 650:
+        lines.append(
+            "If you look at silicon superjunction MOSFETs, take only types with a fast body "
+            "diode: a motor inverter turns on into that diode every cycle."
+        )
+    return lines
+
+
+def _packaging_line(v_comfortable: int, power: float, positions: int) -> str:
+    if v_comfortable > 250 and power <= 3000:
+        return (
+            "Packaging: at this power an intelligent power module (six switches with their gate "
+            "drivers and protection in one package) saves the gate-drive design. Discrete parts "
+            "need a gate driver for each switch, with a floating supply for the high-side ones."
+        )
+    if v_comfortable > 250:
+        return (
+            "Packaging: above a few kilowatts, discrete parts or a power module with separate, "
+            "usually isolated, gate drivers. Each switch needs a driver channel; the high-side "
+            "ones need a floating supply."
+        )
+    return (
+        f"Packaging: discrete MOSFETs with a gate-driver IC ({positions // 2} half-bridge "
+        "channels, bootstrap supplies for the high side), or a driver with the MOSFETs "
+        "built in at a few amps."
+    )
+
+
 def advise(
     motor,
     rpm: float,
@@ -68,7 +160,7 @@ def advise(
     i_switch = max(float(np.sqrt(np.mean(r.current**2 * (r.d_switch + r.d_reverse)))) for r in stage.roles)
     try:
         i_stall = motor.stage(0.0, torque, v_dc, motor.default_pwm).i_peak
-    except ValueError:
+    except Unreachable:  # the torque cannot be held at standstill: no such current to design for
         i_stall = None
     v_minimum = _class_at_least(v_dc / voltage_share)
     v_comfortable = _class_at_least(v_dc / comfortable_share)
@@ -77,96 +169,18 @@ def advise(
     r_target = loss_share * power / carrying if carrying else float("inf")
     r_crossover = IGBT_DROP / i_peak if i_peak else float("inf")
 
-    lines = []
     kind = {6: "a three-phase inverter", 4: "an H-bridge", 8: "two H-bridges"}.get(
         positions, f"a power stage of {positions} switches"
     )
-    lines.append(f"Power stage: {kind}, {positions} switches.")
-    design_for = max(i_peak, i_stall or 0.0)
-    stall = "" if i_stall is None else f", {written(i_stall, 3)} A holding the same torque at standstill"
-    lines.append(
-        f"Current: {written(i_peak, 3)} A peak at the design point{stall}. Start with devices rated "
-        f"for {written(current_margin * design_for, 3)} A or more: the rating on a datasheet's first "
-        "page assumes a case held at 25 °C, which no real heatsink does."
-    )
-    top = VOLTAGE_CLASSES[-1]
-    if v_dc > comfortable_share * top:
-        # Past what the highest class covers with room to spare: say what share it is, not that it fits.
-        beyond = "more than the rating itself" if v_dc > top else f"{v_dc / top:.0%} of the rating"
-        lines.append(
-            f"Voltage: {top} V parts are the highest class listed here, and a {v_dc:g} V supply is {beyond}: "
-            f"above the {comfortable_share:.0%} that leaves room for overshoot and braking. "
-            "This supply is beyond what these devices are made for."
-        )
-    elif v_comfortable > v_minimum:
-        lines.append(
-            f"Voltage: {v_minimum} V parts are the least that keeps a {v_dc:g} V supply under "
-            f"{voltage_share:.0%} of the rating. {v_comfortable} V parts leave room for switching "
-            "overshoot and for the link voltage rising when the motor brakes."
-        )
-    else:
-        lines.append(
-            f"Voltage: {v_minimum} V parts keep a {v_dc:g} V supply under "
-            f"{comfortable_share:.0%} of the rating, with room for overshoot and braking."
-        )
+    lines = [f"Power stage: {kind}, {positions} switches.", _current_line(i_peak, i_stall, current_margin)]
+    lines += _voltage_lines(v_dc, v_minimum, v_comfortable, voltage_share, comfortable_share)
     if supply == "battery":
         lines.append("Size the voltage for the battery's highest charging voltage, not its nominal one.")
-
-    fast = f_sw > 20e3
     if v_comfortable <= 250:
-        lines.append(
-            "Technology: silicon MOSFETs are the usual choice at this voltage. GaN transistors "
-            "are worth a look when switching above about 100 kHz or when board area decides: "
-            "they lose less per switching event and take less space."
-        )
-        lines.append(
-            f"On-resistance: about {written(r_target * 1e3, 3)} mΩ or less when hot keeps conduction "
-            f"loss near {loss_share:.0%} of the motor's power; that is about "
-            f"{written(r_target / HOT_RESISTANCE * 1e3, 3)} mΩ on the datasheet's 25 °C line."
-        )
+        lines += _low_voltage_technology(r_target, loss_share)
     else:
-        ceiling = "20 kHz" if v_comfortable <= 650 else "16 kHz"
-        wide = "silicon-carbide MOSFETs" if v_comfortable > 650 else "silicon-carbide or GaN transistors"
-        if fast:
-            lines.append(
-                f"Technology: at {f_sw / 1e3:g} kHz switching loss leads, which favours {wide}. "
-                f"IGBTs are the low-cost choice up to about {ceiling}."
-            )
-        else:
-            lines.append(
-                f"Technology: IGBTs with a diode are the low-cost choice at {f_sw / 1e3:g} kHz. "
-                f"{wide[0].upper() + wide[1:]} lose less when the drive spends most of its time "
-                "well below peak current, and at higher switching frequency."
-            )
-        lines.append(
-            f"An IGBT drops about {IGBT_DROP:g} V whatever the current. A transistor conducts "
-            f"with less loss than that at your peak current only if its resistance, hot, is "
-            f"below about {written(r_crossover * 1e3, 3)} mΩ."
-        )
-        if v_comfortable <= 650:
-            lines.append(
-                "If you look at silicon superjunction MOSFETs, take only types with a fast body "
-                "diode: a motor inverter turns on into that diode every cycle."
-            )
-
-    if v_comfortable > 250 and power <= 3000:
-        lines.append(
-            "Packaging: at this power an intelligent power module (six switches with their gate "
-            "drivers and protection in one package) saves the gate-drive design. Discrete parts "
-            "need a gate driver for each switch, with a floating supply for the high-side ones."
-        )
-    elif v_comfortable > 250:
-        lines.append(
-            "Packaging: above a few kilowatts, discrete parts or a power module with separate, "
-            "usually isolated, gate drivers. Each switch needs a driver channel; the high-side "
-            "ones need a floating supply."
-        )
-    else:
-        lines.append(
-            f"Packaging: discrete MOSFETs with a gate-driver IC ({positions // 2} half-bridge "
-            "channels, bootstrap supplies for the high side), or a driver with the MOSFETs "
-            "built in at a few amps."
-        )
+        lines += _high_voltage_technology(v_comfortable, f_sw, r_crossover)
+    lines.append(_packaging_line(v_comfortable, power, positions))
     return Advice(
         positions=positions,
         i_peak=i_peak,
@@ -199,7 +213,7 @@ def usual_supply(v_rated: float) -> int:
     return below[-1] if below else BUSES[0]
 
 
-def motors_for(v_rated: float, positions: int) -> tuple[int, dict[str, MotorFit]]:
+def motors_for(v_rated: float, positions: int, i_nominal: float, technology: str) -> tuple[int, dict[str, MotorFit]]:
     """The supply a device suits, and how each kind of motor fits a device of that
     voltage rating and package. Nothing here stops a choice: it says what is usual.
 
@@ -208,6 +222,8 @@ def motors_for(v_rated: float, positions: int) -> tuple[int, dict[str, MotorFit]
       wound for hundreds of volts, and are specials below that;
     - brushed permanent-magnet motors and steppers are low-voltage machines;
     - a three-phase motor needs three legs, a brushed motor two, a stepper four.
+    The one it starts on is the kind the part's class of drive runs (motor_class.RULES),
+    which its current and technology decide as well, with the line that says why.
     """
     bus = usual_supply(v_rated)
     high = bus >= MAINS
@@ -233,7 +249,6 @@ def motors_for(v_rated: float, positions: int) -> tuple[int, dict[str, MotorFit]
             )
         )
     fits["dc_series"] = MotorFit("suits", "series-wound motors run from batteries and from rectified mains alike")
-    recommended = "pmsm"
     if positions == 6:
         fits["dc"] = MotorFit(
             "unusual", "a brushed motor needs two legs, so a third of this six-switch package would sit idle"
@@ -248,8 +263,6 @@ def motors_for(v_rated: float, positions: int) -> tuple[int, dict[str, MotorFit]
                 fits[kind] = MotorFit(
                     "suits", fits[kind].why + "; three legs take two of these two-leg packages, with one leg idle"
                 )
-        if bus <= WOUND_LOW:
-            recommended = "dc"
-    best = fits[recommended]
-    fits[recommended] = MotorFit("recommended", best.why)
+    start = starting_class(v_rated, bus, i_nominal, technology, positions)
+    fits[start.kind] = MotorFit("recommended", start.why)
     return bus, fits

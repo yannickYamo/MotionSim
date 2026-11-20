@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 import pytest
 
@@ -26,6 +27,11 @@ def test_low_voltage_drive_is_pointed_at_mosfets_with_a_resistance_target() -> N
     i_rms = a.i_peak / math.sqrt(2)
     assert 3 * i_rms**2 * a.r_target == pytest.approx(0.01 * a.p_electrical, rel=1e-3)
     assert a.i_switch_rms == pytest.approx(i_rms / math.sqrt(2), rel=0.02)
+    # A silicon channel at 125-150 °C has about 1.8 times its resistance at 25 °C: the
+    # figure to look for on the datasheet's 25 °C line is the hot target over 1.8.
+    hot, cold = re.search(r"about ([\d.]+) mΩ or less when hot.*about ([\d.]+) mΩ on the datasheet", text(a)).groups()
+    assert float(hot) == pytest.approx(a.r_target * 1e3, rel=5e-3)
+    assert float(cold) == pytest.approx(a.r_target * 1e3 / 1.8, rel=5e-3)
 
 
 def test_mains_voltage_drive_is_pointed_at_igbts_and_told_the_crossover() -> None:
@@ -53,15 +59,15 @@ def test_motor_kinds_are_fitted_to_the_device_voltage_and_package() -> None:
     from motionsim.advise import motors_for, usual_supply
 
     assert [usual_supply(v) for v in (40, 100, 600, 650, 1200)] == [24, 48, 400, 400, 800]
-    bus, low = motors_for(100, 1)
+    bus, low = motors_for(100, 1, 100, "Si MOSFET")
     assert bus == 48 and low["pmsm"].fit == "recommended"
     assert low["induction"].fit == "unusual" and "special winding" in low["induction"].why
     assert low["dc"].fit == "suits" and low["stepper"].fit == "suits"
-    _, module = motors_for(600, 6)
+    _, module = motors_for(600, 6, 30, "Si IGBT")
     assert module["induction"].fit == "suits" and module["pmsm"].fit == "recommended"
     assert module["dc"].fit == "unusual" and "idle" in module["dc"].why
     assert module["stepper"].fit == "unusual"
-    _, bridge = motors_for(100, 4)
+    _, bridge = motors_for(100, 4, 20, "Si MOSFET")
     assert bridge["dc"].fit == "recommended" and bridge["pmsm"].fit == "suits"
     for fits in (low, module, bridge):
         assert sum(f.fit == "recommended" for f in fits.values()) == 1

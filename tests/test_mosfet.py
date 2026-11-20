@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import numpy as np
 import pytest
 from conftest import SRC, V_REF, energy, line
 
@@ -27,7 +28,9 @@ Q_GS, Q_GD, Q_TH, V_PL, Q_OSS, Q_RR = 9e-9, 2.5e-9, 6e-9, 2.5, 80e-9, 10e-9
 def fet(*, measured: bool = False, reverse: bool = True) -> Device:
     chip = Chip(
         kind="mosfet",
-        conduction=ConductionModel(curves=[line(25.0, 0.0, R_ON)], source=SRC),
+        # Given flat at two temperatures, so that the closed forms below hold at any: a channel
+        # given at one temperature only would rise as its technology usually does.
+        conduction=ConductionModel(curves=[line(25.0, 0.0, R_ON), line(150.0, 0.0, R_ON)], source=SRC),
         reverse=ConductionModel(curves=[line(25.0, V_SD, 0.0)], source=SRC) if reverse else None,
         e_on=energy(20e-6) if measured else None,
         e_off=energy(10e-6) if measured else None,
@@ -117,10 +120,34 @@ def test_measured_energy_needs_no_gate_drive() -> None:
     assert not any("gate and output charge" in n for n in r.notes)
 
 
-def test_missing_reverse_data_is_reported() -> None:
-    r = solve(fet(reverse=False), op(t_dead=50e-9))
-    assert r.switch.dead_time == 0.0
-    assert any("dead-time loss is left out" in x for x in r.limits)
+def test_missing_reverse_data_takes_the_technologys_drop_and_says_so() -> None:
+    """The closed form of the dead-time loss, 2·t_dead·f_sw·V·I_pk/π, with the 2 V a GaN
+    transistor's reverse channel usually drops in place of a curve. This part's own curve is
+    2 V as well, so with or without it the loss is the same."""
+    f_sw, t_dead, i_pk = 50_000.0, 50e-9, math.sqrt(2) * 20.0
+    r = solve(fet(reverse=False), op(t_dead=t_dead))
+    assert r.switch.dead_time == pytest.approx(2 * t_dead * f_sw * 2.0 * i_pk / math.pi, rel=0.01)
+    assert r.p_inverter == pytest.approx(solve(fet(), op(t_dead=t_dead)).p_inverter, rel=1e-9)
+    said = [n for n in r.notes if "reverse conduction in the dead time" in n]
+    assert said and "2 V" in said[0] and "50%" in said[0]
+
+
+@pytest.mark.parametrize("technology", ["Si MOSFET", "SiC MOSFET", "GaN HEMT"])
+def test_without_reverse_data_loss_never_falls_as_the_dead_time_grows(technology) -> None:
+    part = fet(reverse=False)
+    part.technology = technology
+    losses = [solve(part, op(t_dead=t)).p_inverter for t in (0.0, 1.4e-7, 5e-7, 1e-6, 2e-6)]
+    assert all(b >= a for a, b in zip(losses, losses[1:], strict=False)), losses
+
+
+def test_a_reverse_drop_below_the_channels_is_never_taken() -> None:
+    """At 100 A rms the channel of 20 mΩ drops 2.8 V at the peak, above the 0.8 V of a
+    silicon body diode: the dead time is counted at the larger of the two, so it never
+    removes loss."""
+    part = fet(reverse=False)
+    part.technology = "Si MOSFET"
+    without, with_dead = solve(part, op(i_rms=100.0)), solve(part, op(i_rms=100.0, t_dead=1e-6))
+    assert with_dead.p_inverter >= without.p_inverter
 
 
 def test_mosfet_with_a_diode_chip_is_rejected() -> None:
@@ -175,7 +202,8 @@ def test_recovery_charge_is_nothing_at_no_current_and_follows_the_current_below_
     assert (e_on - without).tolist() == pytest.approx([0.0, 1e-6 * drive.v_dc, 1e-6 * drive.v_dc])
     scaled = chip.model_copy(update={"charge": charge.model_copy(update={"q_rr_current": 20.0})})
     e_scaled, _ = charge_energies(scaled, np.array([0.0, 5.0, 40.0]), drive)
-    assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.25e-6 * drive.v_dc, 1e-6 * drive.v_dc])
+    # Twice the test current recovers the root of two times the charge.
+    assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.25e-6 * drive.v_dc, 2**0.5 * 1e-6 * drive.v_dc])
 
 
 def test_the_lowest_sensorless_speed_follows_from_the_voltage_the_stage_gets_wrong() -> None:
@@ -213,3 +241,34 @@ def test_the_drop_counted_against_a_sensorless_drive_is_the_mean_of_switch_and_d
     assert found.value["voltage_error"] == pytest.approx((1.2 + 1.25) / 2)
     assert found.value["rpm"] == pytest.approx(3.0 * 1.225 / 0.1 / 4 * 60 / (2 * math.pi))
     assert "an estimate" in found.lines[-1] and "3 times" in found.lines[-1]
+
+
+@pytest.mark.parametrize("share", [0.4, 0.6, 0.8])
+def test_the_current_fall_at_turn_off_lies_between_the_two_ways_a_channel_follows_its_gate(share) -> None:
+    """After the plateau the gate falls through Rg as a capacitor does, from the plateau to
+    the threshold, and the current falls with it while the drain holds the full voltage.
+    Integrated here step by step, for a current that follows the gate in a straight line and
+    one that follows its square: the turn-off energy the charges give lies between them, so
+    the way a part's current follows its gate, which a datasheet does not say, decides the
+    error and not the figure taken."""
+    from motionsim.engine.mosfet import charge_energies
+
+    q_gs, v_pl, rg, v_dc, current = 10e-9, 5.0, 4.0, 400.0, 20.0
+    device = fet()
+    charge = device.switch.charge.model_copy(update={"q_gs": q_gs, "q_g_th": share * q_gs, "v_plateau": v_pl})
+    chip = device.switch.model_copy(update={"charge": charge})
+    at = op(v_dc=v_dc, v_drive=12.0, rg_on=rg, rg_off=rg)
+    e_off = float(charge_energies(chip, np.array([current]), at)[1][0])
+    # The plateau's part: the gate current is the plateau over Rg while the drain rises.
+    miller = 0.5 * v_dc * current * Q_GD * rg / v_pl
+    fall = e_off - miller
+    # The gate as a capacitor q_gs / v_pl discharged through Rg, from the plateau to the
+    # threshold (share × the plateau, the charge being linear in the voltage below it).
+    tau = rg * q_gs / v_pl
+    t = np.linspace(0.0, tau * math.log(1 / share), 400001)
+    gate = v_pl * np.exp(-t / tau)
+    follows = (gate - share * v_pl) / (v_pl - share * v_pl)
+    dt = t[1] - t[0]
+    straight = v_dc * current * float(np.sum((follows[1:] + follows[:-1]) / 2) * dt)
+    square = v_dc * current * float(np.sum((follows[1:] ** 2 + follows[:-1] ** 2) / 2) * dt)
+    assert square < fall < straight

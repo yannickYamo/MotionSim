@@ -8,10 +8,10 @@ import pytest
 from conftest import V_REF, line, linear_device
 
 from motionsim import dclink, guard
-from motionsim.cycle import run_cycle
 from motionsim.engine import OperatingPoint
 from motionsim.load import Load, Profile, Segment
 from motionsim.motor import BrushedDc
+from motionsim.transient import follow
 
 BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=40.0)
 MOTOR = BrushedDc(type="dc", kt=0.5, r=0.5)
@@ -29,7 +29,7 @@ def lossless():
 
 def test_stopping_a_flywheel_returns_its_kinetic_energy_less_the_winding_loss() -> None:
     inertia = 0.02
-    cycle = run_cycle(lossless(), MOTOR, Load(inertia=inertia), STOP, BASE, per_segment=200)
+    cycle = follow(lossless(), MOTOR, Load(inertia=inertia), STOP, BASE, per_segment=200)[0]
     r = dclink.returned(cycle, V_REF, 600.0)
     w = 2000 * 2 * math.pi / 60
     current = inertia * (w / 0.5) / 0.5
@@ -44,7 +44,7 @@ def test_stopping_a_flywheel_returns_its_kinetic_energy_less_the_winding_loss() 
 
 
 def test_link_voltage_follows_the_capacitor_energy_balance() -> None:
-    cycle = run_cycle(lossless(), MOTOR, Load(inertia=0.02), STOP, BASE, per_segment=50)
+    cycle = follow(lossless(), MOTOR, Load(inertia=0.02), STOP, BASE, per_segment=50)[0]
     capacitance = 470e-6
     r = dclink.returned(cycle, V_REF, 600.0, capacitance=capacitance)
     assert 0.5 * capacitance * (r.v_peak**2 - V_REF**2) == pytest.approx(r.burst_energy)
@@ -54,7 +54,7 @@ def test_link_voltage_follows_the_capacitor_energy_balance() -> None:
 
 
 def test_verdicts() -> None:
-    cycle = run_cycle(lossless(), MOTOR, Load(inertia=0.02), STOP, BASE, per_segment=50)
+    cycle = follow(lossless(), MOTOR, Load(inertia=0.02), STOP, BASE, per_segment=50)[0]
     needed = dclink.returned(cycle, V_REF, 600.0).capacitance_needed
 
     def level(capacitance=None):
@@ -68,7 +68,7 @@ def test_verdicts() -> None:
     battery = dclink.check(dclink.returned(cycle, V_REF, 600.0), V_REF, 600.0, supply="battery")
     assert battery[0].level is guard.Level.ok and "charging current" in battery[0].message
     coasting = Profile(segments=[Segment(duration=1, speed_start=2000, speed_end=2000)])
-    none = run_cycle(lossless(), MOTOR, Load(constant_torque=1.0), coasting, BASE)
+    none = follow(lossless(), MOTOR, Load(constant_torque=1.0), coasting, BASE)[0]
     assert dclink.check(dclink.returned(none, V_REF, 600.0), V_REF, 600.0, supply="one-way") == []
 
 

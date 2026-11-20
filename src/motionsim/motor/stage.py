@@ -5,10 +5,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from motionsim.engine.modulation import Role
+from motionsim.engine.notes import Code
 
 
 class Unreachable(ValueError):
-    """The motor cannot run at this point from this DC voltage."""
+    """The motor cannot run at this point from this DC voltage.
+
+    code says which limit stops it (one of the reach codes), for whoever has to say what
+    to change: the words are for the reader and may be reworded at any time.
+    """
+
+    def __init__(self, reason: str, code: Code) -> None:
+        super().__init__(reason)
+        self.code = code
 
 
 @dataclass(frozen=True)

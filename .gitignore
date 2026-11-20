@@ -13,3 +13,13 @@ measurements/
 .hypothesis/
 .mypy_cache/
 .ruff_cache/
+build/
+htmlcov/
+coverage.xml
+node_modules/
+web/public/engine/
+.venv*/
+# The Python runtime the hosted page runs, copied by the page's build from the pinned npm
+# package: 14 MB of someone else's release, built again in CI before the page is deployed,
+# and not needed by `motionsim serve` or the wheel, whose engine is the installed one.
+src/motionsim/webui/engine/pyodide/

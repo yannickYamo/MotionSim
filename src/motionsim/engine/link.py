@@ -34,10 +34,10 @@ def legs_of(roles: list[Role]) -> list[tuple[np.ndarray, np.ndarray]] | None:
     if named:
         out = []
         for leg in named:
-            high = [r for r in roles if r.leg == leg and "high" in r.name]
-            if len(high) != 1:
+            highs = [r for r in roles if r.leg == leg and "high" in r.name]
+            if len(highs) != 1:
                 return None
-            out.append(top(high[0]))
+            out.append(top(highs[0]))
         return out
     count = sum(r.count for r in roles) // 2
     if count != 3:

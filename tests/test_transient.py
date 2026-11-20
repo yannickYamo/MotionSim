@@ -6,13 +6,12 @@ import math
 
 import numpy as np
 import pytest
-from conftest import V_REF, line, linear_device
+from conftest import V_REF, line, linear_device, zth
 
 from motionsim.device import FosterNetwork, Source
 from motionsim.drivers import at_speed_and_torque
 from motionsim.engine import OperatingPoint
 from motionsim.engine.limits import hottest
-from motionsim.engine.thermal import zth
 from motionsim.load import G, Gravity, Load, Profile, Segment
 from motionsim.motor import BrushedDc, Pmsm
 from motionsim.transient import Heatsink, follow

@@ -7,11 +7,11 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
-from conftest import V_REF, line, linear_device
+from conftest import V_REF, line, linear_device, load_trajectory
 
 from motionsim import dclink, guard, lifetime
 from motionsim.capability import torque_limit
-from motionsim.cycle import Cycle, Step, run_cycle
+from motionsim.cycle import Cycle, Step
 from motionsim.device import FosterNetwork, Source, Topology
 from motionsim.drivers import at_speed_and_torque
 from motionsim.engine import OperatingPoint
@@ -20,7 +20,7 @@ from motionsim.load import G, Load, Profile, Sample, Segment, Vehicle, sample
 from motionsim.motor import BrushedDc, Pmsm
 from motionsim.motor.stage import Unreachable
 from motionsim.starting import Start, with_start
-from motionsim.trajectory import BadTrajectory, Trajectory, load_trajectory, run
+from motionsim.trajectory import BadTrajectory, Trajectory, run
 from motionsim.transient import follow
 
 SRC = Source(kind="synthetic")
@@ -137,7 +137,12 @@ def test_from_cold_a_constant_diode_loss_heats_its_junction_by_power_times_trans
 # the chips can: the copper's heat capacity for each unit of area, charged through the layer
 # beneath it. For the tab of a TO-247 on grease, the package taken where none is named:
 # 3.45 MJ/(m³·K) of copper 2 mm thick over 50 µm of 1 W/(m·K) grease.
-TAU_SHARED = 3.45e6 * 2.0e-3 * 50e-6 / 1.0
+# What a package of its own shares with its chips follows the package's loss as fast as its
+# tab does: the tab's heat capacity (copper, 3.45 MJ/(m3·K), 15.9 mm by 17.0 mm by 2.0 mm for
+# a TO-247, which a part with no outline is taken as) times the resistance under it.
+TAB = 3.45e6 * 15.9e-3 * 17.0e-3 * 2.0e-3  # J/K
+LAYER = 0.5  # K/W, case to heatsink in the cases below
+TAU_SHARED = TAB * LAYER
 
 
 def test_from_cold_the_case_to_heatsink_layer_adds_its_rise_as_fast_as_the_copper_follows() -> None:
@@ -146,7 +151,7 @@ def test_from_cold_the_case_to_heatsink_layer_adds_its_rise_as_fast_as_the_coppe
     outcome = run(conducting(rth_cs=layer), trajectory, BASE)
     loss = (0.9 + 0.03 * amps) * amps
     ends = step * np.arange(1, 5)
-    assert pytest.approx(0.345) == TAU_SHARED
+    assert pytest.approx(0.9325, rel=1e-3) == TAU_SHARED
     expected = loss * (layer * (1 - np.exp(-ends / TAU_SHARED)) + RTH * (1 - np.exp(-ends / TAU)))
     assert outcome.tj_from_start - BASE.t_sink == pytest.approx(expected, rel=1e-9)
 
@@ -155,7 +160,7 @@ def test_a_burst_heats_the_case_while_it_lasts_and_the_settled_peak_counts_it() 
     """On for a tenth of a long period: the layer under the package carries the burst's loss
     while it lasts, not the mean over the period, and both chip and layer have long settled
     by the end of the burst."""
-    n, amps, layer, whole = 8000, 10.0, 0.5, 20.0
+    n, amps, layer, whole = 8000, 10.0, 0.5, 60.0
     on = np.arange(n) < n // 10
     trajectory = Trajectory(
         time=np.arange(n) * whole / n, current={"a": np.where(on, amps, 0.0)}, duty={"a": on.astype(float)}
@@ -165,12 +170,13 @@ def test_a_burst_heats_the_case_while_it_lasts_and_the_settled_peak_counts_it() 
     reached = 1 - math.exp(-(whole / 10) / TAU_SHARED)  # of the layer's rise, by the end of the burst
     assert reached > 0.99
     assert outcome.result.tj_switch_peak - BASE.t_sink == pytest.approx(loss * (layer * reached + RTH), rel=1e-6)
-    assert outcome.result.t_case - BASE.t_sink == pytest.approx(layer * loss / 10, rel=1e-6)  # the mean
+    # The case is reported where it stands highest, at the end of the burst, not at its mean.
+    assert outcome.result.t_case - BASE.t_sink == pytest.approx(layer * loss * reached, rel=2e-3)
+    assert outcome.result.tj_switch - BASE.t_sink == pytest.approx((layer + RTH) * loss / 10, rel=1e-6)  # the mean
     low, high = outcome.switch_span
     assert high == pytest.approx(outcome.result.tj_switch_peak)
-    assert (
-        0.0 <= low - BASE.t_sink < 1e-6
-    )  # never under the heatsink, however sharp the burst's edge  # 18 s off against a third of a second
+    # Never under the heatsink, however sharp the burst's edge: 54 s off against a time constant of one.
+    assert -1e-9 <= low - BASE.t_sink < 1e-6
 
 
 def test_through_a_motion_the_case_follows_the_loss_as_fast_as_the_copper_does() -> None:
@@ -242,6 +248,50 @@ def test_the_worst_instant_of_a_motion_is_the_hottest_and_not_the_one_that_loses
     assert cycle.worst.sample.motor_rpm == 0.0
 
 
+def test_an_instant_of_many_turns_from_cold_peaks_at_its_end_with_the_swing_of_a_turn_on_top() -> None:
+    """1500 rpm on four pole pairs is 100 Hz: 50 ms is five turns, too many to follow one by
+    one. From the heatsink's 60 °C each chip's mean loss P charges its two stages to
+    P·Σ r·(1 − exp(−t/τ)) by the end of the instant, the hottest it has been, and the swing
+    within a turn, the settled peak over the settled mean, rides on that."""
+    _, trace = follow(device(), PMSM, Load(constant_torque=4.0), steady(1500, 0.05), BASE, per_segment=1)
+    point = at_speed_and_torque(device(), PMSM, 1500, 4.0, BASE).result
+    r, tau = np.array(NETWORK.r), np.array(NETWORK.tau)
+    charged = float((r * (1 - np.exp(-0.05 / tau))).sum())
+    (role,) = point.roles
+    switch = 60.0 + role.switch.total * charged + (role.tj_switch_peak - role.tj_switch)
+    diode = 60.0 + role.diode.total * charged + (role.tj_diode_peak - role.tj_diode)
+    assert trace.tj[0] == pytest.approx(max(switch, diode), abs=1e-9)
+    assert switch > diode + 1.0 and trace.tj[0] - 60.0 > 2.0
+
+
+def test_a_heatsink_given_with_its_heat_capacity_and_a_path_to_the_air_without_one_is_refused() -> None:
+    from motionsim.transient import Heatsink
+
+    both = replace(BASE, rth_free=2.0)
+    with pytest.raises(ValueError, match=r"^a heatsink with its heat capacity and no heatsink at all cannot both"):
+        follow(device(), PMSM, Load(constant_torque=1.0), steady(600, 0.02), both, heatsink=Heatsink(0.5, 200.0, 40.0))
+
+
+def test_the_rms_torque_of_a_motion_weighs_each_instant_by_how_long_it_lasts() -> None:
+    """4 N·m for 3 s and -2 N·m for 1 s: the rms is √((16·3 + 4·1)/4) = √13 = 3.606 N·m, not
+    the mean of the magnitudes, 3.5. An instant that could not be solved is left out, and
+    asked for its point it gives the reason it was not solved."""
+    solved = object()  # only whether a point is there counts for the torque
+    cycle = Cycle(
+        [
+            Step(instant(100.0, 4.0, 3.0), solved, None),
+            Step(instant(100.0, -2.0, 1.0), solved, None),
+            Step(instant(9e4, 50.0, 2.0), None, "the back-EMF is above the DC link"),
+        ]
+    )
+    assert cycle.rms_torque == pytest.approx(math.sqrt(13.0))
+    with pytest.raises(ValueError, match=r"^the back-EMF is above the DC link$"):
+        _ = cycle.steps[2].solution
+    with pytest.raises(ValueError, match=r"^this instant was not solved$"):
+        _ = Step(instant(0.0, 0.0), None, None).solution
+    assert cycle.steps[0].solution is solved
+
+
 def test_means_over_a_motion_leave_out_the_instants_that_could_not_be_solved() -> None:
     profile = Profile(
         segments=[
@@ -249,7 +299,7 @@ def test_means_over_a_motion_leave_out_the_instants_that_could_not_be_solved() -
             Segment(duration=0.03, speed_start=60000, speed_end=60000),
         ]
     )
-    cycle = run_cycle(conducting(), DC, Load(constant_torque=5.0), profile, BASE, per_segment=1)
+    cycle = follow(conducting(), DC, Load(constant_torque=5.0), profile, BASE, per_segment=1)[0]
     assert [s.point is None for s in cycle.steps] == [False, True]
     assert cycle.rms_torque == pytest.approx(5.0)
     assert cycle.mean_loss == pytest.approx(at_speed_and_torque(conducting(), DC, 600, 5.0, BASE).result.p_inverter)
@@ -332,7 +382,9 @@ def test_the_stretch_of_braking_lasts_as_long_as_the_flywheel_returns_energy() -
     )
     lossless = linear_device(sw_curves=[line(25.0, 0.0, 0.0)], d_curves=[line(25.0, 0.0, 0.0)])
     per_segment = 50
-    cycle = run_cycle(lossless, motor, Load(inertia=inertia), profile, replace(BASE, t_sink=40.0), per_segment)
+    cycle = follow(
+        lossless, motor, Load(inertia=inertia), profile, replace(BASE, t_sink=40.0), per_segment=per_segment
+    )[0]
     w = 2000 * 2 * math.pi / 60
     amps = inertia * (w / stop) / kt
     # Energy comes back while the back-EMF is above the winding drop; the speed falls in a straight line.
@@ -472,7 +524,7 @@ def test_energy_drawn_while_speeding_up_is_not_owed_by_the_braking_that_follows(
         ]
     )
     lossless = linear_device(sw_curves=[line(25.0, 0.0, 0.0)], d_curves=[line(25.0, 0.0, 0.0)])
-    cycle = run_cycle(lossless, motor, Load(inertia=inertia), profile, replace(BASE, t_sink=40.0), 10)
+    cycle = follow(lossless, motor, Load(inertia=inertia), profile, replace(BASE, t_sink=40.0), per_segment=10)[0]
     spinning = 0.5 * inertia * (top * 2 * math.pi / 60) ** 2
     back = dclink.returned(cycle, V_REF, 600.0, capacitance=farads)
     assert back.energy == pytest.approx(spinning, rel=1e-9)
@@ -501,8 +553,9 @@ def test_a_drive_that_knows_where_the_rotor_is_applies_only_what_the_torque_need
 
 def test_at_speed_the_case_follows_the_mean_loss_and_cools_when_the_stage_cannot_be_driven() -> None:
     """A motor turning fast for a fifth of a second, then asked for a speed it cannot reach
-    for one time constant of the copper: the case has risen 1 - e^(-0.2/0.345) of the way,
-    and falls to 1/e of that."""
+    for one time constant of the tab: the case has risen 1 - e^(-0.2/0.93) of the way,
+    and falls to 1/e of that. Within a turn the case also swings a little about that, which
+    the peak counts."""
     held, layer = 0.2, 0.5
     profile = Profile(
         segments=[
@@ -515,7 +568,9 @@ def test_at_speed_the_case_follows_the_mean_loss_and_cools_when_the_stage_cannot
     at_speed = at_speed_and_torque(device(rth_cs=layer), PMSM, 1500, 4.0, BASE).result
     package = at_speed.roles[0].switch.total + at_speed.roles[0].diode.total  # a package to each switch
     risen = layer * package * (1 - math.exp(-held / TAU_SHARED))
-    assert with_layer.tj[0] - without.tj[0] == pytest.approx(risen, rel=1e-3)
+    turn = 60.0 / (1500 * PMSM.pole_pairs)
+    within = layer * package * 2 * math.pi * TAU_SHARED / turn  # the most a loss this size could swing the case
+    assert 0 <= with_layer.tj[0] - without.tj[0] - risen < package * layer / within * 2
     assert with_layer.tj[1] - without.tj[1] == pytest.approx(risen / math.e, rel=1e-3)
 
 

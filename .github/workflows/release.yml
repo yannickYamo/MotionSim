@@ -1,0 +1,126 @@
+name: release
+
+# A tag v1.2.3 on a commit publishes version 1.2.3: the archives are built once, attached to a
+# GitHub release whose notes are that version's entry in CHANGELOG.md, and sent to PyPI.
+# CONTRIBUTING.md, under "Releasing", has the steps and the one-time setup.
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      # The tag has to name the version the package gives itself, and the citation file the same.
+      - id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/motionsim/__init__.py)"
+          if [ "v$version" != "$TAG" ]; then
+            echo "::error::the tag is $TAG and the package says $version"
+            exit 1
+          fi
+          if ! grep -qx "version: $version" CITATION.cff; then
+            echo "::error::CITATION.cff does not say version: $version"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      # The changelog has to have that version's entry; it becomes the release notes.
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          awk -v v="$VERSION" '
+            /^## / { on = (index($0, "## [" v "]") == 1) ; next }
+            /^\[[^]]+\]: / { next }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          if ! grep -q '[^[:space:]]' notes.md; then
+            echo "::error::CHANGELOG.md has no entry headed ## [$VERSION]"
+            exit 1
+          fi
+          cat notes.md
+      # The tagged commit passes its own tests before anything is built from it.
+      - run: pip install ".[dev]"
+      - run: ruff check src tests web/scripts
+      - run: pytest -q -n auto
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          test -f "dist/motionsim-$VERSION-py3-none-any.whl"
+          test -f "dist/motionsim-$VERSION.tar.gz"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: notes
+          path: notes.md
+          if-no-files-found: error
+
+  github-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # to create the release and attach the archives
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notes
+      # A version with a, b or rc in it is marked as a pre-release.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          pre=""
+          case "$VERSION" in *a*|*b*|*rc*|*dev*) pre="--prerelease" ;; esac
+          gh release create "$TAG" dist/* --verify-tag --title "MotionSim $VERSION" --notes-file notes.md $pre
+
+  # Sent to PyPI by trusted publishing: PyPI accepts the upload because it comes from this
+  # workflow in this repository, and no password or token is stored anywhere. It is skipped
+  # until the repository variable PYPI_PUBLISH is set to true, which the owner does once the
+  # publisher is registered on PyPI.
+  pypi:
+    if: vars.PYPI_PUBLISH == 'true'
+    needs: [build, github-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/motionsim/${{ needs.build.outputs.version }}/
+    permissions:
+      id-token: write # the short-lived identity PyPI checks in place of a password
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3

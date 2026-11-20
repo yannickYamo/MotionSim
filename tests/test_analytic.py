@@ -14,11 +14,11 @@ import math
 
 import numpy as np
 import pytest
-from conftest import V_REF, line, linear_device
+from conftest import V_REF, line, linear_device, zth
 
 from motionsim.device import FosterNetwork, Source, Topology
 from motionsim.engine import OperatingPoint, ThermalRunaway, Validity, solve
-from motionsim.engine.thermal import zth
+from motionsim.errors import BadFigure
 
 V0_SW, R_SW = 0.9, 0.03
 V0_D, R_D = 1.0, 0.025
@@ -172,7 +172,11 @@ def test_the_busiest_package_carries_its_share_of_the_whole_loss(topology: Topol
 
 
 def test_package_share_counts_whole_legs() -> None:
-    from motionsim.engine.solver import _package_share
+    from motionsim.engine.settle import _legs_together
+
+    def _package_share(stage: int, package: int) -> float:
+        # The busiest package's share of the stage's loss, every leg losing alike.
+        return _legs_together(stage, package) * 2 / stage
 
     assert _package_share(6, 2) == pytest.approx(1 / 3)  # three half-bridges
     assert _package_share(6, 4) == pytest.approx(4 / 6)  # two-leg modules: 2 legs + 1 leg
@@ -213,12 +217,15 @@ def test_clamping_to_one_rail_loads_the_two_sides_differently_but_not_the_total(
     assert high.p_inverter < run(Pwm.space_vector).p_inverter
 
 
-def test_output_power_stops_at_what_the_stage_can_deliver() -> None:
+def test_a_modulation_index_past_what_the_stage_can_deliver_is_refused() -> None:
+    """At the end of sine PWM's linear range the output is 3·(m·V/2/√2)·I; past it there is
+    no point to give figures for."""
     device = temperature_independent_device()
     base = dict(v_dc=V_REF, i_rms=10.0, f_sw=8000.0, t_sink=25.0)
     at_limit = solve(device, OperatingPoint(modulation_index=1.0, power_factor=1.0, **base))
-    beyond = solve(device, OperatingPoint(modulation_index=1.5, power_factor=1.0, **base))
-    assert beyond.p_out == pytest.approx(at_limit.p_out)
+    assert at_limit.p_out == pytest.approx(3 * V_REF / (2 * math.sqrt(2)) * 10.0)
+    with pytest.raises(BadFigure, match="linear range"):
+        OperatingPoint(modulation_index=1.5, power_factor=1.0, **base)
 
 
 def test_a_stopped_output_is_solved_not_divided_by() -> None:
@@ -244,7 +251,7 @@ def test_a_package_holds_its_own_leg_and_the_hottest_of_the_others() -> None:
     import numpy as np
 
     from motionsim.engine.modulation import Role
-    from motionsim.engine.solver import _package_losses
+    from motionsim.engine.settle import _package_losses
 
     one = np.ones(4)
     chop = [
@@ -330,6 +337,13 @@ def test_thermal_cycling_life_counts_swings_and_adds_their_damage() -> None:
     assert estimate(trace).swing_share > 0.9
     # A flat trace wears nothing out.
     assert estimate(np.full(10, 80.0)).repeats == float("inf")
+    # Swings under a kelvin are not counted, from the trace or among those once a turn, and a
+    # swing of a kelvin is.
+    assert rainflow(np.array([80.0, 80.8, 80.0])) == []
+    assert estimate(np.array([80.0, 80.8, 80.0]), fast=[(0.8, 80.0, 1e3)]).repeats == float("inf")
+    assert estimate(np.full(3, 80.0), fast=[(1.0, 80.0, 1.0)]).repeats == pytest.approx(cycles_to_failure(1.0, 80.0))
+    small = estimate(np.array([40.0, 100.0, 99.3, 99.9, 40.0]))
+    assert small.swings == 1 and small.repeats == pytest.approx(cycles_to_failure(60.0, 70.0))
 
 
 def test_switching_energy_follows_the_gate_resistor_along_the_datasheets_figure() -> None:

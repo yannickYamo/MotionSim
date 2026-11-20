@@ -7,9 +7,9 @@ conditions it was measured under. Nothing here is fitted or assumed.
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AfterValidator, BaseModel, ConfigDict, WithJsonSchema
 
 from motionsim.device.schema import ReviewStatus, Topology
 
@@ -51,6 +51,7 @@ class Quantity(str, Enum):
     q_gs = "q_gs"
     q_gd = "q_gd"
     q_g_th = "q_g_th"
+    q_g = "q_g"  # total gate charge; its voltage_v is the gate voltage it is given at
     q_oss = "q_oss"
     q_rr = "q_rr"
     c_oss = "c_oss"
@@ -64,10 +65,37 @@ class Quantity(str, Enum):
     t_r = "t_r"
 
 
+# What a table can hold. A curve is drawn, not tabulated, so a reader is given no way to
+# report one as a table value: the checks would have no unit or range to hold it to. The
+# schema a model is shown lists only these, and an answer with any other is refused.
+TABLE_QUANTITIES = tuple(q for q in Quantity if not q.value.endswith("_curve") and not q.value.startswith("zth"))
+
+
+def _tabulated(quantity: Quantity) -> Quantity:
+    if quantity not in TABLE_QUANTITIES:
+        raise ValueError(f"{quantity.value} is read from a figure, not from a table")
+    return quantity
+
+
+TableQuantity = Annotated[
+    Quantity,
+    AfterValidator(_tabulated),
+    WithJsonSchema({"type": "string", "enum": [q.value for q in TABLE_QUANTITIES], "title": "TableQuantity"}),
+]
+
+
+class Evidence(str, Enum):
+    """How firmly a value read from a table is tied to the page it was cited from."""
+
+    row = "row"  # printed in the row of its own parameter
+    page = "page"  # printed on the page, where no row could be told to be its own
+    transcript = "transcript"  # the page is a scan: its text is the reader's own transcription
+
+
 class ReadPoint(_Model):
     """One tabulated value, exactly as the reader reported it."""
 
-    quantity: Quantity
+    quantity: TableQuantity
     printed_typ: str | None
     printed_max: str | None
     unit: str
@@ -182,6 +210,7 @@ class Observation(_Model):
     flags: list[str]
     min: float | None = None  # SI
     printed_min: str | None = None
+    evidence: Evidence | None = None  # None in a file written before this was recorded
 
 
 class Document(_Model):
@@ -206,3 +235,6 @@ class ObservationSet(_Model):
     observations: list[Observation]
     figures: list[ReadFigure]
     curves: list[CurveObservation] = []
+    # What the checks found wrong with the reading as a whole, such as a kind of transistor
+    # the document contradicts. A device is not built from a flagged reading unless asked.
+    flags: list[str] = []

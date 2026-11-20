@@ -159,67 +159,111 @@ class _Track:
         return REACH + self.missing * (1 + abs(self.slope()))
 
 
-def trace(raster: Raster) -> list[np.ndarray]:
-    """Curves in the plot, as arrays of page points from left to right.
-
-    Where curves run together they share the ink and each keeps its own
-    direction through it; where one stroke splits, the new branch takes the
-    shared part as its own beginning.
-    """
-    ink = _without_lines(raster)
-    _height, width = ink.shape
-    columns = [_runs(ink[:, x]) for x in range(width)]
+def _strokes(ink: np.ndarray) -> tuple[list[list[tuple[int, int]]], float] | None:
+    """The strokes in each column that are thick enough to be curves, and the usual
+    thickness of a curve's stroke. None when the plot holds no ink at all."""
+    columns = [_runs(ink[:, x]) for x in range(ink.shape[1])]
     thickness = [b - a + 1 for runs in columns for a, b in runs]
     if not thickness:
-        return []
+        return None
     # Specks left where lines were cut out must not set the scale.
     solid = [t for t in thickness if t >= 3] or thickness
     usual = float(np.median(solid))
-    columns = [[r for r in runs if r[1] - r[0] + 1 >= THIN * usual] for runs in columns]
+    return [[r for r in runs if r[1] - r[0] + 1 >= THIN * usual] for runs in columns], usual
 
-    widest = max((b - a + 1 for a, b in raster.columns), default=1)
-    max_gap = widest + 2 + GAP_MARGIN
+
+def _choices(alive: list[_Track], runs: list[tuple[int, int]]) -> dict[int, list[_Track]]:
+    """Which stroke of a column each curve carries on into, by the stroke's place in `runs`.
+
+    Curves seen in the last column choose first. One that had vanished may only pick up
+    ink nobody else is following, or every speck beside a curve would become its twin.
+    """
+    chosen: dict[int, list[_Track]] = {}
+    for lost in (False, True):
+        taken = set(chosen)
+        for track in alive:
+            if (track.missing > 0) != lost:
+                continue
+            lo, hi = track.span
+            near = [
+                k
+                for k, (a, b) in enumerate(runs)
+                if a <= hi + track.reach() and b >= lo - track.reach() and not (lost and k in taken)
+            ]
+            if not near:
+                track.missing += 1
+                continue
+            aim = track.predicted()
+            best = min(near, key=lambda k: abs((runs[k][0] + runs[k][1]) / 2 - aim))
+            chosen.setdefault(best, []).append(track)
+    return chosen
+
+
+def _part_strands(chosen: dict[int, list[_Track]], runs: list[tuple[int, int]]) -> None:
+    """Where curves that shared a stroke come apart, each takes its own strand: the strands
+    and the curves are paired in order, top to bottom."""
+    for k in list(chosen):
+        group = chosen.get(k, [])
+        if len(group) < 2:
+            continue
+        free = [
+            j
+            for j, (a, b) in enumerate(runs)
+            if j not in chosen and all(a <= t.span[1] + t.reach() and b >= t.span[0] - t.reach() for t in group)
+        ]
+        aim = float(np.mean([t.predicted() for t in group]))
+        nearest = sorted(free, key=lambda j: abs((runs[j][0] + runs[j][1]) / 2 - aim))
+        strands = sorted([k] + nearest[: len(group) - 1]) if free else []
+        if len(strands) == len(group):
+            del chosen[k]
+            for j, track in zip(strands, sorted(group, key=lambda t: t.predicted()), strict=True):
+                chosen.setdefault(j, []).append(track)
+
+
+def _branch(alive: list[_Track], x: int, a: int, b: int) -> _Track:
+    """A curve starting at a stroke nobody followed. A branch leaving a stroke starts with
+    that stroke's history."""
+    parents = [
+        t for t in alive if t.missing == 0 and t.xs[-1] == x - 1 and a <= t.span[1] + REACH and b >= t.span[0] - REACH
+    ]
+    if parents:
+        parent = min(parents, key=lambda t: abs(t.ys[-1] - (a + b) / 2))
+        return _Track(parent.xs + [x], parent.ys + [(a + b) / 2], (a, b), x)
+    return _Track([x], [(a + b) / 2], (a, b), x)
+
+
+def _staying(followers: list[_Track], alive: list[_Track], proven_after: float) -> list[_Track]:
+    """Of several curves following one stroke no wider than a curve, those that go on.
+
+    A curve that has run on its own for a while has merged into another and stays. A
+    young one was a speck beside its parent that has rejoined it, and ends here.
+    """
+    proven = [t for t in followers if t.alone >= proven_after]
+    keep = proven or [max(followers, key=lambda t: t.alone)]
+    for track in followers:
+        if track not in keep:
+            alive.remove(track)
+    return keep
+
+
+def _height_in(track: _Track, a: int, b: int, usual: float, shared: bool) -> float:
+    """Where a curve sits in the stroke it follows: the stroke's middle, or, in ink it
+    shares or in a stroke crossing its own, the course it was already on."""
+    wider = b - a + 1 > 3 * max(track.span[1] - track.span[0] + 1, usual)
+    if not shared and not wider:
+        return (a + b) / 2
+    half = min(usual / 2, (b - a) / 2)
+    return float(np.clip(track.predicted(), a + half, b - half))
+
+
+def _follow(columns: list[list[tuple[int, int]]], usual: float, max_gap: int) -> list[_Track]:
+    """Every stretch of ink followed from left to right, column by column."""
+    width = len(columns)
     alive: list[_Track] = []
     done: list[_Track] = []
     for x, runs in enumerate(columns):
-        chosen: dict[int, list[_Track]] = {}
-        # Curves seen in the last column choose first. One that had vanished may only pick
-        # up ink nobody else is following, or every speck beside a curve would become its twin.
-        for lost in (False, True):
-            taken = set(chosen)
-            for track in alive:
-                if (track.missing > 0) != lost:
-                    continue
-                lo, hi = track.span
-                near = [
-                    k
-                    for k, (a, b) in enumerate(runs)
-                    if a <= hi + track.reach() and b >= lo - track.reach() and not (lost and k in taken)
-                ]
-                if not near:
-                    track.missing += 1
-                    continue
-                aim = track.predicted()
-                best = min(near, key=lambda k: abs((runs[k][0] + runs[k][1]) / 2 - aim))
-                chosen.setdefault(best, []).append(track)
-        # Where curves that shared a stroke come apart, each takes its own strand: the strands
-        # and the curves are paired in order, top to bottom.
-        for k in list(chosen):
-            group = chosen.get(k, [])
-            if len(group) < 2:
-                continue
-            free = [
-                j
-                for j, (a, b) in enumerate(runs)
-                if j not in chosen and all(a <= t.span[1] + t.reach() and b >= t.span[0] - t.reach() for t in group)
-            ]
-            aim = float(np.mean([t.predicted() for t in group]))
-            nearest = sorted(free, key=lambda j: abs((runs[j][0] + runs[j][1]) / 2 - aim))
-            strands = sorted([k] + nearest[: len(group) - 1]) if free else []
-            if len(strands) == len(group):
-                del chosen[k]
-                for j, track in zip(strands, sorted(group, key=lambda t: t.predicted()), strict=True):
-                    chosen.setdefault(j, []).append(track)
+        chosen = _choices(alive, runs)
+        _part_strands(chosen, runs)
         # Changes are applied after the whole column is decided, so a branch sees its parent
         # as it was in the column before.
         updates: list[tuple[_Track, float, tuple[int, int], bool]] = []
@@ -227,36 +271,13 @@ def trace(raster: Raster) -> list[np.ndarray]:
         for k, (a, b) in enumerate(runs):
             followers = chosen.get(k, [])
             if not followers:
-                # A branch leaving a stroke starts with that stroke's history.
-                parents = [
-                    t
-                    for t in alive
-                    if t.missing == 0 and t.xs[-1] == x - 1 and a <= t.span[1] + REACH and b >= t.span[0] - REACH
-                ]
-                if parents:
-                    parent = min(parents, key=lambda t: abs(t.ys[-1] - (a + b) / 2))
-                    born.append(_Track(parent.xs + [x], parent.ys + [(a + b) / 2], (a, b), x))
-                else:
-                    born.append(_Track([x], [(a + b) / 2], (a, b), x))
+                born.append(_branch(alive, x, a, b))
                 continue
             if len(followers) > 1 and b - a + 1 <= 1.6 * usual:
-                # One stroke, several followers. A curve that has run on its own for a
-                # while has merged into another and stays. A young one was a speck beside
-                # its parent that has rejoined it, and ends here.
-                proven = [t for t in followers if t.alone >= MIN_OWN * width]
-                keep = proven or [max(followers, key=lambda t: t.alone)]
-                for track in followers:
-                    if track not in keep:
-                        alive.remove(track)
-                followers = keep
+                followers = _staying(followers, alive, MIN_OWN * width)
             for track in followers:
-                wider = b - a + 1 > 3 * max(track.span[1] - track.span[0] + 1, usual)
-                if len(followers) == 1 and not wider:
-                    y = (a + b) / 2
-                else:  # shared ink, or a stroke crossing this one: hold course inside it
-                    half = min(usual / 2, (b - a) / 2)
-                    y = float(np.clip(track.predicted(), a + half, b - half))
-                updates.append((track, y, (a, b), len(followers) == 1))
+                shared = len(followers) > 1
+                updates.append((track, _height_in(track, a, b, usual, shared), (a, b), not shared))
         for track, y, span, alone in updates:
             track.alone += alone
             track.xs.append(x)
@@ -264,20 +285,23 @@ def trace(raster: Raster) -> list[np.ndarray]:
             track.span = span
             track.missing = 0
         alive += born
-        still = []
+        still: list[_Track] = []
         for track in alive:
             (done if track.missing > max_gap else still).append(track)
         alive = still
-    done += alive
+    return done + alive
 
-    # A label printed over a curve leaves a hole in it. A piece that starts just past the
-    # end of another, on the line that other was heading along, is its continuation.
-    # Only pieces long enough to be curves are joined: letters of a label line up too.
+
+def _join_across_labels(done: list[_Track], usual: float, width: int) -> None:
+    """A label printed over a curve leaves a hole in it. A piece that starts just past the
+    end of another, on the line that other was heading along, is its continuation.
+    Only pieces long enough to be curves are joined: letters of a label line up too."""
     done.sort(key=lambda t: t.xs[0])
-    long_enough = lambda t: t.xs[-1] - t.xs[0] >= MIN_OWN * width  # noqa: E731
-    joined = True
-    while joined:
-        joined = False
+
+    def long_enough(t: _Track) -> bool:
+        return t.xs[-1] - t.xs[0] >= MIN_OWN * width
+
+    def join_one() -> bool:
         for first in done:
             for second in done:
                 gap = second.xs[0] - first.xs[-1]
@@ -292,11 +316,16 @@ def trace(raster: Raster) -> list[np.ndarray]:
                     first.alone += second.alone
                     first.missing = 0
                     done.remove(second)
-                    joined = True
-                    break
-            if joined:
-                break
+                    return True
+        return False
 
+    while join_one():
+        pass
+
+
+def _distinct(done: list[_Track], usual: float, width: int) -> list[_Track]:
+    """The curves among what was followed: each ran on its own for a good stretch, and is
+    not another, longer one over again."""
     kept: list[_Track] = []
     for track in sorted(done, key=lambda t: -len(t.xs)):
         if track.alone < MIN_OWN * width:
@@ -311,6 +340,25 @@ def trace(raster: Raster) -> list[np.ndarray]:
                 break
         if not twin:
             kept.append(track)
+    return kept
+
+
+def trace(raster: Raster) -> list[np.ndarray]:
+    """Curves in the plot, as arrays of page points from left to right.
+
+    Where curves run together they share the ink and each keeps its own
+    direction through it; where one stroke splits, the new branch takes the
+    shared part as its own beginning.
+    """
+    ink = _without_lines(raster)
+    width = ink.shape[1]
+    strokes = _strokes(ink)
+    if strokes is None:
+        return []
+    columns, usual = strokes
+    widest = max((b - a + 1 for a, b in raster.columns), default=1)
+    done = _follow(columns, usual, widest + 2 + GAP_MARGIN)
+    _join_across_labels(done, usual, width)
     return [
         np.column_stack(
             [
@@ -318,11 +366,12 @@ def trace(raster: Raster) -> list[np.ndarray]:
                 raster.top + (np.array(t.ys) + 0.5) * raster.scale,
             ]
         )
-        for t in kept
+        for t in _distinct(done, usual, width)
     ]
 
 
 RESOLUTION = 300  # dpi the picture is rendered at
+MAX_PICTURE = 12_000_000  # pixels; a picture that would render to more is rendered coarser
 DARK = 128  # of 255; darker than this is ink
 
 
@@ -337,8 +386,12 @@ def plots_on(page, taken: list[tuple[float, float, float, float]], min_size: flo
             continue
         if any(x0 < b and x1 > a and top < d and bottom > c for a, b, c, d in taken):
             continue
-        picture = page.crop((x0, top, x1, bottom)).to_image(resolution=RESOLUTION).original
-        raster = plot_in(picture, x0, top, 72.0 / RESOLUTION)
+        # A figure is a few inches across. A picture as large as a wall, at the usual
+        # resolution, would be gigabytes: it is rendered at whatever resolution keeps it in bounds.
+        pixels = (x1 - x0) * (bottom - top) * (RESOLUTION / 72.0) ** 2
+        resolution = RESOLUTION if pixels <= MAX_PICTURE else RESOLUTION * (MAX_PICTURE / pixels) ** 0.5
+        picture = page.crop((x0, top, x1, bottom)).to_image(resolution=resolution).original
+        raster = plot_in(picture, x0, top, 72.0 / resolution)
         if raster is not None:
             found.append(raster)
     return found

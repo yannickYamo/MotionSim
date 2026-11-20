@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
 from motionsim.device.schema import Device
 from motionsim.engine.limits import hottest
 from motionsim.engine.link import capacitor_ripple, phase_ripple, states_capacitor, states_ripple
+from motionsim.engine.notes import Code, Note
 from motionsim.engine.solver import OperatingPoint, Result, ThermalRunaway, solve_roles
 from motionsim.motor.stage import Stage, Unreachable
 from motionsim.text import written
@@ -40,8 +41,6 @@ def _raised(motor, stage, rpm: float, torque: float, base: OperatingPoint, least
     the duty cycles hardly move, so the stage is the one the torque asks for with its
     currents scaled up, and the winding loss with their square.
     """
-    from dataclasses import replace
-
     if stage.i_peak >= least:
         return stage
     if stage.i_peak <= 0:  # no torque asked for: take the waveforms of a vanishing one
@@ -57,6 +56,9 @@ def _raised(motor, stage, rpm: float, torque: float, base: OperatingPoint, least
         notes=stage.notes
         + [f"open-loop start: the drive holds {written(least / 2**0.5, 3)} A rms here, whatever the torque"],
     )
+
+
+LEAST_USABLE = 0.5  # share of the ideal output voltage below which a stage is refused
 
 
 def _usable(device: Device, base: OperatingPoint, i_peak: float) -> float:
@@ -76,13 +78,26 @@ def _usable(device: Device, base: OperatingPoint, i_peak: float) -> float:
         raise Unreachable(
             f"the dead time and the shortest pulse take {timing:.0%} of each switching period at "
             f"{written(base.f_sw / 1000, 3)} kHz: the stage cannot make its voltage. Lower the switching frequency, "
-            "or give a shorter dead time"
+            "or give a shorter dead time",
+            Code.reach_timing,
         )
     drop = 0.0
     if i_peak > 0:
         chips = [device.switch] + ([device.diode] if device.diode is not None else [])
         drop = max(float(voltage(c, np.array([i_peak / max(int(base.parallel), 1)]), base.t_sink)[0]) for c in chips)
-    return float(np.clip(1.0 - timing - drop / (base.v_dc / 2), 0.5, 1.0))
+    usable = 1.0 - timing - drop / (base.v_dc / 2)
+    if usable < LEAST_USABLE:
+        # A stage whose own devices and timing take half its voltage is not one to give a
+        # figure for, and a figure worked out as if it kept half would flatter it.
+        raise Unreachable(
+            f"at {written(i_peak, 3)} A the devices drop {written(drop, 2)} V of the {written(base.v_dc / 2, 3)} V "
+            f"the stage has to give on a {written(base.v_dc, 3)} V supply"
+            + (f", and the dead time and the shortest pulse take {timing:.0%} of each period" if timing > 0 else "")
+            + f": {max(usable, 0.0):.0%} of the voltage is left. This device is not one for this supply and "
+            "current: raise the supply, lower the current, or take a part with a lower drop",
+            Code.reach_drop,
+        )
+    return float(min(usable, 1.0))
 
 
 def at_speed_and_torque(
@@ -106,36 +121,7 @@ def at_speed_and_torque(
     spread=False leaves out the range across the thermal assumptions, for a search that
     only needs the typical value.
     """
-    from dataclasses import replace
-
-    # Iron loss in the motor is torque the shaft never sees: the windings have to supply it.
-    w = abs(rpm) * np.pi / 30
-    iron = motor.iron_loss(rpm) if w > 0 else 0.0
-    asked = torque + (np.sign(rpm) * iron / w if iron else 0.0)
-    notes: list[str] = []
-    stage = motor.stage(rpm, asked, base.v_dc, base.pwm)
-    if ripple:
-        # What the stage can give depends on the current, which depends on what it can give:
-        # once round is enough, since the drop moves the current little.
-        usable = _usable(device, base, stage.i_peak)
-        if usable < 1.0:
-            motor = motor.model_copy(update={"usable_voltage": usable})
-            stage = motor.stage(rpm, asked, base.v_dc, base.pwm)
-            notes.append(
-                f"the stage gives {usable:.1%} of the ideal output voltage (dead time, shortest pulse and "
-                "the devices' own drop); the motor's reach is worked out with that"
-            )
-    if least_current:
-        stage = _raised(motor, stage, rpm, torque, base, least_current)
-    if iron:
-        notes.append(f"iron loss in the motor: {written(iron, 3)} W at this speed, supplied through the windings")
-        stage = replace(
-            stage, p_shaft=torque * w * np.sign(rpm) if rpm else 0.0, p_motor_loss=stage.p_motor_loss + iron
-        )
-    if motor.temperature_note:
-        notes.append(motor.temperature_note)
-    if notes:
-        stage = replace(stage, notes=stage.notes + notes)
+    stage = _motor_stage(device, motor, rpm, torque, base, least_current, ripple)
     capacitor = states_capacitor(stage.states) if stage.states else capacitor_ripple(stage.roles)
     # The stage handed back is the motor's own, at the fundamental. What is solved carries
     # the ripple as well.
@@ -158,6 +144,57 @@ def at_speed_and_torque(
     )
 
 
+def _motor_stage(
+    device: Device,
+    motor,
+    rpm: float,
+    torque: float,
+    base: OperatingPoint,
+    least_current: float | None,
+    ripple: bool,
+) -> Stage:
+    """What the motor asks of the stage at a speed and torque, at the fundamental: with the
+    voltage the stage can really give where ripple is asked for, the current an open-loop
+    drive holds, the iron loss, and the notes that say so."""
+    # Iron loss in the motor is torque the shaft never sees: the windings have to supply it.
+    w = abs(rpm) * np.pi / 30
+    iron = motor.iron_loss(rpm) if w > 0 else 0.0
+    asked = torque + (np.sign(rpm) * iron / w if iron else 0.0)
+    notes: list[str] = []
+    stage = motor.stage(rpm, asked, base.v_dc, base.pwm)
+    if ripple:
+        # What the stage can give depends on the current, which depends on what it can give:
+        # once round is enough, since the drop moves the current little.
+        usable = _usable(device, base, stage.i_peak)
+        if usable < 1.0:
+            motor = motor.model_copy(update={"usable_voltage": usable})
+            stage = motor.stage(rpm, asked, base.v_dc, base.pwm)
+            notes.append(
+                Note(
+                    Code.stage_voltage_share,
+                    "usable_voltage",
+                    f"the stage gives {usable:.1%} of the ideal output voltage (dead time, shortest pulse and "
+                    "the devices' own drop); the motor's reach is worked out with that",
+                )
+            )
+    if least_current:
+        stage = _raised(motor, stage, rpm, torque, base, least_current)
+    if iron:
+        notes.append(
+            Note(
+                Code.iron_loss,
+                "p_iron",
+                f"iron loss in the motor: {written(iron, 3)} W at this speed, supplied through the windings",
+            )
+        )
+        stage = replace(
+            stage, p_shaft=torque * w * np.sign(rpm) if rpm else 0.0, p_motor_loss=stage.p_motor_loss + iron
+        )
+    if motor.temperature_note:
+        notes.append(Note(Code.motor_temperature, "t_motor", motor.temperature_note))
+    return replace(stage, notes=stage.notes + notes) if notes else stage
+
+
 def _with_ripple(stage: Stage, base: OperatingPoint) -> tuple[Stage, float | None]:
     """The stage with the current ripple at the switching frequency taken into what its
     switches conduct, and the largest ripple, peak to peak.
@@ -166,26 +203,27 @@ def _with_ripple(stage: Stage, base: OperatingPoint) -> tuple[Stage, float | Non
     It also moves the current at the switching instants: turn-on happens at the bottom of
     the ripple and turn-off at the top.
     """
-    from dataclasses import replace
-
     if not stage.l_phase:
         return stage, None
     if stage.states:
         if base.f_sw <= 0:
             return stage, None
         swing = states_ripple(stage.states, base.v_dc, base.f_sw, 2 * stage.l_phase)
-        pp = np.full_like(stage.roles[0].current, swing)
+        pp: np.ndarray = np.full_like(stage.roles[0].current, swing)
     else:
-        pp = phase_ripple(stage.roles, base.v_dc, base.f_sw, stage.l_phase)
-    if pp is None:
-        return stage, None
+        found = phase_ripple(stage.roles, base.v_dc, base.f_sw, stage.l_phase)
+        if found is None:
+            return stage, None
+        pp = found
     named = any(r.leg is not None for r in stage.roles)
     # Legs alike see the same ripple a third of a turn apart, and the roles are written
     # from the first leg; legs that differ carry one current, with one ripple.
     extra = pp if not named else np.full_like(pp, float(pp.max()))
     # The mean square rises by a twelfth of the ripple squared. A switch turns on at the
     # bottom of the ripple and off at the top; where the ripple is larger than twice the
-    # current the bottom is zero, and that turn-on is free.
+    # current the bottom is zero, and that turn-on is free. Conduction loss is worked out
+    # along the ripple from these three (engine/losses.conducted), so a knee voltage loses
+    # with the mean current and only a resistance with the mean square.
     roles = [
         replace(
             r,

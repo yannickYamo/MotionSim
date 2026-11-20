@@ -1,56 +1,231 @@
 name: ci
+
 on:
   push:
     branches: [main]
   pull_request:
-permissions:
-  contents: read
+  # Once a week with nothing changed here: a new release of a library the package allows,
+  # or a new advisory, is found on a Monday and not by the next person to install.
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
+# A newer push to a pull request stops the run it replaces. Runs on main are left to finish,
+# since the last job of one is the deployment of the page.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # Format, lint, types and the whole test suite, on every Python the package says it supports.
   engine:
+    name: engine (Python ${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     strategy:
+      fail-fast: false
       matrix:
-        python: ["3.11", "3.12"]
+        python: ["3.11", "3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python }}
-      - run: pip install ".[dev]" build
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install ".[dev]"
       - run: ruff format --check src tests web/scripts
       - run: ruff check src tests web/scripts
-      - run: pytest -q --cov=motionsim --cov-report=term-missing:skip-covered
-      # The package as a user gets it: built, installed on its own, and asked the README's question.
-      - run: python -m build --wheel
-      - run: |
-          python -m venv /tmp/clean
-          /tmp/clean/bin/pip install -q dist/*.whl
-          /tmp/clean/bin/motionsim --version
-          /tmp/clean/bin/motionsim simulate examples/synthetic_igbt_600v_30a.yaml --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60 | grep "45.25 W"
-          /tmp/clean/bin/motionsim design init -o /tmp/design.yaml
-          /tmp/clean/bin/motionsim design run /tmp/design.yaml --json > /dev/null
-  page:
+      - run: mypy src/motionsim
+      - run: pytest -q -n auto --cov=motionsim --cov-report=term-missing:skip-covered
+      # The reader's accuracy on recorded readings, offline and with no key. The suite above
+      # holds it to its bars (the tests marked `reader_eval`); this step prints the scores, and
+      # fails too if a bar is missed.
+      - run: python -m evals.reader.run
+
+  # The same tests on the oldest release of each library the package allows, so the floors
+  # in pyproject.toml are figures that were run and not guesses.
+  lowest:
+    name: lowest dependencies (Python 3.11)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.11"
+          enable-cache: false
+      - run: uv venv
+      - run: uv pip install --resolution lowest-direct ".[reader]"
+      # The test tools at their newest: only what the package itself asks for is held low.
+      - run: uv pip install pytest pytest-timeout pytest-xdist hypothesis
+      - run: uv pip list
+      - run: .venv/bin/pytest -q -n auto
+
+  # The package as it is published: both archives built, their metadata and contents checked.
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@v4
+      - run: pip install build "twine>=6.1" check-wheel-contents "validate-pyproject[all]"
+      - run: validate-pyproject pyproject.toml
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - run: check-wheel-contents dist/*.whl
+      # What the documents promise is in the wheel: the licence files and the examples.
+      - run: |
+          python -m zipfile -l dist/*.whl > contents.txt
+          grep -q "licenses/LICENSE" contents.txt
+          grep -q "licenses/DISCLAIMER.md" contents.txt
+          grep -q "licenses/THIRD_PARTY.md" contents.txt
+          grep -q "motionsim/examples/synthetic_igbt_600v_30a.yaml" contents.txt
+          grep -q "motionsim/webui/index.html" contents.txt
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # The wheel as a user gets it, installed on its own with no extra, on Linux, Windows and
+  # macOS: the commands of the README, output sent to a file (where a terminal's own
+  # character set, not UTF-8, once refused the ohm and minus signs), and the quick tests.
+  smoke:
+    name: smoke (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: package
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.11" }
+          - { os: ubuntu-latest, python: "3.12" }
+          - { os: ubuntu-latest, python: "3.13" }
+          - { os: windows-latest, python: "3.11" }
+          - { os: windows-latest, python: "3.13" }
+          - { os: macos-latest, python: "3.13" }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist/
+      - run: pip install dist/*.whl
+      # The engine, the command line and the page run without the reader's libraries.
+      - run: |
+          python - <<'EOF'
+          import importlib.util, sys
+          present = [name for name in ("anthropic", "pdfplumber", "pypdfium2", "PIL") if importlib.util.find_spec(name)]
+          sys.exit(f"installed without the reader extra, yet present: {present}" if present else 0)
+          EOF
+      # Run from an empty folder, so nothing is found by being in the clone.
+      - name: The commands of the README
+        working-directory: ${{ runner.temp }}
+        run: |
+          motionsim --version
+          motionsim --help > help.txt
+          motionsim simulate example --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60 > simulate.txt
+          grep "power-stage loss" simulate.txt
+          motionsim agent > agent.txt
+          motionsim design init -o design.yaml
+          motionsim design run design.yaml --json > design.json
+          motionsim design run design.yaml --md report.md > run.txt
+          python -c "import json; json.load(open('design.json', encoding='utf-8'))"
+      - run: pip install pytest pytest-timeout
+      - run: pytest -q tests/test_analytic.py tests/test_device.py tests/test_design.py tests/test_entry.py
+
+  # Known advisories against what the package installs, with every extra.
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: python -m venv "$RUNNER_TEMP/audit"
+      - run: |
+          "$RUNNER_TEMP/audit/bin/pip" install ".[all]"
+      - run: pip install pip-audit
+      # The package itself is skipped (it is the thing being built); everything it pulls in is checked.
+      - run: pip-audit --path "$("$RUNNER_TEMP/audit/bin/python" -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+
+  page:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
       - run: pip install .
       - run: npm ci
         working-directory: web
-      - run: npx tsc --noEmit
+      # Nothing is shipped from npm (the page is built, and every package is a build tool), so
+      # the first audit is of an empty set and stays as the guard for the day one is added.
+      - run: npm audit --omit=dev
+        working-directory: web
+      # The build tools' own advisories are shown and do not fail the run.
+      - run: npm audit
+        working-directory: web
+        continue-on-error: true
+      - run: npm run lint
+        working-directory: web
+      - run: npm run format:check
+        working-directory: web
+      - run: npm run typecheck
         working-directory: web
       - run: npm test
         working-directory: web
       - run: npm run build
         working-directory: web
       # The page shipped in the package has to be the page these sources build: a change to
-      # the page or the engine without a rebuild fails here.
-      - run: test -z "$(git status --porcelain -- src/motionsim/webui)" || (git status --short -- src/motionsim/webui; exit 1)
+      # the page or the engine without a rebuild fails here. The Python runtime the build
+      # copies beside the engine is an ignored file, so it is not among what is compared.
+      - run: test -z "$(git status --porcelain -- src/motionsim/webui ':!src/motionsim/webui/engine/pyodide')" || (git status --short -- src/motionsim/webui; exit 1)
       # The engine as the hosted page runs it, inside the browser's Python, gives the figures
       # the installed engine gives.
       - run: npm run engine-check
@@ -63,3 +238,50 @@ jobs:
         working-directory: web
       - run: npm run journey
         working-directory: web
+      # A device changed while a slow answer is on its way, and a short random walk of two
+      # walks of fifteen presses, against both ways the page is served: by `motionsim serve`,
+      # which answers from the installed engine, and as plain files, as it is hosted.
+      - name: Race and walk, local page
+        working-directory: web
+        run: |
+          motionsim serve --no-browser --port 4310 &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:4310/ > /dev/null && break; sleep 1; done
+          node scripts/race.mjs http://127.0.0.1:4310/
+          node scripts/walk.mjs http://127.0.0.1:4310/ 2 15
+      - name: Race and walk, hosted page
+        working-directory: web
+        run: |
+          python -m http.server 4320 --bind 127.0.0.1 -d ../src/motionsim/webui &
+          server=$!
+          trap 'kill $server' EXIT
+          for _ in $(seq 60); do curl -sf http://127.0.0.1:4320/ > /dev/null && break; sleep 1; done
+          node scripts/race.mjs http://127.0.0.1:4320/
+          node scripts/walk.mjs http://127.0.0.1:4320/ 2 15
+      # What was built and checked above is what gets deployed below.
+      - if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: src/motionsim/webui
+
+  # The hosted page, replaced only by a commit on main that passed every job above. It lives
+  # in this workflow so that "passed" and "deployed" are said of the same commit and the same
+  # built files, with no second workflow to trust the first one's result.
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [engine, lowest, package, smoke, audit, page]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write # to publish the page
+      id-token: write # to prove to Pages that the files come from this workflow
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

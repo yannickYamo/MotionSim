@@ -1,0 +1,23 @@
+# How to cite MotionSim. GitHub shows this as "Cite this repository".
+cff-version: 1.2.0
+message: "If you use MotionSim in work you publish, please cite it as below."
+title: MotionSim
+abstract: >-
+  From a power transistor's datasheet, whichever vendor's, to the losses and junction
+  temperatures of a motor drive, with what the data supports and what it leaves out.
+type: software
+authors:
+  - family-names: Maurice
+    given-names: Yannick
+version: 0.6.0
+date-released: "2026-11-20"
+license: Apache-2.0
+repository-code: "https://github.com/yannickYamo/MotionSim"
+url: "https://yannickyamo.github.io/MotionSim/"
+keywords:
+  - power electronics
+  - motor drive
+  - inverter
+  - loss model
+  - thermal model
+  - datasheet

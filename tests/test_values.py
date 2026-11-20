@@ -189,11 +189,16 @@ def test_the_dead_time_figures_as_literals() -> None:
     # The made-up GaN part: its delays add to 4.95 ns; 1.2 × (1.1 × 4.95 + 10) = 18.5 ns,
     # under the 20 ns floor for GaN.
     assert dead_time(fet(), fet_op(i_rms=0.0)).value["t_dead"] == pytest.approx(20e-9)
-    # The typed silicon part through 5 Ω at 10 V: 41.4 ns of turn-off;
-    # 1.2 × (1.1 × 41.4 + 50) = 114.6 ns, rounded up to 120.
+    # The typed silicon part through 5 Ω at 10 V. Its 72 nC of gate charge at 10 V leave
+    # 72 - 20 - 14 = 38 nC above the 4.6 V plateau, 7.04 nF over those 5.4 V:
+    #   delay  5 Ω × 7.04 nF × ln(10 / 4.6)        = 27.3 ns
+    #   rise   14 nC × 5 Ω / 4.6 V                 = 15.2 ns
+    #   fall   5 Ω × (20 nC / 4.6 V) × ln(4.6 / 3) =  9.3 ns
+    # 51.8 ns of turn-off; 1.2 × (1.1 × 51.8 + 50) = 128.4 ns, rounded up to 130.
     op = replace(fet_op(), t_dead=0.0, v_drive=10.0, rg_on=5.0, rg_off=5.0)
-    assert dead_time(typed(), op).value["t_dead"] == pytest.approx(114.6e-9, rel=0.005)
-    assert choose_gate_drive(typed(), op, 20.0).t_dead == pytest.approx(120e-9)
+    assert dead_time(typed(), op).value["t_dead"] == pytest.approx(128.4e-9, rel=0.002)
+    assert choose_gate_drive(typed(), op, 20.0).t_dead == pytest.approx(130e-9)
+    assert "estimated" not in dead_time(typed(), op).value
     # A fast silicon part works out under 100 ns and is held to it.
     quick = replace(op, rg_off=0.5)
     assert dead_time(typed(), quick).value["t_dead"] == pytest.approx(100e-9)
@@ -205,7 +210,7 @@ def test_dead_time_loss_is_the_body_diode_carrying_the_current_for_both_edges() 
     r = solve(typed(), replace(gate.op, i_rms=20.0))
     # Each switch: two edges a period, the body diode at 0.9 V carrying the mean of the
     # half-sine it conducts, (2√2/π) × 20 A, for the dead time.
-    expected = 2 * 120e-9 * gate.op.f_sw * 0.9 * (2 * math.sqrt(2) / math.pi) * 20.0 / 2
+    expected = 2 * 130e-9 * gate.op.f_sw * 0.9 * (2 * math.sqrt(2) / math.pi) * 20.0 / 2
     assert r.switch.dead_time == pytest.approx(expected, rel=0.01)
 
 
@@ -264,12 +269,23 @@ def test_output_capacitance_stands_in_for_a_missing_output_charge() -> None:
 
 def test_what_is_optional_and_what_is_not() -> None:
     assert from_figures({k: v for k, v in FIGURES.items() if k != "v_sd"}).switch.reverse is None
-    hot = from_figures({k: v for k, v in FIGURES.items() if k != "rds_hot_tj"}).switch.conduction.curves[1]
-    assert hot.tj == 125.0  # the temperature a hot figure is taken at when none is given
-    for missing in ("tj_max", "v_rated", "i_rated", "rth_jc", "rds_on", "v_th", "v_plateau", "q_gs", "q_gd"):
+    # A hot figure is asked its temperature: 100, 125 and 150 °C are all printed, and one
+    # taken for another moves the rise by half or more.
+    with pytest.raises(Mistyped) as caught:
+        from_figures({k: v for k, v in FIGURES.items() if k != "rds_hot_tj"})
+    assert (
+        caught.value.field == "rds_hot_tj"
+        and str(caught.value) == "give the temperature the hot on-resistance is given at"
+    )
+    for missing in ("v_rated", "i_rated", "rth_jc", "rds_on", "v_th", "q_gd"):
         with pytest.raises(Mistyped) as caught:
             from_figures({k: v for k, v in FIGURES.items() if k != missing})
         assert caught.value.field == missing
+    # Three more may be left empty: each is then taken by a stated rule and written into the
+    # device as taken (D160), where they were once refused.
+    for taken in ("tj_max", "v_plateau", "q_gs"):
+        device = from_figures({k: v for k, v in FIGURES.items() if k != taken})
+        assert [t.figure for t in device.taken or []] == [taken]
 
 
 @pytest.mark.parametrize(
@@ -456,10 +472,9 @@ def test_the_command_line_cools_as_it_is_told(capsys) -> None:
         ["--tair", "30", "--rth-ja", "45", "--copper", "2"],
     ],
 )
-def test_cooling_flags_that_do_not_add_up_are_refused(flags) -> None:
-    with pytest.raises(SystemExit) as caught:
-        cli.main(["simulate", str(MOSFET), *COMMON, *flags])
-    assert caught.value.code not in (0, None)
+def test_cooling_flags_that_do_not_add_up_are_refused(flags, capsys) -> None:
+    assert cli.main(["simulate", str(MOSFET), *COMMON, *flags]) == 2
+    assert capsys.readouterr().err.startswith("cannot simulate: ")
 
 
 def test_a_figures_file_is_built_or_refused_in_words(tmp_path, capsys) -> None:
@@ -472,8 +487,8 @@ def test_a_figures_file_is_built_or_refused_in_words(tmp_path, capsys) -> None:
         ("broken.yaml", "a: [1, 2\n"),
     ):
         (tmp_path / name).write_text(text)
-        assert cli.main(["build", str(tmp_path / name), "-o", str(tmp_path / "out.device.yaml")]) == 1
-    assert cli.main(["build", str(tmp_path / "missing.yaml"), "-o", str(tmp_path / "out.device.yaml")]) == 1
+        assert cli.main(["build", str(tmp_path / name), "-o", str(tmp_path / "out.device.yaml")]) == 2
+    assert cli.main(["build", str(tmp_path / "missing.yaml"), "-o", str(tmp_path / "out.device.yaml")]) == 2
     assert "on-resistance at 25 °C is needed" in capsys.readouterr().err
 
 
@@ -524,7 +539,7 @@ def test_the_page_and_the_command_line_agree_with_a_dead_time_left_open(tmp_path
         == 0
     )
     out = capsys.readouterr().out
-    assert "dead time taken as 120 ns" in out
+    assert "dead time taken as 130 ns" in out
     assert float(re.search(r"power-stage loss\s+([\d.]+)", out).group(1)) == pytest.approx(on_page, abs=0.006)
 
 
@@ -628,9 +643,9 @@ def test_a_motor_with_no_limit_of_its_own_is_judged_on_what_its_winding_lets_thr
 
 
 def test_a_motor_wound_for_another_voltage_is_said_at_the_motor_step(tmp_path) -> None:
-    out = _fit(tmp_path, kv=5)  # 5 rpm/V on 48 V: 240 rpm with no load, against 2000 asked
+    out = _fit(tmp_path, kv=5)  # 5 rpm/V on 48 V: 240 rpm with no load, against 3000 asked
     said = next(x["text"] for x in out["lines"] if x["level"] == "caution")
-    assert "short of the 2,000 rpm" in said and "wound for a higher voltage" in said
+    assert "short of the 3,000 rpm" in said and "wound for a higher voltage" in said
     assert out["top_rpm"] == pytest.approx(5 * 48, rel=0.2)
 
 

@@ -9,7 +9,9 @@ from motionsim import guard
 from motionsim.device.schema import Device
 from motionsim.drivers import MotorPoint, at_speed_and_torque
 from motionsim.engine.limits import hottest
+from motionsim.engine.mosfet import MissingGateDrive
 from motionsim.engine.solver import OperatingPoint, ThermalRunaway
+from motionsim.errors import BadFigure
 from motionsim.motor.stage import Unreachable
 from motionsim.text import written
 
@@ -82,7 +84,14 @@ def _room(device: Device, point: MotorPoint | None) -> float | None:
     return device.ratings.tj_max - top
 
 
-@dataclass(frozen=True)
+# Why a device could not be evaluated at all, as a name code can act on. The sentence that
+# goes with it is for the reader.
+RUNAWAY, NO_GATE_DRIVE, BAD_FIGURE = "runaway", "gate drive", "figure"
+
+
+# Compared by what it is, not by what it holds: two candidates are the same only when they
+# are the same one, and the waveforms inside are never asked whether they are equal.
+@dataclass(frozen=True, eq=False)
 class Candidate:
     device: Device
     design: MotorPoint | None
@@ -92,6 +101,7 @@ class Candidate:
     needs: list[str] = field(default_factory=list)  # what else the design must provide
     op: OperatingPoint | None = None  # the conditions it was run at, gate drive included
     footing: Footing | None = None
+    cause: str | None = None  # of the problem: RUNAWAY, NO_GATE_DRIVE or BAD_FIGURE
 
     @property
     def name(self) -> str:
@@ -116,15 +126,18 @@ class Candidate:
         return self.design.result.p_inverter if self.design else float("inf")
 
 
-def _point(device, motor, rpm, torque, base) -> tuple[MotorPoint | None, str | None]:
+def _point(device, motor, rpm, torque, base) -> tuple[MotorPoint | None, str | None, str | None]:
+    """The device at one point of the motor, or why it cannot be evaluated there and the
+    cause by name. A point the motor cannot reach is nobody's verdict and is raised on; so
+    is anything that is not a limit of the part, which is a fault and not a ranking."""
     try:
-        return at_speed_and_torque(device, motor, rpm, torque, base), None
+        return at_speed_and_torque(device, motor, rpm, torque, base), None, None
     except ThermalRunaway:
-        return None, "no stable temperature: losses grow faster than the heat can leave"
-    except Unreachable:
-        raise
-    except ValueError as exc:
-        return None, str(exc)
+        return None, "no stable temperature: losses grow faster than the heat can leave", RUNAWAY
+    except MissingGateDrive as exc:
+        return None, str(exc), NO_GATE_DRIVE
+    except BadFigure as exc:
+        return None, str(exc), BAD_FIGURE
 
 
 def requirements(device: Device, positions: int, base: OperatingPoint) -> list[str]:
@@ -178,7 +191,7 @@ def propose(
         # tune completes the conditions for one device: its own gate drive, where the
         # user left that open.
         base = tune(device) if tune is not None else shared
-        design, problem = _point(device, motor, rpm, torque, base)
+        design, problem, cause = _point(device, motor, rpm, torque, base)
         checks: list[guard.Check] = []
         stall = None
         if design is not None:
@@ -188,8 +201,11 @@ def propose(
             tripped = guard.trip_check(motor, rpm, base.v_dc, device.ratings.v_max)
             if tripped is not None:
                 checks.append(tripped)
+            few = guard.pulses_check(base.f_sw, design.stage.period, design.stage.stalled)
+            if few is not None:
+                checks.append(few)
             try:
-                stall, stall_problem = _point(device, motor, 0.0, torque, base)
+                stall, stall_problem, _ = _point(device, motor, 0.0, torque, base)
             except Unreachable:
                 stall, stall_problem = None, None
             if stall_problem:
@@ -201,7 +217,9 @@ def propose(
                             guard.Check(c.level, "standstill", f"holding this torque at standstill: {c.message}")
                         )
         needs = [] if design is None else requirements(device, sum(r.count for r in design.stage.roles), base)
-        out.append(Candidate(device, design, stall, checks, problem, needs, base, switching_footing(device, base)))
+        out.append(
+            Candidate(device, design, stall, checks, problem, needs, base, switching_footing(device, base), cause)
+        )
     # Those that pass first, then those the data cannot decide, then those that fail; by loss within each.
     return sorted(out, key=lambda c: (c.level is guard.Level.fail, c.level is guard.Level.undecided, c.loss))
 
@@ -235,7 +253,8 @@ def _unlike(usable: list[Candidate]) -> list[str]:
     told = [k for k in words if k in kinds]
     if len(told) > 1:
         footed = [c for c in usable if c.footing is not None]
-        parts = [f"that of {_and([c.name for c in footed if c.footing.kind == k])} is {words[k]}" for k in told]
+        named = {k: [c.name for c in footed if c.footing is not None and c.footing.kind == k] for k in told}
+        parts = [f"that of {_and(named[k])} is {words[k]}" for k in told]
         said = ", ".join(parts[:-1]) + " and " + parts[-1]
         lines.append(f"The switching loss {said[5:]}: the order between them rests on unlike data.")
     stretched = [c.name for c in usable if c.footing is not None and c.footing.stretched]
@@ -255,6 +274,81 @@ def _and(names: list[str]) -> str:
     return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
+def _lead(best: Candidate, level: list[Candidate]) -> list[str]:
+    """Where the first of the ranking stands: alone, or level with others."""
+    name = best.name
+    lines = []
+    if best.level is guard.Level.undecided:
+        lines.append("None of these devices is shown to pass every check at this operating point.")
+    if level:
+        lines.append(
+            f"{_and([name] + [c.name for c in level])} lose within {LEVEL:.0%} of each other "
+            f"({_span(best.loss, max(c.loss for c in level))} W): on loss they are level, "
+            "and something else has to decide."
+        )
+    else:
+        among = (
+            "the devices this data cannot decide" if best.level is guard.Level.undecided else "the devices that pass"
+        )
+        lines.append(f"{name} has the lowest power-stage loss among {among}: {best.loss:.1f} W.")
+    if best.level is guard.Level.caution:
+        lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
+    if best.level is guard.Level.undecided:
+        lines.append(
+            f"{name} is not decided by this data: what the datasheet leaves out could change the "
+            "answer. The check below says what would settle it."
+        )
+    return lines
+
+
+def _drivers(best: Candidate, candidates: list[Candidate]) -> list[str]:
+    if best.device.package.integrated_driver:
+        return []
+    built_in = [c for c in _contenders(candidates) if c is not best and c.device.package.integrated_driver]
+    if not built_in:
+        return []
+    other = built_in[0]
+    return [
+        f"It needs separate gate drivers. {other.name} has them built in, for {other.loss - best.loss:.1f} W more loss."
+    ]
+
+
+def _behind(best: Candidate, others: list[Candidate], level: list[Candidate]) -> list[str]:
+    """How far each of the others is behind the first on loss."""
+    lines = []
+    for other in others:
+        if other in level:
+            continue
+        extra = other.loss - best.loss
+        if other.level is guard.Level.undecided and best.level is not guard.Level.undecided:
+            against = f"{abs(extra):.1f} W {'more' if extra >= 0 else 'less'}"
+            lines.append(f"{other.name} is not decided by this data, and would lose {against}.")
+            continue
+        share = f" ({extra / best.loss:.0%})" if best.loss > 0 else ""
+        lines.append(f"{other.name} loses {extra:.1f} W more{share}.")
+    return lines
+
+
+def _roomier(best: Candidate, candidates: list[Candidate]) -> list[str]:
+    """Loss is not the only thing to choose on: the room left to the junction limit is
+    what a hot day, a blocked fan or a harder load is paid from."""
+    lines = []
+    for what, room in (
+        ("at the design point", lambda c: c.margin),
+        ("holding the torque at standstill", lambda c: c.stall_margin),
+    ):
+        known = [c for c in _contenders(candidates) if room(c) is not None]
+        if len(known) < 2 or room(best) is None:
+            continue
+        roomiest = max(known, key=room)
+        if roomiest is not best and room(roomiest) - room(best) >= 5:
+            lines.append(
+                f"{roomiest.name} has {room(roomiest) - room(best):.0f} °C more margin to its junction "
+                f"limit {what} ({room(roomiest):.0f} °C against {room(best):.0f} °C)."
+            )
+    return lines
+
+
 def explain(candidates: list[Candidate]) -> list[str]:
     """Plain sentences on the ranking."""
     usable = [c for c in candidates if c.level is not guard.Level.fail]
@@ -263,63 +357,11 @@ def explain(candidates: list[Candidate]) -> list[str]:
         lines.append("None of these devices passes every check at this operating point.")
     else:
         best = usable[0]
-        name = best.name
         level = [c for c in level_with_best(candidates) if c is not best]
-        if best.level is guard.Level.undecided:
-            lines.append("None of these devices is shown to pass every check at this operating point.")
-        if level:
-            lines.append(
-                f"{_and([name] + [c.name for c in level])} lose within {LEVEL:.0%} of each other "
-                f"({_span(best.loss, max(c.loss for c in level))} W): on loss they are level, "
-                "and something else has to decide."
-            )
-        else:
-            among = (
-                "the devices this data cannot decide"
-                if best.level is guard.Level.undecided
-                else "the devices that pass"
-            )
-            lines.append(f"{name} has the lowest power-stage loss among {among}: {best.loss:.1f} W.")
-        if best.level is guard.Level.caution:
-            lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
-        if best.level is guard.Level.undecided:
-            lines.append(
-                f"{name} is not decided by this data: what the datasheet leaves out could change the "
-                "answer. The check below says what would settle it."
-            )
-        if not best.device.package.integrated_driver:
-            built_in = [c for c in _contenders(candidates) if c is not best and c.device.package.integrated_driver]
-            if built_in:
-                other = built_in[0]
-                lines.append(
-                    f"It needs separate gate drivers. {other.name} has them built in, for "
-                    f"{other.loss - best.loss:.1f} W more loss."
-                )
-        for other in usable[1:]:
-            if other in level:
-                continue
-            extra = other.loss - best.loss
-            if other.level is guard.Level.undecided and best.level is not guard.Level.undecided:
-                against = f"{abs(extra):.1f} W {'more' if extra >= 0 else 'less'}"
-                lines.append(f"{other.name} is not decided by this data, and would lose {against}.")
-                continue
-            share = f" ({extra / best.loss:.0%})" if best.loss > 0 else ""
-            lines.append(f"{other.name} loses {extra:.1f} W more{share}.")
-        # Loss is not the only thing to choose on: the room left to the junction limit is
-        # what a hot day, a blocked fan or a harder load is paid from.
-        for what, room in (
-            ("at the design point", lambda c: c.margin),
-            ("holding the torque at standstill", lambda c: c.stall_margin),
-        ):
-            known = [c for c in _contenders(candidates) if room(c) is not None]
-            if len(known) < 2 or room(best) is None:
-                continue
-            roomiest = max(known, key=room)
-            if roomiest is not best and room(roomiest) - room(best) >= 5:
-                lines.append(
-                    f"{roomiest.name} has {room(roomiest) - room(best):.0f} °C more margin to its junction "
-                    f"limit {what} ({room(roomiest):.0f} °C against {room(best):.0f} °C)."
-                )
+        lines += _lead(best, level)
+        lines += _drivers(best, candidates)
+        lines += _behind(best, usable[1:], level)
+        lines += _roomier(best, candidates)
         lines += _unlike(usable)
     for c in candidates:
         if c.level is guard.Level.fail:

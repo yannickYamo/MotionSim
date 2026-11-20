@@ -1,8 +1,8 @@
 # Synthetic device for testing the engine. Not a real part: every curve is a
 # straight line chosen to be plausible for a 600 V, 30 A IGBT with a diode.
 schema_version: 1
-vendor: synthetic
-part_number: LINEAR-600V-30A
+vendor: made-up
+part_number: 600 V IGBT
 technology: Si IGBT
 ratings:
   v_max: 600

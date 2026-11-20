@@ -177,9 +177,16 @@ def test_tabulated_switching_energy_is_used_for_a_fet() -> None:
     op = OperatingPoint(v_dc=800, i_rms=8, modulation_index=0.9, power_factor=0.9, f_sw=20e3, t_sink=60, t_dead=3e-7)
     r = solve(device, op)  # no gate drive needed: the energies are measured
     assert r.switch.turn_on > r.switch.turn_off > r.switch.recovery > 0
-    # Switching: fsw * E * Ipk / pi at the test voltage, energy linear in current.
+    # Turning on with no current loses the output charge through the voltage: twice 79 pF
+    # times 800 V, through 800 V, is 101.12 µJ. From there the energy runs in a line to the
+    # 135 µJ measured at 20 A. A switch turns on for half the period, at a current whose
+    # mean over that half is Ipk / pi of the whole.
     i_pk = 8 * 2**0.5
-    assert r.switch.turn_on == pytest.approx(20e3 * 135e-6 * (i_pk / 20) / 3.14159, rel=0.01)
+    at_none = 2 * 79e-12 * 800 * 800
+    assert sw.e_on.curves[0].value[0] == pytest.approx(at_none, rel=1e-4)
+    assert r.switch.turn_on == pytest.approx(
+        20e3 * (at_none / 2 + (135e-6 - at_none) * (i_pk / 20) / 3.14159), rel=0.01
+    )
 
 
 def test_output_charge_is_estimated_from_capacitance_when_not_tabulated() -> None:

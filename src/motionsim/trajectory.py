@@ -24,17 +24,25 @@ switch and the high-side reverse path do.
 from __future__ import annotations
 
 import csv
+import io
 from dataclasses import dataclass, replace
-from pathlib import Path
 
 import numpy as np
 
 from motionsim.device.schema import Device
 from motionsim.engine.modulation import Role
-from motionsim.engine.solver import OperatingPoint, Result, package_waves, solve_roles, thermal_network
+from motionsim.engine.notes import Code, Note
+from motionsim.engine.solver import (
+    OperatingPoint,
+    Result,
+    package_waves,
+    shared_time,
+    solve_roles,
+    thermal_network,
+)
 from motionsim.engine.thermal import repeating_rise
 from motionsim.text import written
-from motionsim.transient import ChipState, Lag, shared_time
+from motionsim.transient import ChipState, Lag
 
 LEGS = "abcd"
 # The most instants a trajectory is solved at. A longer trace is put on this many evenly
@@ -62,14 +70,37 @@ class Trajectory:
         return list(self.current)
 
 
-def load_trajectory(path: str | Path) -> Trajectory:
-    """A trajectory from a CSV file: a header row naming time_s and, for each leg, its
-    current i_a and duty cycle d_a (then b, c, d), and one row an instant. Lines starting
-    with # are comments. The instants are put on an even grid, as the engine works on one;
-    a trace longer than MAX_SAMPLES is thinned to that many."""
-    # utf-8-sig: a spreadsheet's export starts with a byte-order mark, which is not part of a name.
-    with open(path, newline="", encoding="utf-8-sig") as f:
-        rows = [row for row in csv.reader(f) if row and not row[0].lstrip().startswith("#")]
+def parse_trajectory(text: str) -> Trajectory:
+    """A trajectory from the text of a CSV file: a header row naming time_s and, for each
+    leg, its current i_a and duty cycle d_a (then b, c, d), and one row an instant. Lines
+    starting with # are comments. The instants are put on an even grid, as the engine works
+    on one; a trace longer than MAX_SAMPLES is thinned to that many."""
+    from motionsim.files import MOST_BYTES
+
+    if len(text) > MOST_BYTES:
+        raise BadTrajectory(f"a trajectory is at most {MOST_BYTES // (1024 * 1024)} MB of text")
+    header, data = _table(text)
+    columns = dict(zip(header, data.T, strict=True))
+    legs = _legs(columns)
+    time = columns["time_s"]
+    if np.any(np.diff(time) <= 0):
+        raise BadTrajectory("time must increase")
+    # The engine works on uniform samples; a logged trace seldom is.
+    n = int(np.clip(len(time), 256, MAX_SAMPLES))
+    step = (time[-1] - time[0]) / (n - 1)
+    grid = time[0] + step * np.arange(n)
+    return Trajectory(
+        time=grid - time[0],
+        current={leg: np.interp(grid, time, columns[f"i_{leg}"]) for leg in legs},
+        duty={leg: np.clip(np.interp(grid, time, columns[f"d_{leg}"]), 0.0, 1.0) for leg in legs},
+    )
+
+
+def _table(text: str) -> tuple[list[str], np.ndarray]:
+    """The header's names and the rows of figures under it, each row as long as the header."""
+    # A spreadsheet's export starts with a byte-order mark, which is not part of a name.
+    lines = io.StringIO(text.removeprefix("\ufeff"), newline="")
+    rows = [row for row in csv.reader(lines) if row and not row[0].lstrip().startswith("#")]
     if len(rows) < 3:
         raise BadTrajectory("a trajectory needs a header row and at least two rows of data")
     header = [name.strip().lower() for name in rows[0]]
@@ -85,7 +116,11 @@ def load_trajectory(path: str | Path) -> Trajectory:
         raise BadTrajectory(f"not a number: {exc}") from exc
     if not np.isfinite(data).all():
         raise BadTrajectory("every value has to be a finite number: no nan, no inf")
-    columns = dict(zip(header, data.T, strict=True))
+    return header, data
+
+
+def _legs(columns: dict[str, np.ndarray]) -> list[str]:
+    """The legs the file gives, each with a current and a duty cycle that is a fraction."""
     legs = [leg for leg in LEGS if f"i_{leg}" in columns]
     if not legs:
         raise BadTrajectory("no current column found: expected i_a, with d_a")
@@ -95,18 +130,7 @@ def load_trajectory(path: str | Path) -> Trajectory:
         duty = columns[f"d_{leg}"]
         if duty.min() < -1e-6 or duty.max() > 1 + 1e-6:
             raise BadTrajectory(f"d_{leg} must lie between 0 and 1: it is a fraction of the PWM period")
-    time = columns["time_s"]
-    if np.any(np.diff(time) <= 0):
-        raise BadTrajectory("time must increase")
-    # The engine works on uniform samples; a logged trace seldom is.
-    n = int(np.clip(len(time), 256, MAX_SAMPLES))
-    step = (time[-1] - time[0]) / (n - 1)
-    grid = time[0] + step * np.arange(n)
-    return Trajectory(
-        time=grid - time[0],
-        current={leg: np.interp(grid, time, columns[f"i_{leg}"]) for leg in legs},
-        duty={leg: np.clip(np.interp(grid, time, columns[f"d_{leg}"]), 0.0, 1.0) for leg in legs},
-    )
+    return legs
 
 
 def roles(trajectory: Trajectory) -> list[Role]:
@@ -158,6 +182,31 @@ class Outcome:
         return float(self.tj_from_start.max())
 
 
+def _followed(role, role_shared: dict, networks: dict, tau: float, dt: float, hottest: np.ndarray):
+    """One position's chips followed through the trajectory, repeating: the peak of each, the
+    switch's lowest and highest, and the hottest junction at each instant raised in place."""
+    peaks = {}
+    span = (float("nan"), float("nan"))
+    for name, network in networks.items():
+        wave = role.p_switch if name == "switch" else role.p_diode
+        assert wave is not None  # a solved position carries the loss of each chip through the period
+        mean = role.switch.total if name == "switch" else role.diode.total
+        settled = role.tj_switch if name == "switch" else role.tj_diode
+        target = role_shared[name]
+        # What is left stays where the mean loss puts it: a heatsink in air, a board.
+        still = settled - network.rth * mean - float(target.mean())
+        swing = repeating_rise(network.r, network.tau, wave, dt) + repeating_rise([1.0], [tau], target, dt)
+        peaks[name] = still + float(swing.max())
+        if name == "switch":
+            span = (still + float(swing.min()), peaks[name])
+        chip, rest = ChipState(network), Lag(tau)
+        for k, p in enumerate(wave):
+            chip.advance(float(p), dt)
+            rest.advance(float(target[k]), dt)
+            hottest[k] = max(hottest[k], still + rest.value + chip.rise)
+    return peaks, span
+
+
 def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
     """Losses and temperatures along a trajectory.
 
@@ -174,7 +223,13 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
         op,
         period=trajectory.duration,
         p_out=power,
-        extra_notes=["trajectory: taken to repeat without end for the losses and settled temperatures"],
+        extra_notes=[
+            Note(
+                Code.trajectory_repeats,
+                "trajectory",
+                "trajectory: taken to repeat without end for the losses and settled temperatures",
+            )
+        ],
     )
     chips = {"switch": device.switch}
     if device.diode is not None:
@@ -190,23 +245,8 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
     followed = []
     spans = []
     for role, role_shared in zip(result.roles, shared, strict=True):
-        peaks = {}
-        for name, network in networks.items():
-            wave = role.p_switch if name == "switch" else role.p_diode
-            mean = role.switch.total if name == "switch" else role.diode.total
-            settled = role.tj_switch if name == "switch" else role.tj_diode
-            target = role_shared[name]
-            # What is left stays where the mean loss puts it: a heatsink in air, a board.
-            still = settled - network.rth * mean - float(target.mean())
-            swing = repeating_rise(network.r, network.tau, wave, dt) + repeating_rise([1.0], [tau], target, dt)
-            peaks[name] = still + float(swing.max())
-            if name == "switch":
-                spans.append((still + float(swing.min()), peaks[name]))
-            chip, rest = ChipState(network), Lag(tau)
-            for k, p in enumerate(wave):
-                chip.advance(float(p), dt)
-                rest.advance(float(target[k]), dt)
-                hottest[k] = max(hottest[k], still + rest.value + chip.rise)
+        peaks, span = _followed(role, role_shared, networks, tau, dt, hottest)
+        spans.append(span)
         followed.append(
             replace(role, tj_switch_peak=peaks["switch"], tj_diode_peak=peaks.get("diode", peaks["switch"]))
         )

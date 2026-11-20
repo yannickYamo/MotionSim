@@ -6,7 +6,6 @@ import pytest
 import yaml
 from conftest import V_REF, line, linear_device
 
-from motionsim.cycle import run_cycle
 from motionsim.drivers import at_speed_and_torque
 from motionsim.engine import OperatingPoint
 from motionsim.load import (
@@ -21,6 +20,7 @@ from motionsim.load import (
     sample,
 )
 from motionsim.motor import TEMPLATES, Pmsm, load_machine
+from motionsim.transient import follow
 
 MOTOR = Pmsm(pole_pairs=4, flux_linkage=0.1, l=0.008, rs=1.0)
 BASE = OperatingPoint(v_dc=V_REF, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
@@ -90,7 +90,7 @@ def test_profile_sampling_tracks_time_speed_and_angle() -> None:
 def test_steady_motion_equals_the_single_point() -> None:
     load = Load(constant_torque=2.0)
     profile = Profile(segments=[Segment(duration=5.0, speed_start=3000, speed_end=3000)])
-    cycle = run_cycle(igbt(), MOTOR, load, profile, BASE, per_segment=3)
+    cycle = follow(igbt(), MOTOR, load, profile, BASE, per_segment=3)[0]
     point = at_speed_and_torque(igbt(), MOTOR, 3000.0, 2.0, BASE)
     assert cycle.mean_loss == pytest.approx(point.result.p_inverter)
     assert cycle.rms_torque == pytest.approx(2.0)
@@ -106,7 +106,7 @@ def test_braking_returns_energy_and_is_solved() -> None:
             Segment(duration=0.5, speed_start=2000, speed_end=0),
         ]
     )
-    cycle = run_cycle(igbt(), MOTOR, load, profile, BASE)
+    cycle = follow(igbt(), MOTOR, load, profile, BASE)[0]
     assert len(cycle.solved) == len(cycle.steps)
     torques = [s.sample.motor_torque for s in cycle.steps]
     assert min(torques) < 0 < max(torques)
@@ -117,7 +117,7 @@ def test_braking_returns_energy_and_is_solved() -> None:
 def test_unreachable_instants_are_reported_not_fatal() -> None:
     load = Load(constant_torque=1.0)
     profile = Profile(segments=[Segment(duration=1.0, speed_start=1000, speed_end=60000)])
-    cycle = run_cycle(igbt(), MOTOR, load, profile, BASE)
+    cycle = follow(igbt(), MOTOR, load, profile, BASE)[0]
     assert cycle.solved and len(cycle.solved) < len(cycle.steps)
     assert "more voltage" in next(s.problem for s in cycle.steps if s.point is None)
 
@@ -130,7 +130,7 @@ def test_catalogue_values_give_the_same_motor() -> None:
     assert by_kv.flux_linkage == pytest.approx(flux)
     assert by_ke.flux_linkage == pytest.approx(flux)
     assert by_kv.ld == by_kv.lq == 1e-4
-    with pytest.raises(ValueError, match="exactly one of"):
+    with pytest.raises(ValueError, match="give one of the speed constant"):
         Pmsm(pole_pairs=pairs, kv=100, flux_linkage=0.01, l=1e-4, rs=0.05)
     with pytest.raises(ValueError, match="surface-magnet"):
         Pmsm(pole_pairs=pairs, kv=100, ld=1e-4, lq=2e-4, rs=0.05)

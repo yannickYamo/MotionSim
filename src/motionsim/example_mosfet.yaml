@@ -1,8 +1,8 @@
 # Synthetic device for trying the tool. Not a real part: the figures are made up to be
 # plausible for a 100 V, 100 A silicon MOSFET in a TO-220, as used on batteries and in robots.
 schema_version: 1
-vendor: synthetic
-part_number: MOSFET-100V-100A
+vendor: made-up
+part_number: 100 V MOSFET
 technology: Si MOSFET
 ratings:
   v_max: 100.0
@@ -59,6 +59,8 @@ switch:
     q_gd: 1.4e-08
     q_g_th: 1.304e-08
     v_plateau: 4.6
+    q_g: 7.2e-08
+    q_g_drive: 10.0
     q_oss: 1.5e-07
     v_ref: 50.0
     q_oss_scaling: sqrt
@@ -68,7 +70,7 @@ switch:
       times threshold voltage over plateau voltage
     source:
       kind: synthetic
-      note: 'made up: gate and output charges from the tables'
+      note: 'made up: gate and output charges from the tables, total gate charge 72 nC at 10 V'
       status: unverified
   thermal:
     r:

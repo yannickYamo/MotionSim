@@ -45,7 +45,7 @@ def rainflow(trace: np.ndarray) -> list[tuple[float, float, float]]:
     values = np.asarray(trace, dtype=float)
     if values.size < 2 or np.ptp(values) < SMALLEST:
         return []
-    values = np.roll(values, -int(values.argmax()))
+    values = np.roll(values, -int(np.argmax(values)))
     values = np.append(values, values[0])
     # Keep the turning points only.
     turns = [values[0]]

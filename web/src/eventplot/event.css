@@ -1,0 +1,434 @@
+/* The switching event under the loss chart: fetched with its code, once the event is first
+   asked for, so the first screen's stylesheet does not carry it. The spikes it opens from
+   and the button that opens it are in style.css, drawn before it is fetched. */
+.ev {
+  margin-top: var(--s5);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s4);
+}
+/* The event's prose wraps inside the section at a reading measure, however wide the stage. */
+.ev > p,
+.ev-assumed,
+.ev-sheet caption,
+.ev-sheet + p {
+  max-width: 68ch;
+  overflow-wrap: anywhere;
+}
+.ev h3 {
+  margin: 0 0 var(--s2);
+}
+.ev h4 {
+  margin: var(--s5) 0 var(--s2);
+}
+.ev-edges {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s5);
+  margin-top: var(--s4);
+}
+/* Side by side where both edges have room to be read; one above the other on a phone. */
+@container (min-width: 640px) {
+  .ev-edges {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--s4);
+  }
+}
+/* On a desk the form gives the open event some of its width, so the edges sit side by side. */
+@media (min-width: 1200px) {
+  #app:has(#pwm .ev-wrap) {
+    --panel: clamp(400px, 32vw, 560px);
+  }
+}
+.ev-edge {
+  margin: 0;
+  min-width: 0;
+  container-type: inline-size;
+}
+.ev-signature {
+  margin: var(--s4) 0 0;
+  font-weight: 500;
+}
+/* Where the edge limit is what slows the part: one line above the edges, in ink. */
+.ev-held {
+  margin: var(--s3) 0 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+.ev-held svg {
+  width: 16px;
+  height: 16px;
+  margin-right: var(--s1);
+  vertical-align: -3px;
+}
+.ev-indicative {
+  margin: var(--s2) 0 0;
+  color: var(--caution);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.ev-indicative svg {
+  width: 16px;
+  height: 16px;
+  margin-right: var(--s1);
+  vertical-align: -3px;
+}
+.ev-edge figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s3);
+}
+/* Beside the edge's name: its two plots full screen, and Reset zoom, quieter than a form's buttons. */
+.ev-edge-actions,
+.ev-full-opens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.ev-edge-actions button.ghost {
+  min-height: 32px;
+  padding: 0 var(--s2);
+  gap: var(--s1);
+  font-size: 0.88rem;
+}
+.ev-edge-actions .icon {
+  width: 18px;
+  height: 18px;
+}
+.ev-edge figcaption h4 {
+  margin: 0;
+}
+/* The edge pressed on the loss chart is told in ink, by an underline, as a selected tab is. */
+.ev-edge.is-marked figcaption h4 {
+  text-decoration: underline 2px var(--ink);
+  text-underline-offset: 6px;
+}
+.ev-plot {
+  margin-top: var(--s2);
+  touch-action: pan-y;
+  cursor: grab;
+  user-select: none;
+  border-radius: var(--radius);
+}
+.ev-plot:active {
+  cursor: grabbing;
+}
+.ev-plot:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.ev-plot .chart {
+  margin-top: 0;
+}
+/* Each trace has its own colour, and its axis title and its peak take the same, so each is
+   read with its trace and needs no key: voltage in bone, current in lilac, the gate in teal,
+   power in orange, which means heat. */
+.chart.ev-svg .series.ev-v {
+  stroke: var(--ink);
+}
+.chart.ev-svg .series.ev-i {
+  stroke: var(--trace-current);
+  stroke-width: 2.2;
+}
+.chart.ev-svg .series.ev-g {
+  stroke: var(--trace-gate);
+}
+.chart.ev-svg .series.ev-p {
+  stroke: var(--orange);
+  stroke-width: 2.2;
+}
+.chart.ev-svg .ev-window {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-v {
+  fill: var(--ink);
+}
+.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-i {
+  fill: var(--trace-current);
+}
+.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-g {
+  fill: var(--trace-gate);
+}
+.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-p {
+  fill: var(--orange);
+}
+.chart.ev-svg .ev-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+.chart.ev-svg .mark-label.is-caution {
+  fill: var(--caution);
+}
+.chart.ev-svg .ev-cross path {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+}
+.chart.ev-svg .ev-touch {
+  fill: transparent;
+}
+/* Shown narrow, the drawing's words are set larger, so they stay readable on a phone. */
+@container (max-width: 520px) {
+  .chart.ev-svg text {
+    font-size: 17px;
+  }
+}
+.ev-read {
+  display: block;
+  min-height: 2.8em;
+  margin-top: var(--s2);
+}
+.ev-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--s3) var(--s4);
+  margin: var(--s3) 0 0;
+}
+.ev-figures dt {
+  color: var(--ink-3);
+  font-size: 0.88rem;
+}
+.ev-figures dd {
+  margin: 0;
+}
+.ev-figures b {
+  display: block;
+  font-weight: 500;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+.ev-figures .note {
+  display: block;
+  color: var(--ink-3);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.ev-row.is-caution .note,
+.ev-row.is-caution .caution-word {
+  color: var(--caution);
+}
+.ev-row.is-caution .note svg {
+  width: 16px;
+  height: 16px;
+  margin-right: var(--s1);
+  vertical-align: -3px;
+}
+.ev-sheet {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.ev-sheet caption {
+  text-align: left;
+  color: var(--ink-3);
+  font-size: 0.88rem;
+  padding-bottom: var(--s2);
+}
+.ev-sheet th,
+.ev-sheet td {
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+.ev-sheet th:first-child {
+  text-align: left;
+  font-weight: 500;
+}
+.ev-sheet thead th {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.ev-assumed {
+  margin: 0;
+  padding-left: var(--s5);
+  max-width: 70ch;
+}
+.ev-assumed li + li {
+  margin-top: var(--s2);
+}
+.ev-detail,
+.ev-geo {
+  margin-top: var(--s5);
+}
+.ev-layout {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+}
+.ev-layout p {
+  margin: 0;
+  flex: 1 1 260px;
+}
+#ev-estimate {
+  margin-top: var(--s3);
+}
+#ev-estimate p {
+  margin: 0 0 var(--s2);
+}
+.ev-wrap.is-stale {
+  opacity: 0.5;
+}
+
+/* One plot full screen: a modal dialog over the page, which is dimmed and blurred behind it,
+   the plot drawn again at the size it is given. On a phone, upright or on its side, it takes
+   the whole screen. */
+dialog.ev-full {
+  box-sizing: border-box;
+  width: calc(100vw - 2 * var(--s6));
+  height: calc(100dvh - 2 * var(--s6));
+  max-width: none;
+  max-height: none;
+  margin: auto;
+  padding: var(--s4) var(--s5);
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  overscroll-behavior: contain;
+}
+dialog.ev-full[open] {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  gap: var(--s3);
+}
+dialog.ev-full::backdrop {
+  background: rgb(10 9 7 / 0.55);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+/* Where the page behind cannot be blurred, it is dimmed further, so the plot still stands apart. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  dialog.ev-full::backdrop {
+    background: rgb(10 9 7 / 0.86);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  dialog.ev-full[open] {
+    animation: ev-full-in 0.18s var(--ease);
+  }
+  dialog.ev-full[open]::backdrop {
+    animation: ev-full-dim 0.18s var(--ease);
+  }
+}
+@keyframes ev-full-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+@keyframes ev-full-dim {
+  from {
+    opacity: 0;
+  }
+}
+/* The title, then the plot's actions, then Close at the corner; narrow, the actions go under
+   the title and Close stays at the corner beside it. */
+.ev-full-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "title actions close";
+  align-items: start;
+  gap: var(--s3) var(--s4);
+}
+.ev-full-title {
+  grid-area: title;
+  min-width: 0;
+}
+.ev-full-actions {
+  grid-area: actions;
+}
+.ev-full-head button.close {
+  grid-area: close;
+}
+@media (max-width: 760px) {
+  .ev-full-head {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "title close"
+      "actions actions";
+  }
+}
+.ev-full-title h2 {
+  margin: 0;
+  font-size: 1.08rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.ev-full-title p {
+  margin: var(--s1) 0 0;
+}
+.ev-full-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.ev-full-head button.close {
+  margin: 0;
+}
+.ev-full-plot {
+  position: relative;
+  min-height: 0;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  border-radius: var(--radius);
+}
+.ev-full-plot:active {
+  cursor: grabbing;
+}
+.ev-full-plot:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Drawn at the size it is shown, its words are set at the drawing's own size, never the
+   larger size a drawing shown small takes. */
+dialog.ev-full .chart text {
+  font-size: 12.5px;
+}
+.ev-full-plot svg.chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+.ev-full-read {
+  display: block;
+  min-height: 2.8em;
+}
+.ev-full-status {
+  margin: 0;
+  min-height: 1.4em;
+}
+.ev-full-status:empty {
+  min-height: 0;
+}
+@media (max-width: 600px), (max-height: 500px) {
+  dialog.ev-full {
+    width: 100vw;
+    height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    padding: var(--s3) var(--s4) calc(var(--s3) + env(safe-area-inset-bottom, 0px));
+  }
+  dialog.ev-full[open] {
+    gap: var(--s2);
+  }
+  .ev-full-actions button.ghost {
+    min-height: 40px;
+    padding: 0 var(--s3);
+  }
+  .ev-full-read {
+    min-height: 0;
+  }
+}
+@media (forced-colors: active) {
+  .chart.ev-svg .ev-dot {
+    fill: CanvasText;
+  }
+}

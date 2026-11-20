@@ -1,5 +1,7 @@
 # Case study: four datasheets from four makers, unnamed
 
+**The figures here cannot be reproduced from the repository alone.** They were produced once, from four datasheets that are not distributed with the project, read by a language model with a key. With datasheets of parts like these and a key of your own, the commands at the end run the same journey; a second reading can differ from the first.
+
 What happens when MotionSim is given four real parts whose datasheets differ in what they give. Four public datasheets, one journey each from PDF to verdict, and what the tool could and could not say.
 
 This is a demonstration of the method and not a ranking of makers, so neither the makers nor the part numbers are named: each part is called by a letter and described by what it is. No device data ships with the project: the datasheets are their makers' property, and what was read from them stays with whoever read them. The figures below are estimates, with the limits of [LIMITS.md](LIMITS.md).

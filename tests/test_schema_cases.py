@@ -180,7 +180,7 @@ def test_a_charge_model_or_a_reverse_curve_on_a_chip_that_is_not_a_mosfet_is_ref
 
 
 def test_a_voltage_rating_of_zero_is_refused() -> None:
-    with pytest.raises(ValidationError, match=r"ratings\.v_max\n\s+Input should be greater than 0"):
+    with pytest.raises(ValidationError, match=r"ratings\.v_max\n\s+Input should be greater than or equal to 1"):
         Device(**{**PART, "ratings": dict(v_max=0, i_nominal=30, tj_max=150)}, switch=MOSFET)
 
 
@@ -213,7 +213,10 @@ def test_a_to263_on_grease_sits_above_the_heatsink_by_its_loss_through_its_ten_b
     r = solve(d, op)
     loss = r.switch.total + r.diode.total
     assert loss > 0.5
-    assert r.t_case - 40 == pytest.approx(r_cs * loss, rel=1e-9)
+    # Over a turn the case stands, in the mean, at its loss through the layer; the junction's
+    # mean less its own path is that mean. At its highest in a turn it is a little above.
+    assert r.tj_switch - d.switch.thermal.rth * r.switch.total - 40 == pytest.approx(r_cs * loss, rel=1e-9)
+    assert 0 <= r.t_case - 40 - r_cs * loss < 0.05 * r_cs * loss
     assert any(f"computed for a TO-263 on grease: {r_cs:.2f} K/W" in a for a in r.assumptions)
 
 

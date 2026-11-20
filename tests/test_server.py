@@ -122,17 +122,22 @@ def test_over_http_a_refusal_is_a_422_with_reason_and_fix(workspace) -> None:
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     address = f"http://127.0.0.1:{httpd.server_address[1]}"
 
+    # Every answer and every error is closed where it is read: one left open holds its socket
+    # until it is collected, which is a warning in some later test and so a failure there.
     def post(path: str, data: dict):
         call = urllib.request.Request(address + path, json.dumps(data).encode(), {"Content-Type": "application/json"})
-        return json.load(urllib.request.urlopen(call))
+        with urllib.request.urlopen(call) as answer:
+            return json.load(answer)
 
     try:
         assert post("/api/stage", request(workspace))["stage"]["positions"] == 6
         with pytest.raises(urllib.error.HTTPError) as caught:
             post("/api/stage", request(workspace, rpm=60000))
-        body = json.load(caught.value)
+        with caught.value:
+            body = json.load(caught.value)
         assert caught.value.code == 422 and body["refused"] and body["fix"]
-        assert json.load(urllib.request.urlopen(address + "/api/setup"))["devices"]
+        with urllib.request.urlopen(address + "/api/setup") as answer:
+            assert json.load(answer)["devices"]
         # Another site in the same browser cannot reach the engine, whatever it posts.
         for headers in ({"Origin": "https://example.com"}, {"Host": "attacker.example"}):
             foreign = urllib.request.Request(
@@ -140,9 +145,11 @@ def test_over_http_a_refusal_is_a_422_with_reason_and_fix(workspace) -> None:
             )
             with pytest.raises(urllib.error.HTTPError) as blocked:
                 urllib.request.urlopen(foreign)
+            blocked.value.close()
             assert blocked.value.code == 403
         # Paths outside the page's folder fall back to the page, never to the file system.
-        page = urllib.request.urlopen(address + "/../../pyproject.toml").read()
+        with urllib.request.urlopen(address + "/../../pyproject.toml") as answer:
+            page = answer.read()
         assert b"[project]" not in page
     finally:
         httpd.shutdown()
@@ -216,12 +223,18 @@ def test_measured_switching_data_makes_a_second_device_beside_the_first(workspac
 
 
 def test_every_load_offered_for_a_motor_can_be_followed_within_its_design_torque(workspace) -> None:
+    """A load sized to the design point runs on the user's motor within its design torque; an
+    application of a size of its own (a washer's drum) runs on the motor it usually has."""
     motors = server.setup(workspace)["motors"]
+    usual = set()
     for kind, motor in motors.items():
         start = page.STARTING[kind]
         offered = page.load_presets(kind, start["rpm"], start["torque"])
         assert offered and len({p["id"] for p in offered}) == len(offered)
         for preset in offered:
+            if preset["motor"] is not None:
+                usual.add(preset["id"])
+                continue
             out = server.cycle(
                 {
                     "motor": {"type": kind, **motor["values"]},
@@ -231,13 +244,36 @@ def test_every_load_offered_for_a_motor_can_be_followed_within_its_design_torque
                     # takes a sixth of 24 V.
                     "device": "example" if start["v_dc"] > 100 else "example-mosfet",
                     "load": preset["load"],
-                    "profile": {"start_angle_deg": preset["start_angle_deg"], "segments": preset["segments"]},
+                    "profile": preset["profile"],
                 },
                 workspace,
             )
             assert not [c for c in out["checks"] if c["topic"] == "motion"], (kind, preset["id"])
             assert max(abs(t) for t in out["torque"]) <= 1.05 * start["torque"], (kind, preset["id"])
             assert max(abs(n) for n in out["rpm"]) <= 1.001 * start["rpm"], (kind, preset["id"])
+    assert usual == {"drum", "vacuum", "ceiling_fan", "compressor"}
+    for kind in ("pmsm", "bldc"):
+        for preset in page.load_presets(kind, 3000, 2.0, 325):
+            if preset["motor"] is None:
+                continue
+            given = preset["motor"]
+            out = server.cycle(
+                {
+                    "motor": {"type": given["kind"], **given["values"]},
+                    "conditions": {
+                        "v_dc": given["v_dc"],
+                        **given["point"],
+                        "f_sw": 20000,
+                        "t_sink": 60,
+                    },
+                    "device": "example" if given["v_dc"] > 100 else "example-mosfet",
+                    "load": preset["load"],
+                    "profile": preset["profile"],
+                    "start": {"method": preset["start"]},
+                },
+                workspace,
+            )
+            assert not [c for c in out["checks"] if c["topic"] == "motion"], preset["id"]
 
 
 def test_one_switching_period_adds_up_to_the_average_loss() -> None:
@@ -248,7 +284,8 @@ def test_one_switching_period_adds_up_to_the_average_loss() -> None:
 
     from motionsim.device import load_device
     from motionsim.engine.modulation import Role
-    from motionsim.engine.solver import OperatingPoint, _position_losses, switching_period
+    from motionsim.engine.position import _position_losses
+    from motionsim.engine.solver import OperatingPoint, switching_period
 
     device = load_device(server.EXAMPLE)
     op = OperatingPoint(v_dc=300.0, i_rms=0.0, modulation_index=0.0, power_factor=1.0, f_sw=8000.0, t_sink=60.0)
@@ -272,7 +309,7 @@ def test_an_open_loop_start_holds_its_current_until_the_handover_and_heats_the_s
         "supply": "battery",
         "device": "example",
         "load": fan["load"],
-        "profile": {"start_angle_deg": 0, "segments": fan["segments"]},
+        "profile": fan["profile"],
     }
     sensed = server.cycle(request_, workspace)
     blind = server.cycle({**request_, "start": {"method": "open_loop"}}, workspace)
@@ -310,7 +347,7 @@ def test_induction_builds_flux_first_and_brushed_motors_need_no_start(workspace)
                 "supply": "battery",
                 "device": "example",
                 "load": preset["load"],
-                "profile": {"start_angle_deg": 0, "segments": preset["segments"]},
+                "profile": preset["profile"],
             },
             workspace,
         )
@@ -345,14 +382,12 @@ def test_what_a_device_can_drive_and_how_much_heavier_the_load_could_be(workspac
     by_f = [x["torque"] for x in can["by_f_sw"]]
     assert by_f == sorted(by_f, reverse=True)
     fan = next(p for p in page.load_presets("pmsm", start["rpm"], start["torque"]) if p["id"] == "conveyor")
-    found = page.largest(
-        {**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}}, workspace
-    )
+    found = page.largest({**request_, "load": fan["load"], "profile": fan["profile"]}, workspace)
     assert found["scale"] >= 1.0 and (found["open"] or found["why"])
     # Just past the limit the same request fails; at it, it does not.
     if not found["open"]:
         over = page._scaled(
-            {**request_, "load": fan["load"], "profile": {"start_angle_deg": 0, "segments": fan["segments"]}},
+            {**request_, "load": fan["load"], "profile": fan["profile"]},
             1.05 * found["scale"],
         )
         try:
@@ -372,7 +407,7 @@ def test_an_open_loop_start_says_how_slowly_this_device_lets_the_rotor_be_read(w
         "supply": "battery",
         "device": "example",
         "load": fan["load"],
-        "profile": {"start_angle_deg": 0, "segments": fan["segments"]},
+        "profile": fan["profile"],
     }
     sensed = server.cycle(request_, workspace)["start"]
     assert "sensorless_rpm" not in sensed and not any("reads the back-EMF" in line for line in sensed["lines"])
@@ -385,3 +420,30 @@ def test_an_open_loop_start_says_how_slowly_this_device_lets_the_rotor_be_read(w
     early = server.cycle({**request_, "start": {"method": "open_loop", "handover_rpm": floor / 2}}, workspace)["start"]
     assert early["sensorless_rpm"] == pytest.approx(floor, rel=0.05)
     assert "relies on firmware that corrects for it" in early["lines"][-1]
+
+
+def test_each_position_of_the_stage_says_how_long_it_carries_and_whether_it_switches() -> None:
+    """Four instants of a period, written out: the current is 0, 0.5, 2 and 4 A. The switch
+    carries it forwards for 0.6 of each PWM period throughout, the reverse path for 0.4,
+    and either commutates only at the last two. Forwards is then 0.6 at the three instants
+    with current, a mean of 0.45; reverse 0.4 at those, 0.3; and the position switches."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    from motionsim.engine.modulation import Pwm, Role
+    from motionsim.service.shapes import _stage
+
+    current = np.array([0.0, 0.5, 2.0, 4.0])
+    edges = np.array([0.0, 0.0, 1.0, 1.0])
+    chopping = Role("chopping", 1, current, np.full(4, 0.6), np.full(4, 0.4), edges, edges)
+    held = Role("held on", 1, current, np.ones(4), np.zeros(4), np.zeros(4), np.zeros(4))
+    stage = SimpleNamespace(
+        roles=[chopping, held], i_peak=4.0, p_shaft=0.0, p_electrical=0.0, p_motor_loss=0.0, summary=[], notes=[]
+    )
+    shown = _stage(stage, SimpleNamespace(scheme=lambda pwm: "block"), Pwm.sine)["roles"]
+    assert [(r["name"], r["count"]) for r in shown] == [("chopping", 1), ("held on", 1)]
+    assert [(r["forward"], r["reverse"], r["switching"]) for r in shown] == [
+        (pytest.approx(0.45), pytest.approx(0.3), 1.0),
+        (0.75, 0.0, 0.0),
+    ]

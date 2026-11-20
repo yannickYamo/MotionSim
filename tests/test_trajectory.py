@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from conftest import V_REF, line, linear_device
+from conftest import V_REF, line, linear_device, load_trajectory, zth
 
 from motionsim.device import FosterNetwork, Source, Topology
 from motionsim.engine import OperatingPoint, solve
-from motionsim.engine.thermal import zth
-from motionsim.trajectory import BadTrajectory, Trajectory, example, load_trajectory, roles, run
+from motionsim.trajectory import BadTrajectory, Trajectory, example, roles, run
 
 NETWORK = FosterNetwork(r=[0.3, 0.7], tau=[0.002, 0.05], source=Source(kind="synthetic"))
 

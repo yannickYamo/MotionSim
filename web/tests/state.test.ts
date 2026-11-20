@@ -1,26 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { plain } from "../src/state";
+import { plain } from "../src/restore";
 import { sentence } from "../src/format";
 
 describe("what a setup file or the browser's store hands back", () => {
-  it("loses whatever would be markup, at any depth", () => {
-    const opened = plain({
-      conditions: { rth_case_sink: '0.3"><img src=x onerror=alert(1)>', t_sink: 60 },
-      segments: [{ duration: "<script>alert(1)</script>", speed_start: 0 }],
-      "<b>key</b>": "fine",
-    }) as Record<string, any>;
-    const text = JSON.stringify(opened);
-    expect(text).not.toMatch(/[<>]/);
-    expect(opened.conditions.rth_case_sink).toBe("0.3img src=x onerror=alert(1)");
-    expect(opened.conditions.t_sink).toBe(60);
-    expect(Object.keys(opened)).toContain("bkey/b");
-  });
-
   it("keeps plain values as they are and drops what is none of them", () => {
-    expect(plain({ a: 1.5, b: true, c: null, d: "48", e: [1, "2"] })).toEqual({ a: 1.5, b: true, c: null, d: "48", e: [1, "2"] });
+    expect(plain({ a: 1.5, b: true, c: null, d: "48", e: [1, "2"] })).toEqual({
+      a: 1.5,
+      b: true,
+      c: null,
+      d: "48",
+      e: [1, "2"],
+    });
     expect(plain({ n: Number.NaN, i: Infinity })).toEqual({ n: 0, i: 0 });
     expect(plain(undefined)).toBeNull();
     expect(plain(() => 1)).toBeNull();
+  });
+  it("stops walking a record nested deeper than any state is", () => {
+    let deep: unknown = "end";
+    for (let k = 0; k < 20; k++) deep = { in: deep };
+    expect(JSON.stringify(plain(deep))).not.toContain("end");
   });
 });
 

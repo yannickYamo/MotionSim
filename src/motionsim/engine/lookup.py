@@ -23,8 +23,9 @@ def _eval_curve(curve: Curve, current: np.ndarray) -> np.ndarray:
     return out
 
 
-def evaluate(curves: list[Curve], current: np.ndarray, tj: float) -> np.ndarray:
-    """Value at each current for junction temperature tj.
+def evaluate(curves: list[Curve], current: np.ndarray, tj: float | np.ndarray) -> np.ndarray:
+    """Value at each current for junction temperature tj: one temperature for all the
+    currents, or one for each.
 
     Between temperatures the result is linear in tj, and it stays linear
     outside the characterised temperatures. A single curve has no temperature
@@ -33,12 +34,21 @@ def evaluate(curves: list[Curve], current: np.ndarray, tj: float) -> np.ndarray:
     current = np.asarray(current, dtype=float)
     if len(curves) == 1:
         return _eval_curve(curves[0], current)
-    temps = [c.tj for c in curves]
-    hi = int(np.clip(np.searchsorted(temps, tj), 1, len(curves) - 1))
-    lo = hi - 1
-    y_lo = _eval_curve(curves[lo], current)
-    y_hi = _eval_curve(curves[hi], current)
-    w = (tj - temps[lo]) / (temps[hi] - temps[lo])
+    temps = np.array([c.tj for c in curves])
+    if np.ndim(tj) == 0:
+        hi = int(np.clip(np.searchsorted(temps, tj), 1, len(curves) - 1))
+        lo = hi - 1
+        y_lo = _eval_curve(curves[lo], current)
+        y_hi = _eval_curve(curves[hi], current)
+        w = (tj - temps[lo]) / (temps[hi] - temps[lo])
+        return y_lo + w * (y_hi - y_lo)
+    tj = np.broadcast_to(np.asarray(tj, dtype=float), current.shape)
+    above = np.clip(np.searchsorted(temps, tj), 1, len(curves) - 1)
+    below = above - 1
+    values = np.stack([_eval_curve(c, current) for c in curves])
+    at = np.arange(current.size)
+    y_lo, y_hi = values[below, at], values[above, at]
+    w = (tj - temps[below]) / (temps[above] - temps[below])
     return y_lo + w * (y_hi - y_lo)
 
 

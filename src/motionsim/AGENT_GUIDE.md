@@ -14,12 +14,13 @@ them to a person, carry the cautions and the "what this rests on" section with t
 1. **Describe the part.** One of:
    - a made-up part to try things with: `example-mosfet` (100 V, 100 A) or `example` (600 V, 30 A IGBT module);
    - a device file the user already has (`*.device.yaml`);
-   - a transistor typed from its datasheet: `motionsim template device -o part.yaml`,
+   - a transistor typed from its datasheet: `motionsim template device -o part.yaml` (`template igbt` for an IGBT and its diode),
      fill in the figures (units are the datasheet's: mΩ, nC, pF, V, A, K/W), and name
      `part.yaml` under `devices`. A figure that cannot be right is refused with its name.
 2. **Start a design.** `motionsim design init --device part.yaml -o design.yaml` writes a
-   design sized to the part: the supply it suits, the usual kind of motor wound for that
-   supply, a design point, and the usual load for that motor.
+   design sized to the part: the supply it suits, the kind of motor the drives of its class
+   run (by its voltage, current, technology and package) wound for that supply, its rated
+   point as the design point, and the usual load for that motor.
 3. **Put in what you know.** Edit `design.yaml`: the motor's catalogue figures, the supply
    voltage, the hardest speed and torque, switching frequency, cooling, the load and its
    motion. Leave the gate drive out and it is chosen and stated.
@@ -27,15 +28,26 @@ them to a person, carry the cautions and the "what this rests on" section with t
    add `--md report.md` to also write the report in Markdown for a person.
 5. **Read the outcome and the reasons, change the design, run again.**
 
-## Exit status of `design run`
+## Exit status
 
-| Status | Meaning |
-|---|---|
-| 0 | The part passes, with or without cautions. Read the cautions. |
-| 3 | No part passes, or the part followed passes at the design point and fails a check through the motion. `verdict.candidates[].checks` and `motion.checks` say which check failed and why. |
-| 4 | Undecided: the estimate is under the rating and the top of its range is over it, so what the datasheet leaves out decides; or it passes as drawn on losses taken beyond the datasheet's last data point, and would not if they were as far off as they can be. `outcome` is `undecided`; the temperature check says what would narrow it. Do not treat it as a pass. |
-| 2 | The design cannot be run as written, in whole or in one step. The output has `refused` (why), `fix` (what to change) and `field` (which figure) at the top, for the first step refused, and `refusals` lists every such step by name; each of those steps holds its own three in its place. Also a file that cannot be read, or a report that cannot be written where it was asked for: said in one line on the error stream. |
-| 1 | A fault in the tool. Report it; do not work around it. |
+Every command exits with one of these, and `motionsim --help` prints the same table:
+
+```
+{EXIT_STATUS}
+```
+
+What each means for `design run`, and what to read next:
+
+- **0.** The part passes, with or without cautions. Read the cautions.
+- **3.** No part passes, or the part followed passes at the design point and fails a check through the motion, or has no stable junction temperature in it. `verdict.candidates[].checks` and `motion.checks` say which check failed and why.
+- **4.** Undecided: the estimate is under the rating and the top of its range is over it, so what the datasheet leaves out decides; or it passes as drawn on losses taken beyond the datasheet's last data point, and would not if they were as far off as they can be. `outcome` is `undecided`; the temperature check says what would narrow it. Do not treat it as a pass.
+- **2.** The design cannot be run as written, in whole or in one step, and `outcome` is `refused` even where the steps that ran passed. The output has `refused` (why), `fix` (what to change) and `field` (which figure) at the top, for the first step refused, and `refusals` lists every such step by name; each of those steps holds its own three in its place. Also a file that cannot be read, or a report that cannot be written where it was asked for.
+- **1.** A fault in the tool. Report it; do not work around it. `MOTIONSIM_TRACE=1` shows where it happened.
+
+With `--json` the output is always one JSON document: the answer, or
+`{"outcome": "refused", "refused": ..., "fix": ..., "field": ...}`, or
+`{"outcome": "fault", "error": ...}`. Without it a refusal or a fault is one or two lines
+on the error stream.
 
 ## The design file
 
@@ -44,9 +56,9 @@ devices: [part.yaml]          # one to five; the first that passes is followed f
 motor:                        # `motionsim template pmsm|bldc|induction|dc|stepper` for the figures of each kind
   type: pmsm
   pole_pairs: 7
-  kv: 100                     # rpm/V
-  l: 0.00012                  # H, phase
-  rs: 0.045                   # ohm, phase
+  kv: 100                     # rpm/V; or kt in N·m per A rms (bldc and dc: kt in N·m/A, or kv)
+  l: 0.00012                  # H, phase: half the line-to-line figure (bldc takes line to line)
+  rs: 0.045                   # ohm, phase: half the line-to-line figure
   i_max: 40                   # A rms; leave out if unknown
 conditions:
   v_dc: 48                    # V
@@ -64,7 +76,8 @@ conditions:
   # optional: v_drive, rg_on, rg_off (ohm), t_dead (s), l_loop (H), t_min_pulse (s),
   #   t_motor (°C, the winding's temperature), t_sink_max (°C, the most a heatsink sized may reach: 100),
   #   t_ambient (°C, the air a heatsink is sized for: 40),
-  #   pwm: sine | third-harmonic | space-vector | discontinuous | discontinuous-high | discontinuous-low
+  #   pwm: sine | third-harmonic | space-vector | discontinuous | discontinuous-high | discontinuous-low,
+  #   edge_limit: cable (5 V/ns, the default) | close (20 V/ns) | none: how fast an edge chosen gate resistors allow
 supply: one-way               # one-way (a power supply) | battery (takes braking energy back)
 # optional, with a load and profile:
 #   repeats: 1                # the motion run this many times back to back, 1 to 50
@@ -129,9 +142,20 @@ and is named in `refusals` at the top.
 | Which part over the whole duty, not one point? | list them under `devices` with a load and profile; read `motions` |
 | The comparison in a spreadsheet? | `--csv table.csv`: a row a device, a row a motor |
 | A setting swept (frequency, voltage, cooling)? | run the design once for each value; each run is independent |
+| How fast does it switch, and how far does it overshoot and ring? | `motionsim event design.yaml --json` (`--layout` a file from `motionsim template layout`); read `turn_on`, `turn_off` and `assumed` |
 
 Single questions also have their own commands (`motionsim --help`): `simulate`, `motor`,
-`map`, `propose`, `compare`, `recommend`, `cycle`, `max-current`.
+`map`, `propose`, `compare`, `recommend`, `cycle`, `max-current`, `trajectory`, `advise`.
+Each takes a device as a file or as `example-mosfet` or `example`, checks its conditions as
+a design's are checked, takes `--json`, and exits with the statuses above. `motionsim
+examples` lists the made-up parts, motors, loads and motions that come with the tool, with
+where they are; a command takes any of them by its bare name.
+
+`max-current` gives the largest current that passes: the one at which the top of the hottest
+junction's range, across the thermal assumptions and what a loss drawn past the data could
+add, reaches the limit. The current at which the typical estimate alone would reach it is
+printed beside it (`i_max_typical`); a point between the two is undecided. The limit is the
+part's rating, or a lower one given with `--tj`; a heatsink at or above it is refused.
 
 ## Rules for an agent
 

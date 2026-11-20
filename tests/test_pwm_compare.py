@@ -47,11 +47,13 @@ def test_discontinuous_pwm_halves_switching_loss_at_unity_power_factor() -> None
     assert held.switch.turn_on == pytest.approx(0.5 * sine.switch.turn_on, rel=0.01)
 
 
-def test_space_vector_reaches_beyond_sine_without_a_warning() -> None:
+def test_space_vector_reaches_beyond_sine_and_sine_is_refused_there() -> None:
+    from motionsim.errors import BadFigure
+
     r = solve(device(), op(pwm=Pwm.space_vector, modulation_index=1.1))
     assert not any("linear range" in n for n in r.notes)
-    r = solve(device(), op(modulation_index=1.1))
-    assert any("linear range" in n for n in r.notes)
+    with pytest.raises(BadFigure, match="linear range"):
+        op(modulation_index=1.1)
 
 
 def test_neighbour_heating_adds_to_every_junction() -> None:

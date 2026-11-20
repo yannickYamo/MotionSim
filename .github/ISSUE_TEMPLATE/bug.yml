@@ -1,0 +1,41 @@
+name: Something does not work
+description: A crash, a refusal that makes no sense, a page that stops answering, a command that fails.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Please do not attach a datasheet (it is its maker's property) or name a real part: a design file or a device file with the name changed is enough.
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did, and what happened
+      description: The command you ran or the steps on the page, and what came back. Paste the message in full.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: The design file
+      description: The file you gave to `motionsim design run`, or the setup saved from the page ("Save this setup"). Without it the fault usually cannot be reproduced.
+      render: yaml
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What `motionsim --version` prints, or "the live page" with the date.
+      placeholder: motionsim 1.2.3
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: Operating system and Python version; for the page, the browser.
+      placeholder: Windows 11, Python 3.12

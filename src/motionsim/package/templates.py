@@ -18,6 +18,10 @@ from functools import lru_cache
 
 import numpy as np
 
+from motionsim.package.column import Column, Layer, sized, trimmed
+from motionsim.package.kept import kept
+from motionsim.package.materials import IGBT_DENSITY, Die
+from motionsim.package.materials import SILICON as SILICON_DIE
 from motionsim.package.plate import ChipSite, Plate, Stack, step_response, thermal_matrix
 
 VARIANTS = ("low", "typical", "high")  # low: least heating, high: most
@@ -41,9 +45,10 @@ MOULDED_INTERFACE = {
     "pad": INTERFACE["pad"],
 }
 
-# Rated current per unit of switch chip area, A/m2. A denser chip is smaller
-# and heats more, so the "high" case has the highest density.
-CURRENT_DENSITY = {"low": 1.2e6, "typical": 1.6e6, "high": 2.2e6}
+# Rated current per unit of switch chip area: the technology's usual figure (see
+# materials.current_density; that of a silicon IGBT where none is given) times these. A
+# denser chip is smaller and heats more, so the "high" case has the highest density.
+DENSITY_SPREAD = {"low": 0.75, "typical": 1.0, "high": 1.375}
 DIODE_AREA_SHARE = 0.5  # antiparallel diode area over switch area
 
 
@@ -83,8 +88,8 @@ def _series(*layers: tuple[float, float]) -> tuple[float, float]:
     return thickness / sum(t / k for k, t in layers), thickness
 
 
-def _sides(i_rated: float, variant: str) -> tuple[float, float]:
-    switch = i_rated / CURRENT_DENSITY[variant]
+def _sides(i_rated: float, variant: str, density: float | None = None) -> tuple[float, float]:
+    switch = i_rated / ((density or IGBT_DENSITY) * DENSITY_SPREAD[variant])
     return float(np.sqrt(switch)), float(np.sqrt(DIODE_AREA_SHARE * switch))
 
 
@@ -99,13 +104,15 @@ def _row(names: list[str], sides: list[float], gap: float, margin: float):
     return tuple(ChipSite(n, cx, height / 2, s, s) for n, cx, s in chips), width, height
 
 
-def _six_pack(i_rated: float, variant: str, interface: str, *, substrate: bool) -> PackageModel:
+def _six_pack(
+    i_rated: float, variant: str, interface: str, *, substrate: bool, density: float | None = None
+) -> PackageModel:
     """Three-phase bridge in one moulded package.
 
     The three high-side switches and diodes share one copper area (the positive
     rail); each low-side switch and diode pair sits on its own phase area.
     """
-    sw, d = _sides(i_rated, variant)
+    sw, d = _sides(i_rated, variant, density)
     gap = {"low": 2.5e-3, "typical": 2.0e-3, "high": 1.5e-3}[variant]
     margin = 1.0e-3
     rail, w, h = _row(
@@ -157,10 +164,12 @@ TABS = {
 }
 
 
-def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, diode: bool) -> PackageModel:
+def _discrete(
+    outline: str, i_rated: float, variant: str, interface: str, *, diode: bool, density: float | None = None
+) -> PackageModel:
     """One switch, with or without a diode beside it, on the package's copper tab."""
     width, height, thickness = TABS[outline]
-    sw, d = _sides(i_rated, variant)
+    sw, d = _sides(i_rated, variant, density)
     # A chip is no larger than the tab it sits on, whatever its rating would ask for.
     sw, d = min(sw, width, height), min(d, width, height)
     if diode:
@@ -170,7 +179,7 @@ def _discrete(outline: str, i_rated: float, variant: str, interface: str, *, dio
         fit = min(1.0, (height - gap) / (sw + d))
         sw, d = sw * fit, d * fit
         low = max((height - (sw + gap + d)) / 2, 0.0)
-        chips = (
+        chips: tuple[ChipSite, ...] = (
             ChipSite("switch", width / 2, low + sw / 2, sw, sw),
             ChipSite("diode", width / 2, low + sw + gap + d / 2, d, d),
         )
@@ -196,13 +205,16 @@ def build(
     interface: str = "grease",
     *,
     diode: bool = True,
+    density: float | None = None,
 ) -> PackageModel:
+    """density is the rated current over a unit of chip area usual for the technology, A/m2;
+    left out, a silicon IGBT's."""
     if template == "leadframe-module":
-        return _six_pack(i_rated, variant, interface, substrate=False)
+        return _six_pack(i_rated, variant, interface, substrate=False, density=density)
     if template == "substrate-module":
-        return _six_pack(i_rated, variant, interface, substrate=True)
+        return _six_pack(i_rated, variant, interface, substrate=True, density=density)
     if template in TABS:
-        return _discrete(template, i_rated, variant, interface, diode=diode)
+        return _discrete(template, i_rated, variant, interface, diode=diode, density=density)
     raise ValueError(f"unknown package template {template!r}; choose from {', '.join(TEMPLATES)}")
 
 
@@ -243,19 +255,106 @@ def shared_time(template: str, i_rated: float, interface: str = "grease") -> flo
     return stack.c_plate * stack.t_plate * stack.t_insulation / stack.k_insulation
 
 
+def _summary_back(v: list) -> Summary:
+    switch, diode, coupling, interface = v
+    return Summary(float(switch), None if diode is None else float(diode), float(coupling), float(interface))
+
+
+def _stages_plain(stages: tuple[tuple[float, float], ...]) -> list:
+    return [[float(r), float(tau)] for r, tau in stages]
+
+
+def _stages_back(v: list) -> tuple[tuple[float, float], ...]:
+    return tuple((float(r), float(tau)) for r, tau in v)
+
+
 @lru_cache(maxsize=256)
+@kept(
+    "summary",
+    lambda s: [s.self_switch, s.self_diode, s.coupling, s.interface],
+    _summary_back,
+)
 def summary(
     template: str,
     i_rated: float,
     variant: str = "typical",
     interface: str = "grease",
     diode: bool = True,
+    density: float | None = None,
 ) -> Summary:
     """Cached summarise(build(...)): the calculation takes a noticeable fraction of a second."""
-    return summarise(build(template, i_rated, variant, interface, diode=diode))
+    return summarise(build(template, i_rated, variant, interface, diode=diode, density=density))
+
+
+ATTACH = Layer(50.0, 1.7e6, 50e-6, slices=3)  # solder under the die
+CERAMIC = Layer(ALUMINA, 3.0e6, 0.38e-3, spreads=True, slices=6)
+SPREADING_ANGLE = 45.0  # degrees: the usual figure for heat widening in copper under a die
+
+
+def _column_layers(template: str, die: Die) -> tuple[tuple[Layer, ...], float, float]:
+    """The layers under a die where heat goes straight down to the case: a discrete package's
+    tab, or a ceramic substrate with its copper. With them, how wide the copper is, and how
+    long heat takes to cross it sideways, s."""
+    top = (Layer(die.k, die.c, die.thickness, slices=12), ATTACH)
+    if template in TABS:
+        width, height, thickness = TABS[template]
+        across = max(width, height)
+        copper = Layer(COPPER, Stack.c_plate, thickness, spreads=True, slices=10)
+        return (*top, copper), min(width, height), _crossing(across / 2, COPPER, Stack.c_plate)
+    copper = Layer(COPPER, Stack.c_plate, 0.3e-3, spreads=True, slices=6)
+    reach = float(np.sqrt(COPPER * 0.3e-3 * 0.38e-3 / ALUMINA))  # how far heat spreads on the substrate
+    return (*top, copper, CERAMIC, copper), float("inf"), _crossing(reach, COPPER, Stack.c_plate)
+
+
+def _crossing(length: float, k: float, c: float) -> float:
+    """The slowest time constant of heat crossing a length with one end held: 4·L²/(π²·α)."""
+    return 4 * length**2 * c / (np.pi**2 * k)
+
+
+def has_column(template: str) -> bool:
+    """Whether heat in this package goes straight down under the die. In a moulded leadframe
+    module it does not: the leadframe spreads it sideways, far beyond its own thickness,
+    before it crosses the moulding compound, and the plate equation describes that."""
+    return template in TABS or template == "substrate-module"
+
+
+@lru_cache(maxsize=512)
+@kept("column", _stages_plain, _stages_back)
+def column_response(
+    template: str,
+    rth: float,
+    variant: str = "typical",
+    die: Die = SILICON_DIE,
+    area: float | None = None,
+) -> tuple[tuple[float, float], ...]:
+    """Shape of a chip's junction-to-case step response from one-dimensional conduction
+    through the die, the die attach and the copper under it (see column.py), for a chip
+    whose datasheet gives the resistance rth and no curve.
+
+    Returns stages as (share of rth, time constant in s). The die is sized so that the
+    column's own resistance is rth: the stages then add up to the datasheet's figure
+    exactly, and their time constants follow from the geometry.
+
+    That is the fast end of what a real package does. A published curve of a discrete part
+    is slower between 0.1 and 100 ms, because part of a datasheet's figure is heat spreading
+    along the tab to a case that is not at one temperature. The "low" variant stands for
+    that: the die is as large as its current rating allows (area, m2), and what the column
+    under it does not explain of rth is one more stage with the time heat takes to cross
+    the copper sideways. Where the column under that die already explains rth, low is the
+    typical shape.
+    """
+    layers, widest, crossing = _column_layers(template, die)
+    if variant == "low" and area is not None:
+        large = Column(min(float(np.sqrt(area)), widest), layers, SPREADING_ANGLE, widest)
+        if large.resistance < rth:
+            r, tau = large.stages()
+            left = rth - large.resistance
+            return trimmed(np.append(r, left), np.append(tau, crossing))
+    return trimmed(*sized(rth, layers, SPREADING_ANGLE, widest).stages())
 
 
 @lru_cache(maxsize=256)
+@kept("response", _stages_plain, _stages_back)
 def response_shape(
     template: str,
     i_rated: float,
@@ -263,25 +362,32 @@ def response_shape(
     interface: str = "grease",
     chip: str = "switch",
     diode: bool = True,
+    density: float | None = None,
 ) -> tuple[tuple[float, float], ...]:
-    """Shape of a chip's thermal step response in a generic package of this kind.
+    """Shape of a chip's thermal step response in a generic moulded leadframe module,
+    junction to the package's own face.
 
     Returns stages as (share of the steady resistance, time constant in s),
     fitted to the response computed from the package's copper and die heat
     capacities. Applied to a datasheet's thermal resistance when it gives no
-    transient curve.
+    transient curve. For a package where heat goes straight down under the die
+    see column_response.
     """
     from motionsim.fit.foster import fit_foster
 
-    model = build(template, i_rated, variant, interface, diode=diode)
+    model = build(template, i_rated, variant, interface, diode=diode, density=density)
     plate = model.plates[0]
     index = next(k for k, c in enumerate(plate.chips) if chip in c.name)
     times = np.geomspace(2e-5, 20.0, 36)
-    # Junction to the package's own face where the template has one (the modules): the layer
-    # under the package belongs to the mounting and has its own place in the result. A discrete
-    # outline's tab is its face, and its template carries the layer under it, so its shape
-    # is drawn with that layer in.
+    # Junction to the package's own face: the layer under the package belongs to the
+    # mounting and has its own place in the result.
     z = step_response(plate, model.case or model.stack, index, times)
     fit = fit_foster(times, z, max_order=3, target=0.05)
     total = sum(fit.r)
     return tuple((r / total, tau) for r, tau in zip(fit.r, fit.tau, strict=True))
+
+
+def chip_area(i_rated: float, variant: str, chip: str = "switch", density: float | None = None) -> float:
+    """Area of a chip rated for this current, m2."""
+    switch, diode_side = _sides(i_rated, variant, density)
+    return diode_side**2 if chip == "diode" else switch**2

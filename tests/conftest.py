@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from motionsim.device import (
     Chip,
     ConductionModel,
@@ -119,3 +121,49 @@ def pytest_addoption(parser) -> None:
         default=False,
         help="rewrite the golden figures from the code as it is: only where a change in results is meant",
     )
+
+
+def pytest_configure(config) -> None:
+    """The evals are kept beside the package, not in it: tests reach them from the repository
+    root. (The marker the reader's eval runs under, `reader_eval`, is named in pyproject.toml.)"""
+    import sys
+    from pathlib import Path
+
+    root = str(Path(__file__).resolve().parent.parent)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    # The package figures kept between runs go to a folder of the test run's own, never the
+    # user's: every test, and every command a test starts, works them out afresh at first.
+    import os
+    import tempfile
+
+    os.environ.setdefault("MOTIONSIM_CACHE", tempfile.mkdtemp(prefix="motionsim-cache-"))
+
+
+def zth(network, t):
+    """Thermal impedance of a Foster network at time t after a power step, K/W, written out
+    here as the sum of its stages so that a test holds the engine to the formula."""
+    import numpy as np
+
+    if network.tau is None:
+        raise ValueError("this thermal model has no time constants; only steady state is known")
+    t = np.asarray(t, dtype=float)
+    return (np.asarray(network.r) * (1 - np.exp(-t[..., None] / np.asarray(network.tau)))).sum(axis=-1)
+
+
+def load_trajectory(path):
+    """A trajectory file as the command line reads it."""
+    from motionsim.files import read_text
+    from motionsim.trajectory import parse_trajectory
+
+    return parse_trajectory(read_text(path, "trajectory", "trajectory"))
+
+
+@pytest.fixture(autouse=True)
+def _nothing_kept_from_another_test():
+    """Each test asks the engine afresh: an answer kept for another test, one that changed
+    some part of the engine for its own sake, is never handed to this one."""
+    from motionsim.service import remembered
+
+    remembered.forget()
+    yield

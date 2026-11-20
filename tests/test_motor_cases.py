@@ -135,9 +135,11 @@ def test_a_series_motor_on_an_h_bridge_ripples_against_its_whole_winding() -> No
 
 def test_interior_magnets_with_lq_below_ld_are_refused() -> None:
     motor = dict(type="pmsm", magnets="interior", pole_pairs=4, flux_linkage=0.1, ld=0.010, lq=0.005, rs=1.0)
-    with pytest.raises(ValidationError, match="Lq is at least as large as Ld"):
+    with pytest.raises(ValidationError, match="cross-axis inductance is at least the other"):
         ADAPTER.validate_python(motor)
     assert ADAPTER.validate_python({**motor, "ld": 0.005, "lq": 0.010}).lq == 0.010
+    # Equal on both axes is at least the other: the inset magnet that adds no saliency.
+    assert ADAPTER.validate_python({**motor, "ld": 0.005, "lq": 0.005}).lq == 0.005
 
 
 @pytest.mark.parametrize("torque", [0.9, -0.9])
@@ -218,7 +220,7 @@ def test_advice_leaves_out_standstill_when_the_torque_cannot_be_held_there() -> 
 
 def test_a_250_v_device_suits_a_150_v_supply_which_is_mains_level_and_still_low_for_wound_motors() -> None:
     # Two thirds of 250 V is 167 V: the highest usual supply under it is 150 V.
-    bus, fits = motors_for(250, 1)
+    bus, fits = motors_for(250, 1, 20, "Si MOSFET")
     assert bus == 150
     assert fits["induction"].fit == "suits" and "mains-level" in fits["induction"].why
     assert fits["synrm"].fit == "suits"
@@ -226,7 +228,7 @@ def test_a_250_v_device_suits_a_150_v_supply_which_is_mains_level_and_still_low_
 
 
 def test_brushed_motors_and_steppers_are_said_to_be_seldom_wound_above_200_v() -> None:
-    bus, fits = motors_for(650, 1)
+    bus, fits = motors_for(650, 1, 20, "Si IGBT")
     assert bus == 400
     for kind in ("dc", "stepper"):
         assert fits[kind].fit == "unusual"
@@ -234,9 +236,9 @@ def test_brushed_motors_and_steppers_are_said_to_be_seldom_wound_above_200_v() -
 
 
 def test_a_two_leg_package_recommends_a_brushed_motor_only_at_low_voltage() -> None:
-    _, low = motors_for(100, 4)
+    _, low = motors_for(100, 4, 20, "Si MOSFET")
     assert low["dc"].fit == "recommended" and low["pmsm"].fit == "suits"
-    _, high = motors_for(650, 4)
+    _, high = motors_for(650, 4, 20, "Si MOSFET")
     assert high["dc"].fit == "unusual" and "seldom wound" in high["dc"].why
     assert high["pmsm"].fit == "recommended"
     assert [k for k, f in high.items() if f.fit == "recommended"] == ["pmsm"]

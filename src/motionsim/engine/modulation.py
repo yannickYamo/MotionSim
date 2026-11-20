@@ -102,6 +102,18 @@ class Role:
     current_on: np.ndarray | None = None
     current_off: np.ndarray | None = None
 
+    def __eq__(self, other: object) -> bool:
+        """Alike where every waveform is alike: arrays do not compare as one truth."""
+        if not isinstance(other, Role):
+            return NotImplemented
+        mine, theirs = vars(self), vars(other)
+        return all(
+            np.array_equal(mine[k], theirs[k]) if isinstance(mine[k], np.ndarray) else mine[k] == theirs[k]
+            for k in mine
+        )
+
+    __hash__ = None  # type: ignore[assignment]
+
 
 def phase_leg_role(w: PhaseWaveform, count: int = 6, name: str = "phase leg") -> Role:
     """The role every position plays under sinusoidal operation.

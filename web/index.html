@@ -2,12 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="dark" />
+    <!-- The page runs its own code and nothing else. In the browser the engine's numerical
+         libraries are fetched from one public file server, each checked against its hash. -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'"
+    />
     <title>MotionSim</title>
-    <meta name="description" content="Bring a power transistor's datasheet figures, your motor and your load: see what a three-phase motor inverter loses, how hot it gets, and whether the part suits the job. Open source, runs in your browser." />
+    <meta
+      name="description"
+      content="Bring a power transistor's datasheet figures, your motor and your load: see what a three-phase motor inverter loses, how hot it gets, and whether the part suits the job. Open source, runs in your browser."
+    />
     <link rel="preload" href="./fonts/funnel-sans-latin.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23141310'/%3E%3Cpath d='M6 9h20M6 23h20M16 9v14' stroke='%23FF4D00' stroke-width='3'/%3E%3C/svg%3E" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23141310'/%3E%3Cpath d='M6 9h20M6 23h20M16 9v14' stroke='%23FF4D00' stroke-width='3'/%3E%3C/svg%3E"
+    />
   </head>
   <body>
     <a class="skip" href="#panel">Skip to the form</a>

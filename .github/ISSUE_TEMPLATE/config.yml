@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A security fault
+    url: https://github.com/yannickYamo/MotionSim/security/advisories/new
+    about: Report it privately, not in a public issue. SECURITY.md says what to include.
+  - name: A question, or how to use it
+    url: https://github.com/yannickYamo/MotionSim/blob/main/docs/GUIDE.md
+    about: The guide goes through every step, every result and the command line.

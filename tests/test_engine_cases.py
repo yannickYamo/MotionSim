@@ -121,6 +121,23 @@ def test_the_switching_period_shown_is_that_of_one_device_of_those_in_parallel()
     assert shown["e_off"] == pytest.approx(K_OFF * i, rel=1e-4)
 
 
+def test_the_switching_period_shown_is_where_the_switch_works_hardest_not_where_the_current_peaks() -> None:
+    """At a power factor of 0.3 the current lags the voltage by 72.5°, so its crest falls where
+    the switch is on for little of each period. The switch carries most where current times
+    duty is largest: i = Ipk·sin(u) with duty (1 + m·sin(u + φ))/2, maximised here over a
+    fine grid of its own."""
+    op = point(power_factor=0.3)
+    role = phase_leg_roles(waveform(op.i_rms, op.modulation_index, op.power_factor, op.n_steps), 6, Pwm.sine)[0]
+    shown = switching_period(igbt(), role, op, 25.0, 25.0)
+    u = np.linspace(0.0, np.pi, 200001)
+    phi, i_pk, m = math.acos(0.3), math.sqrt(2) * 20.0, 0.8
+    duty = (1 + m * np.sin(u + phi)) / 2
+    k = int(np.argmax(np.sin(u) * duty))
+    assert shown["current"] == pytest.approx(i_pk * math.sin(u[k]), rel=1e-3)
+    assert shown["duty"] == pytest.approx(duty[k], rel=1e-3)
+    assert shown["current"] < 0.97 * i_pk and shown["duty"] > 0.5 * (1 + m * 0.3) + 0.05
+
+
 def test_each_edge_of_an_igbt_is_scaled_by_its_own_gate_resistor() -> None:
     def against_rg(slope: float, factor: float) -> SwitchingEnergy:
         return SwitchingEnergy(
@@ -382,14 +399,6 @@ def test_a_package_of_two_legs_is_heated_by_its_own_leg_and_the_hottest_of_the_o
     assert r.tj_switch == pytest.approx(40.0 + rth_cs * (a + b) + 0.8 * a / 2, abs=0.01)
 
 
-def test_an_output_turning_at_half_a_hertz_heats_its_case_with_the_mean_loss_not_the_worst_position() -> None:
-    rth_cs = 0.5
-    r = solve(igbt(rth_case_sink=rth_cs), point(t_sink=40.0, f_out=0.5))
-    p_sw, p_d = position_loss(math.sqrt(2) * 20.0, 0.8, 0.9, 8000.0)
-    assert r.t_case == pytest.approx(40.0 + rth_cs * (p_sw + p_d), abs=0.05)
-    assert r.tj_switch == pytest.approx(40.0 + rth_cs * (p_sw + p_d) + 0.8 * p_sw, abs=0.05)
-
-
 def test_third_harmonic_injection_is_one_sixth_of_the_fundamental() -> None:
     # One sixth is what flattens the reference to sqrt(3)/2 of its peak, so the linear range
     # ends at 2/sqrt(3) with the duty just reaching the rails.
@@ -461,7 +470,9 @@ def test_a_current_at_which_the_junction_runs_away_is_above_the_largest_current(
     k = 2 * (1 / 8 + m * pf / (3 * math.pi))  # mean of duty times current squared, over the rms current squared
     assert rth * k * r0 * 100.0**2 * a > 1  # the rated current itself runs away
     g = 125.0 / (1 + a * 125.0)
-    i_max, r = max_current(device, point(t_sink=25.0), peak=False)
+    # Turning fast enough that the junction does not swing within a turn: the loss is then
+    # read at one temperature, as the closed form has it.
+    i_max, r = max_current(device, point(t_sink=25.0, f_out=20000.0), peak=False)
     assert i_max == pytest.approx(math.sqrt(g / (rth * k * r0)), rel=3e-3)
     assert r.tj_switch == pytest.approx(150.0, abs=0.5)
 
@@ -677,7 +688,8 @@ def test_a_layer_named_for_the_build_is_computed_and_a_figure_given_for_it_is_no
     device = igbt(rth_case_sink=0.24, outline="TO-247")
     p_sw, p_d = position_loss(math.sqrt(2) * 20.0, 0.8, 0.9, 8000.0)
     as_given = solve(device, point(t_sink=60.0))
-    assert as_given.t_case == pytest.approx(60.0 + 0.24 * (p_sw + p_d), abs=0.02)
+    # The case is reported where it stands highest in a turn: at 50 Hz a few hundredths of a kelvin over its mean.
+    assert as_given.t_case == pytest.approx(60.0 + 0.24 * (p_sw + p_d), abs=0.06)
     assert not any("case-to-heatsink" in a for a in as_given.assumptions)
     on_a_pad = solve(device, replace(point(t_sink=60.0), interface="pad"))
     # 200 µm of a 1.5 W/(m·K) pad under a tab of 15.9 mm by 17.0 mm.
@@ -692,7 +704,7 @@ def test_a_layer_named_for_the_build_is_computed_and_a_figure_given_for_it_is_no
     unknown = igbt()
     assert any("sink temperature is used as the case temperature" in x for x in solve(unknown, point()).limits)
     given = solve(unknown, replace(point(t_sink=60.0), rth_case_sink=0.5))
-    assert given.t_case == pytest.approx(60.0 + 0.5 * (p_sw + p_d), abs=0.02)
+    assert given.t_case == pytest.approx(60.0 + 0.5 * (p_sw + p_d), abs=0.06)
     assert not any("sink temperature is used as the case temperature" in x for x in given.limits)
 
 

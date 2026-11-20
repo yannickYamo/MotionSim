@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import numpy as np
 
+from motionsim.device.rise import with_usual_rise
 from motionsim.device.schema import (
     Basis,
     ChargeModel,
     Chip,
+    ChipKind,
     ConductionModel,
     Curve,
     Device,
@@ -15,11 +19,13 @@ from motionsim.device.schema import (
     Ratings,
     ReviewStatus,
     Source,
+    SourceKind,
     SwitchingEnergy,
 )
 from motionsim.fit.sparse import (
     MissingData,
     NoGateCharge,
+    curve_at,
     curve_source,
     digitised_curves,
     energy_of,
@@ -30,10 +36,12 @@ from motionsim.fit.sparse import (
     spread_of,
     thermal_of,
     timing_of,
+    turn_on_at_no_current,
+    typical,
     usable_rows,
 )
 from motionsim.observe.schema import Observation, ObservationSet, Quantity
-from motionsim.text import written
+from motionsim.text import rounded
 
 PLATEAU_ASSUMPTION = (
     "plateau voltage not tabulated; estimated as threshold voltage times gate-source charge "
@@ -49,6 +57,12 @@ THRESHOLD_CHARGE_ASSUMPTION = (
 OSS_FROM_CAPACITANCE = (
     "output charge not tabulated; estimated from the output capacitance at {v:g} V as twice "
     "capacitance times voltage, the charge of an abrupt junction"
+)
+QG_NOT_ABOVE = "the total gate charge is not above the gate-source and gate-drain charges together: it holds both"
+QG_DRIVE_LOW = "the total gate charge has to be given at a gate voltage above the plateau"
+QG_NO_DRIVE = (
+    "total gate charge tabulated with no gate voltage, so it is left out: the charge above the plateau "
+    "cannot be had without it, and the dead time is an estimate said to be one"
 )
 OSS_MISSING = "no output charge or capacitance tabulated; output-capacitance loss is left out"
 REVERSE_ASSUMPTION = (
@@ -67,7 +81,7 @@ def _printed(o: Observation) -> str:
 def _source(obs: ObservationSet, rows: list[Observation], note: str) -> Source:
     verified = all(o.status is ReviewStatus.verified for o in rows)
     return Source(
-        kind="datasheet",
+        kind=SourceKind.datasheet,
         document=obs.document.file,
         page=rows[0].page,
         note=note,
@@ -98,20 +112,18 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
         values = ", ".join(f"{_printed(o)} at {t:g} °C" for t, o in sorted(by_temperature.items()))
         return ConductionModel(
             curves=[
-                Curve(tj=t, current=[0.0, i_top], value=[0.0, o.typ * i_top]) for t, o in sorted(by_temperature.items())
+                Curve(tj=t, current=[0.0, i_top], value=[0.0, typical(o) * i_top])
+                for t, o in sorted(by_temperature.items())
             ],
             source=_source(obs, rows, f"on-resistance from the tables: {values}"),
         )
     if shape is None:
-        return ConductionModel(
-            curves=[Curve(tj=25.0, current=[0.0, i_top], value=[0.0, rds.typ * i_top])],
-            source=_source(obs, [rds], f"on-resistance {_printed(rds)} at 25 °C only"),
-        )
+        return _risen(obs, rds, i_top)
     temperatures = [t for t in (25.0, 50.0, 75.0, 100.0, 125.0, 150.0, 175.0) if t <= shape.x[-1]]
     factors = np.interp(temperatures, shape.x, shape.y) / np.interp(25.0, shape.x, shape.y)
     return ConductionModel(
         curves=[
-            Curve(tj=t, current=[0.0, i_top], value=[0.0, float(rds.typ * k * i_top)])
+            Curve(tj=t, current=[0.0, i_top], value=[0.0, float(typical(rds) * k * i_top)])
             for t, k in zip(temperatures, factors, strict=True)
         ],
         source=_source(
@@ -123,11 +135,25 @@ def _conduction(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionM
     )
 
 
+def _risen(obs: ObservationSet, rds: Observation, i_top: float) -> ConductionModel:
+    """A resistance the datasheet gives at one temperature, with the rise its technology
+    usually shows drawn through it and said to be assumed. A part run hot on its 25 °C
+    resistance would be shown losing far too little."""
+    at = 25.0 if rds.tj_c is None else rds.tj_c
+    v_rated = typical(single_value(obs, Quantity.v_rated, "voltage rating", True))
+    return with_usual_rise(
+        Curve(tj=at, current=[0.0, i_top], value=[0.0, typical(rds) * i_top]),
+        obs.technology,
+        v_rated,
+        source=_source(obs, [rds], f"on-resistance {_printed(rds)} at {at:g} °C only"),
+    )
+
+
 def _reverse(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionModel | None:
     digitised = digitised_curves(obs, Quantity.vf, allow)
     if digitised:
         return ConductionModel(
-            curves=[Curve(tj=c.tj_c, current=c.x, value=c.y) for c in digitised],
+            curves=[curve_at(c, c.x, c.y) for c in digitised],
             source=curve_source(obs, digitised, "; reverse voltage with the gate off"),
         )
     try:
@@ -135,7 +161,7 @@ def _reverse(obs: ObservationSet, allow: bool, i_rated: float) -> ConductionMode
     except MissingData:
         return None
     return ConductionModel(
-        curves=[Curve(tj=v_sd.tj_c or 25.0, current=[0.0, i_rated], value=[v_sd.typ, v_sd.typ])],
+        curves=[Curve(tj=v_sd.tj_c or 25.0, current=[0.0, i_rated], value=[typical(v_sd), typical(v_sd)])],
         basis=Basis.point,
         assumption=REVERSE_ASSUMPTION,
         source=_source(obs, [v_sd], f"{_printed(v_sd)} at {v_sd.current_a:g} A, gate off"),
@@ -167,6 +193,75 @@ def _gain(obs: ObservationSet, allow: bool) -> tuple[float, bool] | None:
     return None
 
 
+def _plateau(obs: ObservationSet, allow: bool, i_rated: float, v_th, q_gs, notes: list[str], assumptions: list[str]):
+    """The gate plateau voltage, and the charge at threshold: printed, read from the gate
+    charge figure, or derived from what is printed, with each derivation said."""
+    q_th = _optional(obs, Quantity.q_g_th, allow)
+    plateau = _optional(obs, Quantity.v_plateau, allow)
+    gain = _gain(obs, allow)
+    gate_curve = _curve(obs, Quantity.gate_charge_curve, allow)
+    read = None
+    if gate_curve is not None:
+        from motionsim.observe.charge import plateau as find_plateau
+
+        read = find_plateau(gate_curve.x, gate_curve.y)
+    if plateau is not None:
+        v_plateau = typical(plateau)
+    elif read is not None:
+        v_plateau = read[0]
+        assert gate_curve is not None  # a plateau is read only from a curve
+        notes.append(f"plateau voltage read from {gate_curve.label} (page {gate_curve.page})")
+    elif q_th is not None:
+        v_plateau = typical(v_th) * typical(q_gs) / typical(q_th)
+        assumptions.append(PLATEAU_ASSUMPTION)
+    elif gain is not None:
+        v_plateau = typical(v_th) + i_rated / gain[0]
+        assumptions.append(PLATEAU_FROM_GAIN + (MINIMUM_GAIN if gain[1] else ""))
+    else:
+        raise MissingData(
+            "no gate plateau voltage, and neither a gate charge at threshold nor a transconductance to estimate it from"
+        )
+    if v_plateau <= typical(v_th):
+        raise MissingData("the gate plateau voltage is not above the threshold voltage")
+    if q_th is not None:
+        q_g_th = typical(q_th)
+    else:
+        q_g_th = typical(q_gs) * typical(v_th) / v_plateau
+        assumptions.append(THRESHOLD_CHARGE_ASSUMPTION)
+    return v_plateau, q_g_th
+
+
+def _output_charge(obs: ObservationSet, allow: bool, v_rated: float, q_gd, notes: list[str], assumptions: list[str]):
+    """The output charge, the voltage it is at, how it scales away from it, and the table of
+    it where it comes from a figure."""
+    q_oss = _optional(obs, Quantity.q_oss, allow)
+    c_oss = _optional(obs, Quantity.c_oss, allow)
+    scaling: Literal["linear", "sqrt", "table"] = "linear"
+    oss_curve = _curve(obs, Quantity.c_oss_curve, allow)
+    table: tuple[list[float] | None, list[float] | None] = (None, None)
+    if oss_curve is None and q_oss is not None and q_oss.voltage_v:
+        # One tabulated charge: away from its test voltage it follows the square root of
+        # voltage, as a junction's charge does. Scaling it in proportion would understate it
+        # below the test voltage.
+        charge, v_ref, scaling = typical(q_oss), q_oss.voltage_v, "sqrt"
+    elif oss_curve is not None:
+        from motionsim.observe.charge import output_charge
+
+        volts, charges = output_charge(oss_curve.x, oss_curve.y)
+        table = (volts, charges)
+        charge, v_ref, scaling = charges[-1], volts[-1], "table"
+        notes.append(
+            f"output charge is the area under the output-capacitance curve of {oss_curve.label} (page {oss_curve.page})"
+        )
+    elif c_oss is not None and c_oss.voltage_v:
+        charge, v_ref, scaling = 2 * typical(c_oss) * c_oss.voltage_v, c_oss.voltage_v, "sqrt"
+        assumptions.append(OSS_FROM_CAPACITANCE.format(v=c_oss.voltage_v))
+    else:
+        charge, v_ref = 0.0, q_gd.voltage_v or v_rated / 2
+        assumptions.append(OSS_MISSING)
+    return charge, v_ref, scaling, table
+
+
 def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) -> ChargeModel:
     """Gate and output charge. What the tables leave out is derived from what they give,
     and each derivation is written into the model."""
@@ -176,80 +271,51 @@ def _charge(obs: ObservationSet, allow: bool, i_rated: float, v_rated: float) ->
         raise NoGateCharge(str(none)) from None
     q_gd = single_value(obs, Quantity.q_gd, "gate-drain charge", allow)
     v_th = single_value(obs, Quantity.v_th, "threshold voltage", allow)
-    q_th = _optional(obs, Quantity.q_g_th, allow)
-    plateau = _optional(obs, Quantity.v_plateau, allow)
-    gain = _gain(obs, allow)
-    assumptions = []
+    assumptions: list[str] = []
     notes = ["gate and output charges from the tables"]
-    gate_curve = _curve(obs, Quantity.gate_charge_curve, allow)
-    read = None
-    if gate_curve is not None:
-        from motionsim.observe.charge import plateau as find_plateau
-
-        read = find_plateau(gate_curve.x, gate_curve.y)
-    if plateau is not None:
-        v_plateau = plateau.typ
-    elif read is not None:
-        v_plateau = read[0]
-        notes.append(f"plateau voltage read from {gate_curve.label} (page {gate_curve.page})")
-    elif q_th is not None:
-        v_plateau = v_th.typ * q_gs.typ / q_th.typ
-        assumptions.append(PLATEAU_ASSUMPTION)
-    elif gain is not None:
-        v_plateau = v_th.typ + i_rated / gain[0]
-        assumptions.append(PLATEAU_FROM_GAIN + (MINIMUM_GAIN if gain[1] else ""))
-    else:
-        raise MissingData(
-            "no gate plateau voltage, and neither a gate charge at threshold nor a transconductance to estimate it from"
-        )
-    if v_plateau <= v_th.typ:
-        raise MissingData("the gate plateau voltage is not above the threshold voltage")
-    if q_th is not None:
-        q_g_th = q_th.typ
-    else:
-        q_g_th = q_gs.typ * v_th.typ / v_plateau
-        assumptions.append(THRESHOLD_CHARGE_ASSUMPTION)
-
-    q_oss = _optional(obs, Quantity.q_oss, allow)
-    c_oss = _optional(obs, Quantity.c_oss, allow)
-    scaling = "linear"
-    oss_curve = _curve(obs, Quantity.c_oss_curve, allow)
-    table = (None, None)
-    if oss_curve is None and q_oss is not None and q_oss.voltage_v:
-        # One tabulated charge: away from its test voltage it follows the square root of
-        # voltage, as a junction's charge does. Scaling it in proportion would understate it
-        # below the test voltage.
-        charge, v_ref, scaling = q_oss.typ, q_oss.voltage_v, "sqrt"
-    elif oss_curve is not None:
-        from motionsim.observe.charge import output_charge
-
-        table = output_charge(oss_curve.x, oss_curve.y)
-        charge, v_ref, scaling = table[1][-1], table[0][-1], "table"
-        notes.append(
-            f"output charge is the area under the output-capacitance curve of {oss_curve.label} (page {oss_curve.page})"
-        )
-    elif c_oss is not None and c_oss.voltage_v:
-        charge, v_ref, scaling = 2 * c_oss.typ * c_oss.voltage_v, c_oss.voltage_v, "sqrt"
-        assumptions.append(OSS_FROM_CAPACITANCE.format(v=c_oss.voltage_v))
-    else:
-        charge, v_ref = 0.0, q_gd.voltage_v or v_rated / 2
-        assumptions.append(OSS_MISSING)
+    v_plateau, q_g_th = _plateau(obs, allow, i_rated, v_th, q_gs, notes, assumptions)
+    charge, v_ref, scaling, table = _output_charge(obs, allow, v_rated, q_gd, notes, assumptions)
     q_rr = _optional(obs, Quantity.q_rr, allow)
+    total = _total_gate_charge(obs, allow, typical(q_gs) + typical(q_gd), v_plateau, notes)
     return ChargeModel(
-        q_gs=q_gs.typ,
-        q_gd=q_gd.typ,
-        q_g_th=float(f"{written(q_g_th, 4)}"),
-        v_plateau=float(f"{written(v_plateau, 4)}"),
-        q_oss=float(f"{written(charge, 4)}"),
+        q_gs=typical(q_gs),
+        q_gd=typical(q_gd),
+        q_g_th=rounded(q_g_th, 4),
+        v_plateau=rounded(v_plateau, 4),
+        q_oss=rounded(charge, 4),
         v_ref=v_ref,
         q_oss_scaling=scaling,
         oss_voltage=table[0],
         oss_charge=table[1],
-        q_rr=0.0 if q_rr is None else q_rr.typ,
+        q_rr=0.0 if q_rr is None else typical(q_rr),
         q_rr_current=None if q_rr is None else (q_rr.current_a or None),
+        **total,
         assumption="; ".join(assumptions) or None,
         source=_source(obs, [q_gs, q_gd], "; ".join(notes)),
     )
+
+
+def _total_gate_charge(obs: ObservationSet, allow: bool, below: float, v_plateau: float, notes: list[str]) -> dict:
+    """The total gate charge and the gate voltage it is given at, where the table has both.
+
+    A charge with no voltage is left out and said: what the gate holds above the plateau is
+    the charge over the swing of the gate's voltage, and no usual voltage serves every kind
+    of transistor (a GaN gate is driven at a third of a silicon carbide one's). One that
+    cannot be the charge it says it is, smaller than the two it holds or given at a voltage
+    under the plateau, is refused in the words a typed part is.
+    """
+    q_g = _optional(obs, Quantity.q_g, allow)
+    if q_g is None:
+        return {}
+    if not q_g.voltage_v:
+        notes.append(QG_NO_DRIVE)
+        return {}
+    if typical(q_g) <= below:
+        raise MissingData(QG_NOT_ABOVE)
+    if q_g.voltage_v <= v_plateau:
+        raise MissingData(QG_DRIVE_LOW)
+    notes.append(f"total gate charge from the table at a {q_g.voltage_v:g} V gate")
+    return {"q_g": typical(q_g), "q_g_drive": q_g.voltage_v}
 
 
 def _measured(obs: ObservationSet, allow: bool):
@@ -292,7 +358,7 @@ def _from_times(obs: ObservationSet, allow: bool, i_rated: float) -> tuple[Switc
     if not v_ref:
         raise MissingData("the rise and fall times have no test voltage with them")
     tj = fall.tj_c or 25.0
-    charged = q_oss.typ * v_ref * (v_ref / q_oss.voltage_v) ** 0.5 if q_oss.voltage_v else q_oss.typ * v_ref
+    charged = typical(q_oss) * v_ref * (v_ref / q_oss.voltage_v) ** 0.5 if q_oss.voltage_v else typical(q_oss) * v_ref
     printed = f"rise {_printed(rise)}, fall {_printed(fall)}, output charge {_printed(q_oss)}, at {v_ref:g} V"
 
     def table(at_zero: float, time: float) -> SwitchingEnergy:
@@ -305,15 +371,15 @@ def _from_times(obs: ObservationSet, allow: bool, i_rated: float) -> tuple[Switc
             source=_source(obs, [rise, fall, q_oss], printed),
         )
 
-    return table(charged, rise.typ), table(0.0, fall.typ)
+    return table(charged, typical(rise)), table(0.0, typical(fall))
 
 
 def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
     """Measured switching energy is used where the datasheet tabulates it; the charge model
     is built as well when the tables allow, and is required when there is no energy."""
     a = allow_flagged
-    i_rated = single_value(obs, Quantity.i_rated, "current rating", a).typ
-    v_rated = single_value(obs, Quantity.v_rated, "voltage rating", a).typ
+    i_rated = typical(single_value(obs, Quantity.i_rated, "current rating", a))
+    v_rated = typical(single_value(obs, Quantity.v_rated, "voltage rating", a))
     e_on, e_off, e_rr = _measured(obs, a)
     try:
         charge = _charge(obs, a, i_rated, v_rated)
@@ -327,6 +393,8 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
             if not isinstance(missing, NoGateCharge):
                 raise
             e_on, e_off = _from_times(obs, a, i_rated)
+    if e_on is not None:
+        e_on = turn_on_at_no_current(e_on, charge)
     return Device(
         vendor=obs.vendor,
         part_number=obs.part_number,
@@ -334,12 +402,17 @@ def build_fet(obs: ObservationSet, *, allow_flagged: bool = False) -> Device:
         ratings=Ratings(
             v_max=v_rated,
             i_nominal=i_rated,
-            tj_max=single_value(obs, Quantity.tj_max, "maximum junction temperature", a).typ,
+            tj_max=typical(single_value(obs, Quantity.tj_max, "maximum junction temperature", a)),
             **extra_ratings(obs, a),
         ),
-        package=Package(topology=obs.topology, integrated_driver=obs.integrated_driver, outline=obs.outline),
+        package=Package(
+            topology=obs.topology,
+            integrated_driver=obs.integrated_driver,
+            # Read from the document as words; the device model refuses a name it does not hold.
+            outline=obs.outline,  # type: ignore[arg-type]
+        ),
         switch=Chip(
-            kind="mosfet",
+            kind=ChipKind.mosfet,
             conduction=_conduction(obs, a, i_rated).model_copy(update={"spread": spread_of(obs, Quantity.rds_on, a)}),
             rg_internal=internal_gate(obs, a),
             e_on=e_on,

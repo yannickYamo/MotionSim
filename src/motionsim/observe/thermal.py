@@ -16,7 +16,7 @@ from motionsim.observe.schema import (
     ReadFigure,
 )
 from motionsim.observe.verify import normalise_unit
-from motionsim.text import written
+from motionsim.text import rounded, written
 
 MIN_GRID_AGREEMENT = 0.8
 PLATEAU_TOLERANCE = 0.15
@@ -54,24 +54,10 @@ def _tabulated_maximum(observations: list[Observation], quantity: Quantity) -> f
     return None
 
 
-def digitise_thermal(
-    page,
-    frame: figures.Frame,
-    figure: ReadFigure,
-    axes: ReadAxes,
-    observations: list[Observation],
-) -> CurveObservation:
-    """The single-pulse curve of one thermal impedance figure, checked three ways.
-
-    - The grid the figure draws must match the claimed log axes.
-    - The curve must rise with pulse duration.
-    - Its plateau must agree with the tabulated thermal resistance, which
-      catches an axis claim that is off by a whole decade (the grid cannot).
-    """
-    quantity, table_quantity = _QUANTITY[figure.kind]
-    x_axis, y_axis = _axis(axes.x), _axis(axes.y)
+def _axis_faults(frame: figures.Frame, axes: ReadAxes, x_axis: figures.Axis, y_axis: figures.Axis) -> list[str]:
+    """What is wrong with the claimed axes: their units, and whether the grid the figure
+    draws matches the claimed log limits."""
     flags: list[str] = []
-    notes: list[str] = []
     x_unit, y_unit = normalise_unit(axes.x_unit), normalise_unit(axes.y_unit)
     if x_unit != ("s", 1.0):
         flags.append(f"time axis unit {axes.x_unit!r} is not seconds")
@@ -86,25 +72,15 @@ def digitise_thermal(
             flags.append(f"{name} axis claimed linear; thermal impedance plots are log-log")
             continue
         agreement = figures.grid_agreement(drawn, axis, start, end)
-        if agreement < MIN_GRID_AGREEMENT:
+        if agreement is not None and agreement < MIN_GRID_AGREEMENT:
             flags.append(
                 f"{name} axis limits {axis.lo:g} to {axis.hi:g} match only {agreement:.0%} of the drawn grid lines"
             )
+    return flags
 
-    spanning = [c for c in figures.curves_in(page, frame) if np.ptp(c[:, 0]) > 0.5 * (frame.x1 - frame.x0)]
-    if not spanning:
-        return CurveObservation(
-            quantity=quantity,
-            page=figure.page,
-            label=figure.label,
-            x=[],
-            y=[],
-            x_axis=axes.x,
-            y_axis=axes.y,
-            method="vector",
-            status=ReviewStatus.flagged,
-            flags=flags + ["no vector curve found in the plot area"],
-        )
+
+def _single_pulse(spanning: list[np.ndarray], notes: list[str]) -> np.ndarray:
+    """The single-pulse curve among the curves of the figure, as page points from left to right."""
     # Duty-cycle curves sit above the single-pulse curve at short times.
     spanning = [c[np.argsort(c[:, 0], kind="stable")] for c in spanning]
     single = max(spanning, key=lambda c: c[0, 1])
@@ -125,42 +101,78 @@ def digitise_thermal(
         rest[:, 1] = np.minimum(rest[:, 1], end[1])  # never below where the curve had got to
         single = np.vstack([single, rest])
         notes.append("the single-pulse curve merges into the others and is followed along the shared line")
-    t, z = (
-        figures.digitise(single, frame, x_axis, y_axis) if x_axis.log and y_axis.log else (np.array([]), np.array([]))
-    )
+    return single
 
+
+def _against_table(
+    z: np.ndarray, observations: list[Observation], table_quantity: Quantity, flags: list[str], notes: list[str]
+) -> np.ndarray:
+    """The curve held to the tabulated thermal resistance: its plateau has to agree with
+    it, which catches an axis claim that is off by a whole decade. A curve drawn as a
+    fraction of the thermal resistance is scaled by it."""
+    table = _tabulated(observations, table_quantity)
+    if table is None:
+        flags.append("no tabulated thermal resistance to compare the plateau with")
+    elif abs(z[-1] - 1) < NORMALISED_TOLERANCE and abs(table - 1) > PLATEAU_TOLERANCE:
+        # Some vendors plot impedance as a fraction of the thermal resistance.
+        z = z * table
+        notes.append(
+            f"curve is normalised (plateau {written(z[-1] / table, 3)}); scaled by the tabulated "
+            f"{written(table, 3)} K/W"
+        )
+    elif (highest := _tabulated_maximum(observations, table_quantity)) is not None and abs(
+        z[-1] / highest - 1
+    ) <= PLATEAU_TOLERANCE:
+        notes.append(
+            f"the curve is the maximum thermal impedance: its plateau matches the tabulated "
+            f"maximum of {written(highest, 3)} K/W, not the typical {written(table, 3)} K/W"
+        )
+    elif abs(z[-1] / table - 1) > PLATEAU_TOLERANCE:
+        flags.append(f"plateau {written(z[-1], 3)} K/W disagrees with the tabulated {written(table, 3)} K/W")
+    return z
+
+
+def digitise_thermal(
+    page,
+    frame: figures.Frame,
+    figure: ReadFigure,
+    axes: ReadAxes,
+    observations: list[Observation],
+) -> CurveObservation:
+    """The single-pulse curve of one thermal impedance figure, checked three ways.
+
+    - The grid the figure draws must match the claimed log axes.
+    - The curve must rise with pulse duration.
+    - Its plateau must agree with the tabulated thermal resistance, which
+      catches an axis claim that is off by a whole decade (the grid cannot).
+    """
+    quantity, table_quantity = _QUANTITY[figure.kind]
+    x_axis, y_axis = _axis(axes.x), _axis(axes.y)
+    flags = _axis_faults(frame, axes, x_axis, y_axis)
+    notes: list[str] = []
+    t, z = np.array([]), np.array([])
+
+    spanning = [c for c in figures.curves_in(page, frame) if np.ptp(c[:, 0]) > 0.5 * (frame.x1 - frame.x0)]
+    if not spanning:
+        flags.append("no vector curve found in the plot area")
+    else:
+        single = _single_pulse(spanning, notes)
+        if x_axis.log and y_axis.log:
+            t, z = figures.digitise(single, frame, x_axis, y_axis)
     if t.size:
         grid = np.logspace(np.log10(t.min()), np.log10(t.max()), SAMPLES)
         z = np.interp(np.log(grid), np.log(t), z)
         t = grid
         if np.any(np.diff(z) < -0.01 * z[:-1]):
             flags.append("curve does not rise steadily with pulse duration")
-        table = _tabulated(observations, table_quantity)
-        if table is None:
-            flags.append("no tabulated thermal resistance to compare the plateau with")
-        elif abs(z[-1] - 1) < NORMALISED_TOLERANCE and abs(table - 1) > PLATEAU_TOLERANCE:
-            # Some vendors plot impedance as a fraction of the thermal resistance.
-            z = z * table
-            notes.append(
-                f"curve is normalised (plateau {written(z[-1] / table, 3)}); scaled by the tabulated "
-                f"{written(table, 3)} K/W"
-            )
-        elif (highest := _tabulated_maximum(observations, table_quantity)) is not None and abs(
-            z[-1] / highest - 1
-        ) <= PLATEAU_TOLERANCE:
-            notes.append(
-                f"the curve is the maximum thermal impedance: its plateau matches the tabulated "
-                f"maximum of {written(highest, 3)} K/W, not the typical {written(table, 3)} K/W"
-            )
-        elif abs(z[-1] / table - 1) > PLATEAU_TOLERANCE:
-            flags.append(f"plateau {written(z[-1], 3)} K/W disagrees with the tabulated {written(table, 3)} K/W")
+        z = _against_table(z, observations, table_quantity, flags, notes)
 
     return CurveObservation(
         quantity=quantity,
         page=figure.page,
         label=figure.label,
-        x=[float(f"{written(v, 6)}") for v in t],
-        y=[float(f"{written(v, 6)}") for v in z],
+        x=[rounded(v, 6) for v in t],
+        y=[rounded(v, 6) for v in z],
         x_axis=axes.x,
         y_axis=axes.y,
         method="vector",

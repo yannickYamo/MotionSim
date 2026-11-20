@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from motionsim.device.schema import Device
@@ -121,6 +120,8 @@ def _bursts(device: Device, point: Point, op: OperatingPoint) -> tuple[Result, d
     swings far between bursts, a little under what the bursts really lose."""
     from motionsim.trajectory import MAX_SAMPLES, Trajectory, run
 
+    # Only a point with both is a load that comes and goes; its validator holds them together.
+    assert point.on_time is not None and point.off_time is not None
     whole = point.on_time + point.off_time
     n = MAX_SAMPLES
     if n < 16 * point.f_out * whole:
@@ -164,8 +165,9 @@ def compare(device: Device, reference: Reference) -> list[Row]:
 
 
 def load_reference(path: str | Path) -> Reference:
-    with open(path, encoding="utf-8") as f:
-        return Reference.model_validate(yaml.safe_load(f))
+    from motionsim.files import read_record
+
+    return Reference.model_validate(read_record(path, "reference file", "reference"))
 
 
 TEMPLATE = """\

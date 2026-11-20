@@ -11,7 +11,6 @@ import { fileURLToPath } from "node:url";
 import { loadPyodide } from "pyodide";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = join(here, "..", "..");
 
 const QUESTIONS = `
 import json, sys, tempfile
@@ -40,7 +39,9 @@ const native = JSON.parse(execFileSync(python, ["-c", `${QUESTIONS}\nprint(resul
 
 const py = await loadPyodide();
 await py.loadPackage(["numpy", "scipy", "pydantic", "pyyaml"], { messageCallback: () => {} });
-py.unpackArchive(new Uint8Array(readFileSync(join(here, "..", "public", "engine", "motionsim.zip"))), "zip", { extractDir: "/engine" });
+py.unpackArchive(new Uint8Array(readFileSync(join(here, "..", "public", "engine", "motionsim.zip"))), "zip", {
+  extractDir: "/engine",
+});
 py.runPython(`import sys; sys.path.insert(0, "/engine")`);
 py.runPython(QUESTIONS);
 const browser = JSON.parse(py.globals.get("result"));
