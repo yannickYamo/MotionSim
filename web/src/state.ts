@@ -126,6 +126,7 @@ export interface State {
    *  never moves the design: it is compared on it. Empty until there is a device. */
   lead: string;
   kindPicked: boolean; // the user chose the kind of motor: it no longer follows the device
+  supplyOwn: boolean; // the user chose what the stage runs from: it no longer follows the device
   motorOwn: Record<string, string[]>; // for each kind of motor, the figures the user typed
   pointOf: Record<string, Partial<Point>>; // for each kind, the supply and design point figures the user typed
   loadPicked: string; // the kind of load the user picked; empty: the usual one for the motor
@@ -252,6 +253,7 @@ export function initial(setup: Setup): State {
     lead: "",
     added: [],
     kindPicked: false,
+    supplyOwn: false,
     motorOwn: {},
     pointOf: {},
     loadPicked: "",

@@ -207,6 +207,7 @@ export const inputsNow = (): string =>
     added: null,
     // Whose a figure is says nothing of what it is.
     kindPicked: false,
+    supplyOwn: false,
     motorOwn: null,
     pointOf: null,
     loadPicked: "",

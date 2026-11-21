@@ -1716,10 +1716,15 @@ td.is-unread .help {
   margin: 0 0 var(--s2);
 }
 .path-go {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  /* The made-up parts in even columns, two where there is room, one on a phone. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
   gap: var(--s2);
   margin: 0;
+}
+.path-go > button {
+  justify-content: flex-start;
+  text-align: left;
 }
 .path .drop.big {
   padding: var(--s4);

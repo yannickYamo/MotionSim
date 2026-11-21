@@ -43,7 +43,7 @@ CONDITIONS = {
 
 SETUP_HEAD = """\
 # A design for `motionsim design run`. Edit the figures to yours.
-#   devices     made-up names (example-mosfet, example), or paths to device files
+#   devices     made-up names (example-mosfet, example and the others motionsim examples lists), or paths to device files
 #               (.device.yaml) or to figures typed from a datasheet (motionsim template device)
 #   motor       its kind and catalogue figures (motionsim template pmsm, bldc, dc, ...)
 #   conditions  SI units: V, rpm, N·m, Hz, s, ohm, °C, K/W. cooling is one of
@@ -64,6 +64,8 @@ def starting_setup(device: str, workspace: Workspace, kind: str | None = None) -
     it wound for that supply, a design point, and the usual load for that motor sized to it."""
     suggested = suggest({"device": device}, workspace)
     motors = suggested["motors"]
+    # A made-up part opens on the application it is tried on, unless another kind is asked for.
+    use = suggested["application"] if kind is None else None
     kind = kind or next((k for k, m in motors.items() if m["fit"] == "recommended"), next(iter(motors)))
     if kind not in motors:
         raise Refusal(f"no kind of motor called {kind}", f"one of {', '.join(motors)}", "motor")
@@ -72,11 +74,13 @@ def starting_setup(device: str, workspace: Workspace, kind: str | None = None) -
     # The most usual application this motor can run: one sized to it, or one of a size of its
     # own that it can.
     load = next((p for p in offered if p["runs"] is None or p["runs"]["ok"]), offered[0])
+    if use is not None:
+        load = next((p for p in offered if p["id"] == use["id"]), load)
     return {
         "devices": [device],
         "motor": {"type": kind, **motors[kind]["values"]},
         "conditions": {**start, "parallel": 1, "cooling": "held", "t_sink": 60},
-        "supply": "one-way",
+        "supply": use["supply"] if use is not None and load["id"] == use["id"] else "one-way",
         "load_kind": load["id"],
         "load": load["load"],
         "profile": {"start_angle_deg": load.get("start_angle_deg", 0)}

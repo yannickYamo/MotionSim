@@ -5,6 +5,7 @@ datasheet, a part's own measurements)."""
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -19,9 +20,39 @@ PACKAGE = Path(__file__).parent.parent
 EXAMPLE = PACKAGE / "example_device.yaml"
 
 
-# The made-up parts the page can be tried with: an IGBT for mains voltages, and a
-# low-voltage transistor for batteries and robots.
-EXAMPLES = {"example": EXAMPLE, "example-mosfet": PACKAGE / "example_mosfet.yaml"}
+# The made-up parts the page can be tried with, one for each kind of drive, each opening on the
+# application such a part is found in (service/applications.py).
+EXAMPLES = {
+    "example": EXAMPLE,
+    "example-mosfet": PACKAGE / "example_mosfet.yaml",
+    "example-mosfet-40v": PACKAGE / "example_mosfet_40v.yaml",
+    "example-gan": PACKAGE / "example_gan.yaml",
+    "example-sic": PACKAGE / "example_sic.yaml",
+    "example-sic-module": PACKAGE / "example_sic_module.yaml",
+}
+
+
+@dataclass(frozen=True)
+class Use:
+    """What a made-up part is tried on first: an application, and the class of motor
+    (motor_class.CLASSES) it starts on where that is not the one its rule gives."""
+
+    application: str
+    said: str  # the application in a few words, as the page offers the part
+    motor: str | None = None
+    supply: str = "one-way"  # "battery" where such products run from one, which takes braking energy back
+
+
+USES = {
+    "example-mosfet": Use("joint", "robot joint"),
+    "example": Use("drum", "washing machine"),
+    "example-mosfet-40v": Use("tool", "power tool", supply="battery"),
+    "example-gan": Use("vacuum", "vacuum cleaner", supply="battery"),
+    "example-sic": Use("compressor", "air conditioner"),
+    # Three half-bridges on an 800 V battery drive a car: its rule would give the induction
+    # motor of an industrial drive of that voltage, where a car has buried magnets.
+    "example-sic-module": Use("vehicle", "electric car", motor="traction", supply="battery"),
+}
 
 
 class Workspace:
@@ -63,6 +94,7 @@ class Workspace:
             "positions": device.package.topology.positions,
             "integrated_driver": device.package.integrated_driver,
             "example": key in EXAMPLES,
+            "use": USES[key].said if key in USES else None,
             "switching": "estimated from the datasheet's rise and fall times"
             if sw.e_on is not None and sw.e_off is not None and sw.e_on.footing == "times"
             else "measured energy from the datasheet"
@@ -298,7 +330,7 @@ def bring_device(entry: str, base: Path, workspace: Workspace) -> str:
     if not there:
         raise Refusal(
             f"no device called {entry}, and no file of that name",
-            "give a path to a device file, or example-mosfet or example",
+            "give a path to a device file, or a made-up part: " + ", ".join(EXAMPLES),
             "devices",
         )
     try:

@@ -1,0 +1,58 @@
+# Synthetic device for testing the engine. Not a real part: every curve is a straight line
+# chosen to be plausible for a 1200 V, 300 A silicon-carbide half-bridge module, three of which
+# make the inverter of an electric car on an 800 V battery.
+schema_version: 1
+vendor: made-up
+part_number: 1200 V SiC module
+technology: SiC MOSFET
+ratings:
+  v_max: 1200
+  i_nominal: 300
+  tj_max: 175
+package:
+  topology: half_bridge
+  construction: substrate
+  rth_case_sink: 0.03
+switch:
+  kind: mosfet
+  conduction:
+    source: {kind: synthetic, note: "on-resistance 4.2 mOhm at 25 C, 7.0 mOhm at 150 C, 18 V on the gate"}
+    curves:
+      - {tj: 25, current: [0, 600], value: [0, 2.52]}
+      - {tj: 150, current: [0, 600], value: [0, 4.20]}
+  reverse:
+    source: {kind: synthetic, note: "body diode: 3.0 V rising to 6.0 V at 600 A, gate off"}
+    curves:
+      - {tj: 25, current: [0, 600], value: [3.0, 6.0]}
+  e_on:
+    v_ref: 800
+    source: {kind: synthetic, note: "27 uJ/A at 25 C, 29 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 600], value: [0, 16.2e-3]}
+      - {tj: 150, current: [0, 600], value: [0, 17.4e-3]}
+  e_off:
+    v_ref: 800
+    source: {kind: synthetic, note: "12 uJ/A at 25 C, 13 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 600], value: [0, 7.2e-3]}
+      - {tj: 150, current: [0, 600], value: [0, 7.8e-3]}
+  e_rr:
+    v_ref: 800
+    source: {kind: synthetic, note: "body diode recovery: 3 uJ/A at 25 C, 5 uJ/A at 150 C"}
+    curves:
+      - {tj: 25, current: [0, 600], value: [0, 1.8e-3]}
+      - {tj: 150, current: [0, 600], value: [0, 3.0e-3]}
+  thermal:
+    source: {kind: synthetic}
+    r: [0.02, 0.05, 0.05]
+    tau: [0.001, 0.01, 0.1]
+  rg_internal: 1.5
+timing:
+  t_d_on: 8.0e-08
+  t_r: 4.0e-08
+  t_d_off: 2.0e-07
+  t_f: 4.0e-08
+  v_test: 800
+  i_test: 300
+  rg_test: 2.5
+  source: {kind: synthetic, note: "switching times at 800 V, 300 A, 2.5 Ohm on the gate, 150 C"}

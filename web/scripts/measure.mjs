@@ -235,8 +235,8 @@ for (const [label, width, height] of [
   await page.click("[data-add-typed]");
   await page.waitForSelector("details.typed .said-wrong");
   if ((await page.$$("[data-device]")).length) failures.push(`${label}: a part with a mistyped figure was added`);
-  if ((await page.$$("[data-example]")).length !== 2)
-    failures.push(`${label}: both made-up parts should be offered, a transistor and an IGBT`);
+  if ((await page.$$("[data-example]")).length !== 6)
+    failures.push(`${label}: all six made-up parts should be offered, one for each kind of drive`);
   await page.click("details.typed summary");
   // Nothing is listed that the user did not bring, whatever the served folder holds.
   if ((await page.$$("[data-device]")).length)

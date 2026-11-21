@@ -139,6 +139,7 @@ function pickOption(el: HTMLInputElement): void {
   const { state } = app;
   const bind = el.dataset.bind!;
   setPath(bind, el.value);
+  if (bind === "supply") state.supplyOwn = true;
   if (bind.startsWith("motors.")) {
     draw.stage();
     fitFor();

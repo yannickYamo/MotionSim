@@ -235,6 +235,11 @@ describe("the loads usual for a motor", () => {
     expect(loadFor(list, "vehicle")).toEqual({ id: "fan" });
     expect(loadFor([], "fan")).toBeUndefined();
   });
+  it("start a made-up part on its application, unless the user picked another", () => {
+    expect(loadFor(list, "", "drum")).toEqual({ id: "drum" });
+    expect(loadFor(list, "joint", "drum")).toEqual({ id: "joint" });
+    expect(loadFor(list, "", "vehicle")).toEqual({ id: "fan" });
+  });
   it("are not asked for again and again when the engine fails", async () => {
     mock.loads.mockRejectedValue(new Error("500"));
     await presetsFor();

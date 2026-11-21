@@ -353,15 +353,20 @@ def _vehicle(at: Point) -> tuple[dict, dict]:
     def up(share: float, slope: float = 0.0, braking: bool = False) -> float:
         return _pull_away(vehicle, at, gear, eff, share * abs(top) * math.pi / 30, slope, braking)
 
+    def stop(seconds: float, share: float) -> float:
+        """A stop of a town's pace, or longer where the motor alone could not brake that hard:
+        it brakes on 60% of the design torque at most, as the pull-away drives on it."""
+        return max(seconds, up(share, braking=True))
+
     town = [
         seg(10, 0, 0),
         seg(up(0.6), 0, at_(0.6)),
         seg(40, at_(0.6), at_(0.6)),
-        seg(6, at_(0.6), 0),
+        seg(stop(6, 0.6), at_(0.6), 0),
         seg(15, 0, 0),
         seg(up(0.5), 0, at_(0.5)),
         seg(30, at_(0.5), at_(0.5)),
-        seg(5, at_(0.5), 0),
+        seg(stop(5, 0.5), at_(0.5), 0),
         seg(12, 0, 0),
     ]
     main = [
@@ -369,7 +374,7 @@ def _vehicle(at: Point) -> tuple[dict, dict]:
         seg(60, at_(1.0), at_(1.0)),
         seg(5, at_(1.0), at_(0.7)),
         seg(30, at_(0.7), at_(0.7)),
-        seg(8, at_(0.7), 0),
+        seg(stop(8, 0.7), at_(0.7), 0),
         seg(20, 0, 0),
     ]
     hills = [
@@ -382,7 +387,7 @@ def _vehicle(at: Point) -> tuple[dict, dict]:
     later = [
         seg(up(0.8), 0, at_(0.8)),
         seg(45, at_(0.8), at_(0.8)),
-        seg(7, at_(0.8), 0),
+        seg(stop(7, 0.8), at_(0.8), 0),
         seg(10, 0, 0),
     ]
     phases = [

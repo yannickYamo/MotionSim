@@ -211,7 +211,7 @@ LOADS_MAINS = {
 # The applications (service/applications.py) each kind of motor is usually found in, the most
 # usual first.
 LOADS_FOR = {
-    "pmsm": ["joint", "fan", "vacuum", "vehicle", "drum", "compressor", "ceiling_fan", "conveyor"],
+    "pmsm": ["joint", "fan", "vacuum", "vehicle", "drum", "compressor", "ceiling_fan", "conveyor", "tool"],
     "bldc": ["fan", "vacuum", "ceiling_fan", "vehicle", "tool", "conveyor"],
     # A reluctance motor is a pump, fan and compressor machine: its low power factor and
     # torque for its size keep it out of washers and off wheels, and it is offered neither.

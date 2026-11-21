@@ -44,6 +44,8 @@ export interface DeviceSummary {
   positions: number;
   integrated_driver: boolean;
   example: boolean;
+  /** A made-up part's application in a few words; null for any other part. */
+  use?: string | null;
   switching: string;
   support: string;
   needs_gate_drive: boolean;
@@ -327,6 +329,9 @@ export interface LoadPreset extends PresetDuty {
 /** For a device: the supply it suits, and how each kind of motor fits it. */
 export interface Suggest {
   v_supply: number;
+  /** A made-up part's application: the load it opens on, how such products start their
+   *  motor, and what they run from. Null for any other part. */
+  application?: { id: string; label: string; start: string; supply: "one-way" | "battery" } | null;
   /** Why the part starts on the kind it does: its rating and the drives of its class. */
   why?: string;
   motors: Record<

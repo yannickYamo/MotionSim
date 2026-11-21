@@ -22,10 +22,11 @@ class Absent(importlib.abc.MetaPathFinder):
 
 sys.meta_path.insert(0, Absent())
 from motionsim import design, page
+from motionsim.service.workspace import EXAMPLES
 
 ws = page.Workspace(Path(tempfile.mkdtemp()))
 setup = page.setup(ws)
-assert setup["typed"]["fields"] and len([d for d in setup["devices"] if d["example"]]) == 2
+assert setup["typed"]["fields"] and len([d for d in setup["devices"] if d["example"]]) == len(EXAMPLES)
 start = design.starting_setup("example-mosfet", ws)
 for route, body in (
     ("/api/suggest", {"device": "example-mosfet"}),

@@ -26,6 +26,9 @@ const POINT_LABELS: Record<keyof Point, [string, string]> = {
   pwm: ["Modulation", ""],
 };
 
+/** What the stage runs from, in the words of the supply's own choice. */
+const SUPPLY: Record<State["supply"], string> = { "one-way": "Power supply", battery: "Battery" };
+
 /** The point a kind of motor starts at for this device; without one, the page's own example. */
 function startOf(kind: string, setup: Setup, suggest: Suggest | null): Point {
   const start = suggest?.motors[kind]?.start ?? setup.motors[kind].start;
@@ -79,6 +82,11 @@ export function settle(state: State, setup: Setup, suggest: Suggest | null): Cha
       state.kind = recommended;
     }
   }
+  const supply = suggest?.application?.supply;
+  if (supply && !state.supplyOwn && state.supply !== supply) {
+    changes.push({ path: "supply", label: "Supply", unit: "", from: SUPPLY[state.supply], to: SUPPLY[supply] });
+    state.supply = supply;
+  }
   settleMotors(state, setup, suggest, changes);
   const point = { ...startOf(state.kind, setup, suggest), ...state.pointOf[state.kind] };
   for (const key of POINT_KEYS) {
@@ -104,6 +112,9 @@ export function putBack(state: State, setup: Setup, change: Change): void {
   } else if (group === "motors") {
     state.motors[kind][key] = change.from;
     state.motorOwn[kind] = [...new Set([...(state.motorOwn[kind] ?? []), key])];
+  } else if (group === "supply") {
+    state.supply = change.from === SUPPLY.battery ? "battery" : "one-way";
+    state.supplyOwn = true;
   } else if (group === "conditions") {
     own(state, kind as keyof Point, change.from);
   }

@@ -12,7 +12,7 @@ them to a person, carry the cautions and the "what this rests on" section with t
 ## The loop
 
 1. **Describe the part.** One of:
-   - a made-up part to try things with: `example-mosfet` (100 V, 100 A) or `example` (600 V, 30 A IGBT module);
+   - a made-up part to try things with, each opening on the application such a part is found in: `example-mosfet` (100 V, 100 A, a robot joint), `example` (600 V, 30 A IGBT module, a direct-drive washer), `example-mosfet-40v` (40 V, 120 A, a power tool), `example-gan` (100 V GaN, a vacuum cleaner), `example-sic` (650 V SiC, an air-conditioner compressor) or `example-sic-module` (1200 V SiC half-bridge, a car on 800 V);
    - a device file the user already has (`*.device.yaml`);
    - a transistor typed from its datasheet: `motionsim template device -o part.yaml` (`template igbt` for an IGBT and its diode),
      fill in the figures (units are the datasheet's: mΩ, nC, pF, V, A, K/W), and name
@@ -146,7 +146,7 @@ and is named in `refusals` at the top.
 
 Single questions also have their own commands (`motionsim --help`): `simulate`, `motor`,
 `map`, `propose`, `compare`, `recommend`, `cycle`, `max-current`, `trajectory`, `advise`.
-Each takes a device as a file or as `example-mosfet` or `example`, checks its conditions as
+Each takes a device as a file or as a made-up part such as `example-mosfet` or `example`, checks its conditions as
 a design's are checked, takes `--json`, and exits with the statuses above. `motionsim
 examples` lists the made-up parts, motors, loads and motions that come with the tool, with
 where they are; a command takes any of them by its bare name.

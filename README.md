@@ -8,7 +8,7 @@ Choosing a part at the start of a design should take minutes, not a week.
 
 Live page: https://yannickyamo.github.io/MotionSim/
 
-**Reading a datasheet PDF needs your own model key.** Typing in a part's figures, opening a device file and trying the made-up parts all work on the live page, with no key and no account. To have a PDF read for you, run MotionSim on your own machine with an API key for a model you choose: Anthropic, OpenAI, Gemini, Grok, or one you host. The project ships no key and runs no server, so the call goes from your machine to your model and nowhere else. [How to set it up](#bringing-your-part-and-where-a-language-model-comes-in).
+**Try it in the browser, then bring your own parts.** The live page comes with six made-up parts, each opening on the application such a part is found in, from a robot joint to an electric car. There is nothing to install and no key to give. To run MotionSim on your own datasheets, install it and give it an API key for a model you choose: Anthropic, OpenAI, Gemini, Grok, or one you host. The project ships no key and runs no server, so the call goes from your machine to your model and nowhere else. [How to set it up](#bringing-your-part-and-where-a-language-model-comes-in).
 
 The device model is built from the part's own datasheet, so there is no vendor library to wait for, and an IGBT from one maker sits beside a GaN transistor from another on the same terms. Every value records the page it came from, the equations are on show, and every result says what the data supports and what it leaves out. It works in both directions: the power stage a load needs, or the load a part can drive. [docs/LIMITS.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/LIMITS.md) says what it cannot read yet.
 
@@ -16,7 +16,22 @@ No browser needed: the same five steps run from a terminal with one command, `mo
 
 ![The MotionSim page: the power stage drawn on the left with each switch's loss and temperature; on the right the verdict in one line, the four tabs and the checks](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/page.png)
 
-The live page runs the engine in your browser. Type in a transistor from its datasheet, bring a device file, or try one of two made-up parts: a 100 V MOSFET and a 600 V IGBT. Nothing you enter leaves your browser. The first visit fetches about 26 MB (the Python runtime and its numerical libraries, 39 MB once unpacked); later visits use the browser's copy.
+The live page runs the engine in your browser. Pick one of the six made-up parts below, type in a transistor's figures from its datasheet, or bring a device file. Nothing you enter leaves your browser. The first visit fetches about 26 MB (the Python runtime and its numerical libraries, 39 MB once unpacked); later visits use the browser's copy.
+
+### Six parts to try
+
+None of them is a real part: the figures are made up to be what a part of that kind would print. Each opens on its own application, with the motor and the supply such products have, and runs it from start-up to thermal steady state.
+
+| Made-up part | Opens on | What it shows |
+|---|---|---|
+| 100 V silicon MOSFET | A robot joint on 48 V, lifting and lowering a load | Short current peaks, and the energy the joint returns as it lowers what it lifted |
+| 600 V IGBT module | A direct-drive washing machine on rectified mains | The slow tumble that strains the junction most, and the energy the spin returns as it stops |
+| 40 V silicon MOSFET | A cordless power tool on a battery | A hard start, and the current a bind draws as it slows the motor |
+| 100 V GaN transistor | A vacuum cleaner at 100 000 rpm on a battery | Fast switching against an electrical frequency above 1 kHz |
+| 650 V SiC MOSFET | An air-conditioner compressor on rectified mains | A torque pulse every turn, strongest at low speed |
+| 1200 V SiC half-bridge module | An electric car on an 800 V battery | A town ride with a hill, and the energy braking puts back in the battery |
+
+Change any figure and the answer follows. Pick another application or motor and the part is judged on that instead.
 
 **Status: early, and exploratory.** It has been checked against formulas, an independent numerical integration and one vendor's own simulator on one part (total loss 5 to 13% high). Against the one measured inverter loss found in public, a 48 V reference design, it is 10 to 31% low on a measurement that includes the board's own resistance. [docs/VALIDATION.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/VALIDATION.md) has the numbers; [docs/LIMITS.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/LIMITS.md) says where it falls short.
 
@@ -105,7 +120,7 @@ Every kind of part simulates the same way once it is a device model: IGBT, silic
 
 | Way to bring a part | On the live page | Needs a key | Parts it covers |
 |---|---|---|---|
-| A made-up part | Yes | No | A 100 V MOSFET and a 600 V IGBT module, to see what the tool does |
+| A made-up part | Yes | No | Six, from a 40 V MOSFET to a 1200 V SiC module, to see what the tool does |
 | Figures typed from the datasheet | Yes | No | MOSFET, SiC and GaN transistors, and IGBTs with their diode |
 | A device file (`.device.yaml`) | Yes | No | Any part: made once, kept, shared, dropped onto the page |
 | A datasheet PDF, read for you | No: on your own machine | Yes, your own | Any supported part, IGBTs and modules included |
@@ -164,7 +179,7 @@ Datasheets are their vendors' property: none is distributed here, and no vendor'
 
 ## Example
 
-Without a datasheet, a key or a clone, from the command line (`example` is the made-up 600 V IGBT module, `example-mosfet` the made-up 100 V MOSFET):
+Without a datasheet, a key or a clone, from the command line. The made-up parts are `example-mosfet`, `example` (the 600 V IGBT module), `example-mosfet-40v`, `example-gan`, `example-sic` and `example-sic-module`; `motionsim examples` lists their files.
 
 ```
 motionsim simulate example --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60

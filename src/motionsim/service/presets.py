@@ -15,7 +15,7 @@ from motionsim.errors import Refusal
 from motionsim.load import LOAD_TEMPLATE, PROFILE_TEMPLATE, Load, Profile
 from motionsim.motor import TEMPLATES, Unreachable
 from motionsim.motor.machines import ADAPTER
-from motionsim.motor_class import APPLICATION_MOTORS, Start, class_motor, part_figures, starting_class
+from motionsim.motor_class import APPLICATION_MOTORS, CLASSES, Start, class_motor, part_figures, starting_class
 from motionsim.service.applications import APPLICATIONS, Point
 from motionsim.service.catalogue import (
     FIELDS,
@@ -31,7 +31,7 @@ from motionsim.service.catalogue import (
     WORKED_AT,
 )
 from motionsim.service.validate import _motor, _number, point
-from motionsim.service.workspace import Workspace
+from motionsim.service.workspace import USES, Use, Workspace
 from motionsim.text import rounded, written
 
 
@@ -157,7 +157,49 @@ def suggest(data: dict, workspace: Workspace) -> dict:
     for kind, fit in fits.items():
         values, point = _sized_to(device, kind, *_example(kind, start, base, bus))
         motors[kind] = {"fit": fit.fit, "why": fit.why, "values": values, "start": point}
-    return {"v_supply": bus, "why": start.why, "motors": motors}
+    out = {"v_supply": bus, "why": start.why, "motors": motors, "application": None}
+    use = USES.get(data["device"])
+    return _tried_on(use, device, start, base, out) if use else out
+
+
+def _starts_on(motors: dict, kind: str, values: dict, point: dict) -> None:
+    """The kind a design starts on made `kind`, with these figures: the one recommended."""
+    for other in motors.values():
+        if other["fit"] == "recommended":
+            other["fit"] = "suits"
+    motors[kind] = {**motors[kind], "fit": "recommended", "values": values, "start": point}
+
+
+def _tried_on(use: Use, device: Device, start: Start, base: dict, out: dict) -> dict:
+    """A made-up part opened on its application: the motor such products have where they
+    have one, on the supply they run from where that is below the part's own, or the class of
+    motor the use names, sized to the part as any other is."""
+    motors, bus = out["motors"], out["v_supply"]
+    if use.motor is not None:
+        c = CLASSES[use.motor]
+        values, rated = class_motor(use.motor)
+        example = base[c.kind]["values"]
+        values = {k: example[k] if k == "type" else values[k] for k in example if k in values or k == "type"}
+        values = rewound(c.kind, values, bus, rated["v_dc"])
+        _starts_on(motors, c.kind, *_sized_to(device, c.kind, values, {**rated, "v_dc": bus, "f_sw": start.f_sw}))
+    app = APPLICATIONS[use.application]
+    if app.motor is not None:
+        c = APPLICATION_MOTORS[app.motor]
+        supply = min(c.v_dc, bus)
+        _, rated = class_motor(c)
+        item = next(
+            p for p in load_presets(c.kind, rated["rpm"], rated["torque"], supply) if p["id"] == use.application
+        )
+        usual = item["motor"]
+        point = {"v_dc": supply, **usual["point"], "f_sw": start.f_sw}
+        _starts_on(motors, c.kind, usual["values"], point)
+        for kind, other in motors.items():
+            if kind != c.kind and supply != bus:
+                other["values"] = rewound(kind, other["values"], supply, bus)
+            other["start"] = {**other["start"], "v_dc": supply}
+        out["v_supply"] = supply
+    out["application"] = {"id": use.application, "label": app.label, "start": app.start, "supply": use.supply}
+    return out
 
 
 def _link(item: dict, n: float) -> str:

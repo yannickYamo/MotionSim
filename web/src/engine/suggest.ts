@@ -14,6 +14,10 @@ import { app, draw, res, ui, underTest } from "../store";
 function startFrom(id: string, suggest: Suggest): boolean {
   const { state, setup } = app;
   const changes = settle(state, setup, suggest);
+  const start = suggest?.application?.start;
+  // Sealed in its shell, a compressor's motor has no sensor: the made-up part's application
+  // brings how such products start, until the user picks a load of their own.
+  if (start && !state.loadPicked && ["pmsm", "bldc", "synrm"].includes(state.kind)) state.start.method = start;
   if (!changes.length) return false;
   const device = setup.devices.find((d) => d.id === id)?.name ?? "the device under test";
   ui.followed = state.reached >= MOTOR ? { device, changes } : null;

@@ -15,7 +15,14 @@ import { reviewBlock, setAsideItem } from "./review";
 import { typedForm } from "./typed";
 
 /** A made-up part by what tells it from the others: its voltage and its kind. */
-const madeUpName = (d: DeviceSummary) => `${sig(d.v_max)} V ${escape(d.technology.replace(/^Si /, ""))}`;
+const madeUpName = (d: DeviceSummary) => escape(d.name.replace(/^made-up /, ""));
+
+/** A made-up part as it is offered: its name, and the application it opens on. */
+const offered = (d: DeviceSummary) => `${madeUpName(d)}${d.use ? `<span class="quiet">, ${escape(d.use)}</span>` : ""}`;
+
+/** Items in a sentence: "a, b or c". */
+const either = (items: string[]) =>
+  items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
 
 /** Why a part compared on the design is ruled out by it, where it is: the design was started
  *  from another part, and this one cannot run it or does not pass it. */
@@ -191,9 +198,9 @@ const spareExamples = (): DeviceSummary[] =>
 /** The link to try the tool with a made-up part, for whoever has none to hand. */
 function exampleLink(spare: DeviceSummary[]): string {
   if (!spare.length) return "";
-  const links = spare
-    .map((d) => `<button type="button" class="link" data-example="${escape(d.id)}">a ${madeUpName(d)}</button>`)
-    .join(" or ");
+  const links = either(
+    spare.map((d) => `<button type="button" class="link" data-example="${escape(d.id)}">a ${madeUpName(d)}</button>`),
+  );
   return `<p class="aside examples">No part to hand? Try the tool with a made-up one: ${links}.</p>`;
 }
 
@@ -214,10 +221,12 @@ function tryPath(spare: DeviceSummary[]): string {
     .map(
       (d) =>
         `<button type="button" class="ghost" data-example="${escape(d.id)}">` +
-        `${icon("player-play")}A ${madeUpName(d)}</button>`,
+        `${icon("player-play")}<span>A ${offered(d)}</span></button>`,
     )
     .join("");
-  const said = `<p class="quiet">A made-up part, to walk through every step. Not a real device.</p>`;
+  const said =
+    `<p class="quiet">A made-up part, to walk through every step on the application it is found in. ` +
+    `Not a real device.</p>`;
   return `<section class="path"><h3>See what it does</h3>${said}<p class="path-go">${buttons}</p></section>`;
 }
 

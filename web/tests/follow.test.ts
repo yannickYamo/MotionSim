@@ -197,3 +197,34 @@ describe("what is typed into a box", () => {
     expect(app.state.loadTouched).toBe(true);
   });
 });
+
+describe("a made-up part's application", () => {
+  const using = (supply: "battery" | "one-way"): Suggest => ({
+    ...low,
+    application: { id: "tool", label: "Power tool", start: "sensor", supply },
+  });
+  it("brings the supply such products run from, and says so", () => {
+    const state = initial(setup);
+    const changes = settle(state, setup, using("battery"));
+    expect(state.supply).toBe("battery");
+    expect(changes.find((c) => c.path === "supply")).toMatchObject({ from: "Power supply", to: "Battery" });
+  });
+  it("leaves a supply the user chose, and one put back is theirs from then on", () => {
+    const chosen = initial(setup);
+    chosen.supplyOwn = true;
+    settle(chosen, setup, using("battery"));
+    expect(chosen.supply).toBe("one-way");
+    const state = initial(setup);
+    const change = settle(state, setup, using("battery")).find((c) => c.path === "supply")!;
+    putBack(state, setup, change);
+    expect([state.supply, state.supplyOwn]).toEqual(["one-way", true]);
+    settle(state, setup, using("battery"));
+    expect(state.supply).toBe("one-way");
+  });
+  it("leaves the supply alone for a part of the user's own", () => {
+    const state = initial(setup);
+    state.supply = "battery";
+    settle(state, setup, low);
+    expect(state.supply).toBe("battery");
+  });
+});

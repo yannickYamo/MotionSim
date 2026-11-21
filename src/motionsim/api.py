@@ -47,7 +47,7 @@ def run_design(
     pass, refused.
 
     design is the path of a design file, or its content. Devices are named as in a file:
-    example-mosfet, example, or a path. Raises Refusal for a design that cannot be run.
+    a made-up part (example-mosfet, example, example-gan and the rest), or a path. Raises Refusal for a design that cannot be run.
     """
     from motionsim import design as designs
     from motionsim.service.workspace import Workspace, bring_device

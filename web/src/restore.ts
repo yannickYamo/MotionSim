@@ -243,6 +243,8 @@ function drawnFrom(saved: Json, setup: Setup, keepDevices: boolean): State {
   // Kept before the inertia followed the weight on the arm: a load edited then may hold an
   // inertia typed by hand, so it is taken as the user's own.
   if (typeof saved.inertiaOwn !== "boolean") flat.inertiaOwn = saved.loadTouched === true;
+  // Kept before the supply followed the device: a battery there was the user's own choice.
+  if (typeof saved.supplyOwn !== "boolean") flat.supplyOwn = saved.supply === "battery";
   return {
     ...flat,
     kind: String(saved.kind), // checked by shaped()

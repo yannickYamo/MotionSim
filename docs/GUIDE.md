@@ -82,7 +82,7 @@ Datasheets are their vendors' property. None is distributed here, and no device 
 
 ## From the command line
 
-The README's example runs one operating point of a made-up module with no datasheet and no key: `motionsim simulate example --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60`. The made-up parts are known by name wherever a device is asked for: `example` is a 600 V IGBT module, `example-mosfet` a 100 V MOSFET.
+The README's example runs one operating point of a made-up module with no datasheet and no key: `motionsim simulate example --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60`. The made-up parts are known by name wherever a device is asked for, and each opens on the application such a part is found in: `example-mosfet` a 100 V MOSFET on a 48 V robot joint, `example` a 600 V IGBT module on a direct-drive washer, `example-mosfet-40v` a 40 V MOSFET on a power tool, `example-gan` a 100 V GaN transistor on a vacuum cleaner, `example-sic` a 650 V SiC MOSFET on an air-conditioner compressor, and `example-sic-module` a 1200 V SiC half-bridge module on an electric car from 800 V.
 
 With a datasheet of your own (this needs the `reader` extra and a key):
 

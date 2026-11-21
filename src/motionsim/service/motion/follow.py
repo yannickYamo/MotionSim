@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -119,7 +120,11 @@ def motion_checks(m: Motion, run, reached, link, supply: str) -> list[guard.Chec
     )
     checks += dclink.check(link, op.v_dc, device.ratings.v_max, supply=supply)
     hardest, most = _hardest(run), _most_ripple_current(run)
-    checks += [c for c in guard.ripple_checks(hardest, op) if c.topic == "ripple"]
+    # The ripple is weighed against the most current of the motion, not the current at the
+    # instant it is largest: that is often a pause, carrying almost none.
+    peak = max(s.heaviest.stage.i_peak for s in run.solved)
+    weighed = SimpleNamespace(stage=SimpleNamespace(i_peak=peak), ripple_pp=hardest.ripple_pp, capacitor_rms=None)
+    checks += [c for c in guard.ripple_checks(weighed, op) if c.topic == "ripple"]
     checks += [c for c in guard.ripple_checks(most, op) if c.topic == "link capacitor"]
     tripped = guard.trip_check(m.motor, max(abs(s.sample.motor_rpm) for s in run.steps), op.v_dc, device.ratings.v_max)
     if tripped is not None:

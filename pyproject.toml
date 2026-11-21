@@ -120,7 +120,7 @@ include = [
 ]
 exclude = ["/web/node_modules", "/web/public/engine", "/src/motionsim/webui/engine/pyodide"]
 
-# The two made-up parts are in the wheel twice on purpose: once where the engine and the
+# The made-up parts are in the wheel twice on purpose: once where the engine and the
 # hosted page load them, once among the examples under the names the documents use.
 [tool.check-wheel-contents]
 ignore = ["W002"]

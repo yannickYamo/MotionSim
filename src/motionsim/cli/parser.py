@@ -31,7 +31,7 @@ EPILOG = (
 PWM = ("sine", "third-harmonic", "space-vector", "discontinuous", "discontinuous-high", "discontinuous-low")
 MOTORS = ("pmsm", "induction", "bldc", "dc", "stepper")
 PACKAGES = ("leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263", "TO-252", "TOLL")
-DEVICE = "a device file, a file of typed figures, or a made-up part: example-mosfet, example"
+DEVICE = "a device file, a file of typed figures, or a made-up part: example-mosfet, example, example-mosfet-40v, example-gan, example-sic, example-sic-module"
 
 
 class Parser(argparse.ArgumentParser):

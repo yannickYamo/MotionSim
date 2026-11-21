@@ -64,6 +64,11 @@ def returned(
     return Returned(total, burst, longest, peak, v_peak, needed, v_limit)
 
 
+# F; less than the smallest film capacitor a drive's link carries: braking that needs no more
+# than this is held by any link, and is not a caution.
+NEGLIGIBLE_F = 1e-6
+
+
 def check(r: Returned, v_dc: float, v_rated: float, *, supply: str) -> list[guard.Check]:
     """Plain-language verdict. supply: "battery" takes energy back, "one-way" does not."""
     if r.energy <= 0:
@@ -87,6 +92,8 @@ def check(r: Returned, v_dc: float, v_rated: float, *, supply: str) -> list[guar
                 f"the supply is already at or above {r.v_limit:.0f} V, the most the device "
                 "rating leaves room for, so the energy needs a braking resistor or a battery"
             )
+        elif r.capacitance_needed < NEGLIGIBLE_F:
+            return [guard.Check(guard.Level.ok, "braking", f"{came_back}; any link capacitor holds that much")]
         else:
             advice = (
                 f"a supply that cannot take it back needs at least "

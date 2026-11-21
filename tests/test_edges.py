@@ -19,6 +19,7 @@ from motionsim.drivers import _usable
 from motionsim.engine import OperatingPoint
 from motionsim.engine.losses import energy, voltage, voltage_factor
 from motionsim.recommend import choose_gate_drive
+from motionsim.service.workspace import EXAMPLES
 from motionsim.text import written
 
 ROOT = Path(__file__).parent.parent
@@ -203,7 +204,7 @@ def test_files_that_are_not_devices_are_passed_over_or_refused_never_a_fault(tmp
     ws = page.Workspace(tmp_path / "ws")
     for name, text in (("junk", "a: [1"), ("wrong", "switch: 1"), ("empty", "")):
         (tmp_path / "ws" / f"{name}.device.yaml").write_text(text, encoding="utf-8")
-    assert [d["id"] for d in ws.listing()] == ["example", "example-mosfet"]  # the three are not the page's problem
+    assert [d["id"] for d in ws.listing()] == list(EXAMPLES)  # the three are not the page's problem
     # Named in a design, each is refused with its name, exit 2.
     for text in ("a: [1", "switch: 1"):
         (tmp_path / "bad.yaml").write_text(text, encoding="utf-8")
@@ -452,7 +453,7 @@ def test_a_folder_or_a_locked_file_where_a_device_is_expected_is_no_fault(tmp_pa
 
     ws = page.Workspace(tmp_path / "ws")
     (tmp_path / "ws" / "folder.device.yaml").mkdir()
-    assert [d["id"] for d in ws.listing()] == ["example", "example-mosfet"]
+    assert [d["id"] for d in ws.listing()] == list(EXAMPLES)
     locked = tmp_path / "locked.yaml"
     locked.write_text(MOSFET.read_text(encoding="utf-8"), encoding="utf-8")
     locked.chmod(0)

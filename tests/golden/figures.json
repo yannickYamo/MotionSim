@@ -139,6 +139,7 @@
     "t_sc": null,
     "technology": "Si IGBT",
     "tj_max": 150.0,
+    "use": "washing machine",
     "v_max": 600.0
    },
    "example-mosfet": {
@@ -157,6 +158,7 @@
     "t_sc": null,
     "technology": "Si MOSFET",
     "tj_max": 175.0,
+    "use": "robot joint",
     "v_max": 100.0
    }
   },
@@ -1317,7 +1319,7 @@
     },
     {
      "level": "caution",
-     "message": "the motor current carries 2.13 A of ripple, peak to peak, at the switching frequency: 951% of its 0.223 A peak. A motor with so little inductance wants a higher switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple",
+     "message": "the motor current carries 2.13 A of ripple, peak to peak, at the switching frequency: 921% of its 0.231 A peak. A motor with so little inductance wants a higher switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple",
      "topic": "ripple"
     },
     {
@@ -1390,7 +1392,7 @@
     },
     {
      "level": "caution",
-     "message": "the motor current carries 0.395 A of ripple, peak to peak, at the switching frequency: 208% of its 0.19 A peak. A motor with so little inductance wants a higher switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple",
+     "message": "the motor current carries 0.395 A of ripple, peak to peak, at the switching frequency: 201% of its 0.196 A peak. A motor with so little inductance wants a higher switching frequency, or an inductor in series; the peak a switch turns off is higher by half the ripple",
      "topic": "ripple"
     },
     {

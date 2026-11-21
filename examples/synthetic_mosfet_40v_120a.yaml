@@ -1,0 +1,48 @@
+# Synthetic device for trying the tool. Not a real part: the figures are made up to be
+# plausible for a 40 V, 120 A silicon MOSFET in a TOLL package, as used in cordless power tools.
+schema_version: 1
+vendor: made-up
+part_number: 40 V MOSFET
+technology: Si MOSFET
+ratings:
+  v_max: 40.0
+  i_nominal: 120.0
+  tj_max: 175.0
+package:
+  topology: discrete
+  construction: leadframe
+  outline: TOLL
+  interface: pad
+  integrated_driver: false
+switch:
+  kind: mosfet
+  conduction:
+    curves:
+    - {tj: 25.0, current: [0.0, 120.0], value: [0.0, 0.192]}
+    - {tj: 125.0, current: [0.0, 120.0], value: [0.0, 0.312]}
+    basis: curve
+    source: {kind: synthetic, note: 'made up: on-resistance 1.6 mΩ at 25 °C, 2.6 mΩ at 125 °C, 10 V on the gate', status: unverified}
+  reverse:
+    curves:
+    - {tj: 25.0, current: [0.0, 120.0], value: [0.85, 0.85]}
+    basis: point
+    assumption: reverse voltage taken as constant at its one tabulated point; it rises with current, so dead-time loss is underestimated
+    source: {kind: synthetic, note: 'made up: 0.85 V at 120 A, gate off', status: unverified}
+  charge:
+    q_gs: 1.6e-08
+    q_gd: 9.0e-09
+    q_g_th: 1.09e-08
+    v_plateau: 4.4
+    q_g: 5.5e-08
+    q_g_drive: 10.0
+    q_oss: 6.0e-08
+    v_ref: 20.0
+    q_oss_scaling: sqrt
+    q_rr: 4.0e-08
+    q_rr_current: 50.0
+    assumption: gate charge at threshold not tabulated; taken as gate-source charge times threshold voltage over plateau voltage
+    source: {kind: synthetic, note: 'made up: gate and output charges from the tables, total gate charge 55 nC at 10 V', status: unverified}
+  thermal:
+    r: [0.5]
+    source: {kind: synthetic, note: 'made up: junction-to-case resistance only (0.5 K/W); no transient data', status: unverified}
+  rg_internal: 1.0

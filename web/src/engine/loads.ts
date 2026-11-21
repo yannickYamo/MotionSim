@@ -6,7 +6,7 @@ import { latest, once } from "../guard";
 import { save, writtenOut } from "../state";
 import type { LoadItem, State } from "../state";
 import { LOAD, RESULTS } from "../steps";
-import { app, draw, invalidate, res } from "../store";
+import { app, draw, invalidate, res, underTest } from "../store";
 import { deep } from "./deep";
 
 /** The gearbox, inertia and friction of a preset, with what it leaves out at its plain value. */
@@ -89,15 +89,19 @@ const presetKey = (): string => {
 /** The load of step 4 while the user has not put in figures of their own: the kind they
  *  picked where this motor is offered it, else the usual one for the motor. It depends on
  *  the motor and on the pick alone, never on which motors were looked at on the way. */
-export const loadFor = (list: LoadPreset[], picked: string): LoadPreset | undefined =>
-  list.find((p) => p.id === picked) ?? list[0];
+export const loadFor = (list: LoadPreset[], picked: string, suggested = ""): LoadPreset | undefined =>
+  list.find((p) => p.id === picked) ?? list.find((p) => p.id === suggested) ?? list[0];
+
+/** The application the device under test is tried on, where it is a made-up part with one. */
+const suggestedLoad = (): string =>
+  res.suggestion && res.suggestion.id === underTest() ? (res.suggestion.data.application?.id ?? "") : "";
 
 /** The loads are sized from the design point, so when that moves they are sized again:
  *  the load of step 4, unless the user has put in figures of their own, and the ones set
  *  beside it to compare. A load not offered for this motor gives way to the usual one. */
 function sizeLoads(fresh: LoadPreset[]): void {
   const { state } = app;
-  const mine = loadFor(fresh, state.loadPicked);
+  const mine = loadFor(fresh, state.loadPicked, suggestedLoad());
   if (!state.loadTouched && mine) applyPreset(mine);
   state.loadSet = state.loadSet.flatMap((item) => {
     if (item.id.startsWith("own-")) return [item];
