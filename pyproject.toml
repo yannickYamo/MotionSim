@@ -65,7 +65,7 @@ dev = [
     "pytest-cov",
     "pytest-timeout",
     "pytest-xdist",
-    "ruff==0.17.0",
+    "ruff==0.17.5",
     "twine>=6.1",
     "types-PyYAML",
     "validate-pyproject[all]",
