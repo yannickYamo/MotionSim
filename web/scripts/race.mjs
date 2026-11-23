@@ -566,11 +566,15 @@ async function switchingEvent() {
     return prose
       .filter((p) => {
         const r = p.getBoundingClientRect();
-        return r.right > box.right + 1 || r.width > 0.9 * box.width || p.scrollWidth > p.clientWidth + 1;
+        // As wide as the plots they stand with, and those are held to the stage's measure.
+        return r.right > box.right + 1 || box.width > 962 || p.scrollWidth > p.clientWidth + 1;
       })
       .map((p) => p.textContent.slice(0, 40));
   });
-  hold(!wrapped.length, `the event: on a desk its lines wrap inside it at a reading measure (${wrapped.join(" | ")})`);
+  hold(
+    !wrapped.length,
+    `the event: on a wide desk its lines keep to the width of its plots, within the measure (${wrapped.join(" | ")})`,
+  );
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(300);
   const stacked = await page.evaluate(() => {
@@ -671,6 +675,7 @@ async function fullScreen(page) {
     bytes.includes("(Turn-on: drain-source voltage and drain current) Tj"),
     "full screen: the PDF carries the title",
   );
+  hold(await savedPng(page, page.locator("[data-full-png]")), "full screen: Export PNG saves a sharp PNG image");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   hold(!(await page.$("dialog.ev-full[open]")), "full screen: Escape closes it");
@@ -679,7 +684,20 @@ async function fullScreen(page) {
     "full screen: the keyboard goes back to the plot it was opened from",
   );
   hold((await plotSaid(page, "on")).samples === zoomed, "full screen: closed, the plot keeps the zoom reached");
+  // Every chart of the page is saved the same way: the loss chart and an edge stand for them.
+  hold(await savedPng(page, page.locator("#pwm .chart-box .chart-save").first()), "the loss chart is saved as a PNG");
+  hold(await savedPng(page, page.locator(".ev-edge [data-save-png]").first()), "an edge is saved as a PNG");
   hold(page.faults.length === 0, `full screen: no page error${page.faults[0] ? `: ${page.faults[0]}` : ""}`);
+}
+
+/** A press on a save button hands over a PNG image named for the chart, drawn at least
+ *  1200 pixels across (its width is read from the file's own header). */
+async function savedPng(page, button) {
+  const [download] = await Promise.all([page.waitForEvent("download", { timeout: 20000 }), button.click()]);
+  const { readFileSync } = await import("node:fs");
+  const bytes = readFileSync(await download.path());
+  const png = bytes.subarray(0, 8).toString("latin1") === "\x89PNG\r\n\x1a\n";
+  return png && /^motionsim-[a-z0-9-]+\.png$/.test(download.suggestedFilename()) && bytes.readUInt32BE(16) >= 1200;
 }
 
 /** The edge limit raised from the event: the way to it on step 3, a press there, and the
@@ -687,7 +705,7 @@ async function fullScreen(page) {
 async function edgeLimit(page) {
   const held = (await page.textContent("#pwm .ev-held").catch(() => "")) ?? "";
   hold(
-    /^(Edges held to 5 V\/ns by the limit|The edges here are .* well under the 5 V\/ns limit)/.test(held.trim()),
+    /^(Edge speed is limited to 5 V\/ns|The edges here are .* well under the 5 V\/ns limit)/.test(held.trim()),
     `the edge limit: the event says what holds the edges (${held.trim()})`,
   );
   // The line quotes the event's own plotted slopes: each figure it gives is one the plot reads.
@@ -727,13 +745,15 @@ async function typedWhileAsked(page) {
     await page.evaluate(() => document.activeElement?.id === "ev-f-event-l_cs_nh"),
     "the event: an assumption's way goes to its box",
   );
-  await page.keyboard.type("3");
+  // 10 nH of the loop's 30: a common-source inductance as large as the whole loop is one the
+  // engine refuses for the IGBT, whose gate then never settles.
+  await page.keyboard.type("1");
   await page.waitForSelector("#pwm .waiting", { timeout: 10000 }).catch(() => null);
   await page.keyboard.type("0"); // the race itself: typed again while the first is asked
   await eventShown(page);
   const after = (await page.textContent("#pwm .ev-assumed")) ?? "";
   hold(!/Common-source inductance left out/.test(after), "the event: the figure typed is in the answer shown");
-  hold((await kept(page)).event?.l_cs_nh === "30", "the event: the figure typed is kept");
+  hold((await kept(page)).event?.l_cs_nh === "10", "the event: the figure typed is kept");
 }
 
 /** The washer on the motor it usually has, followed through its programme. */

@@ -22,6 +22,18 @@ class Pwm(str, Enum):
     def max_modulation_index(self) -> float:
         return 1.0 if self is Pwm.sine else 2 / np.sqrt(3)
 
+    @property
+    def max_written(self) -> float:
+        """The limit as it is written everywhere, to three decimals: 1, or 1.155 for 2/√3."""
+        return round(self.max_modulation_index, 3)
+
+    def within_reach(self, m: float) -> float | None:
+        """A modulation index the scheme reaches, or None for one past it. One typed as the
+        limit is written, 1.155, is a hair past 2/√3 and is taken as the limit itself."""
+        if m > self.max_written + 1e-9:
+            return None
+        return min(m, self.max_modulation_index)
+
 
 @dataclass(frozen=True)
 class PhaseWaveform:

@@ -367,3 +367,19 @@ def test_a_design_step_refused_for_its_gate_drive_names_the_design_files_figures
     step = design._step(work, "verdict")
     assert step["fix"] == "give v_drive, rg_on and rg_off under conditions"
     assert "Supply" not in step["fix"]
+
+
+def test_the_package_runs_as_a_module_like_the_command() -> None:
+    """`python -m motionsim` is the command `motionsim`: the same answer and the same exit
+    status, a refusal's 2 included."""
+    import motionsim
+
+    done = subprocess.run([sys.executable, "-m", "motionsim", "--version"], capture_output=True, text=True, check=False)
+    assert (done.returncode, done.stdout.strip()) == (0, f"motionsim {motionsim.__version__}")
+    refused = subprocess.run(
+        [sys.executable, "-m", "motionsim", "simulate", "example", *POINT, "--irms", "-1", "--tsink", "60"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert refused.returncode == 2 and "current cannot be below 0 A" in refused.stderr

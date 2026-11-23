@@ -11,7 +11,7 @@ from motionsim.propose import NO_GATE_DRIVE, RUNAWAY
 from motionsim.service.answers import GATE_FIX
 from motionsim.service.shapes import LEVEL_WORD, _checks, _gate_out, _result, _stage, level_of
 from motionsim.service.validate import _conditions, _motor, point
-from motionsim.service.verdict.common import _distinct, _gate, _sound, _unreachable
+from motionsim.service.verdict.common import _distinct, _gate, _sound, _switched, _unreachable
 from motionsim.service.workspace import Workspace
 
 
@@ -69,6 +69,7 @@ def proposal(data: dict, workspace: Workspace) -> dict:
     motor = _motor(data["motor"])
     op = _conditions(data["conditions"], motor)
     rpm, torque = point(data["conditions"])
+    _switched(motor, op, data["conditions"])
     keys = data.get("devices") or []
     if not keys:
         raise Refusal("no device chosen", "pick at least one device in the Devices step")
@@ -97,6 +98,7 @@ def motor_point(data: dict, workspace: Workspace) -> dict:
     motor = _motor(data["motor"])
     op = _conditions(data["conditions"], motor)
     rpm, torque = point(data["conditions"])
+    _switched(motor, op, data["conditions"])
     device = workspace.device(data["device"])
     gate = _gate(device, op, motor, data["conditions"])
     op = gate.op
@@ -106,12 +108,17 @@ def motor_point(data: dict, workspace: Workspace) -> dict:
         raise _unreachable(exc, op) from None
     _sound(found.result)
     checks = guard.check(
-        device, op, found.result, found.stage.i_peak, i_limit=guard.current_limit(motor, found.ripple_pp)
+        device,
+        op,
+        found.result,
+        found.stage.i_peak,
+        i_limit=guard.current_limit(motor, found.ripple_pp),
+        ripple_pp=found.ripple_pp,
     )
     checks += guard.ripple_checks(found, op)
     tripped = guard.trip_check(motor, rpm, op.v_dc, device.ratings.v_max)
-    if tripped is not None:
-        checks.append(tripped)
+    few = guard.pulses_check(op.f_sw, found.stage.period, found.stage.stalled)
+    checks += [c for c in (tripped, few) if c is not None]
     said = _checks(checks)
     return {
         "device": workspace.summary(data["device"], device),

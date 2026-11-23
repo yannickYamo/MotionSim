@@ -42,7 +42,7 @@ export function sweepOf(key: string): Sweep {
   if (key === "t_sink" && app.state.conditions.cooling !== "held") {
     return { label: "Air temperature", unit: "°C", field: "t_ambient", scale: 1 };
   }
-  return SWEEPS[key] ?? SWEEPS.f_khz;
+  return Object.hasOwn(SWEEPS, key) ? SWEEPS[key] : SWEEPS.f_khz;
 }
 
 /** The values in the table with what was typed added to them, in order; or why not, in
@@ -52,7 +52,7 @@ export function withValues(
   typed: string,
   key: string,
 ): { ok: true; values: number[] } | { ok: false; why: string } {
-  const read = readList(typed, SWEEPS[key]?.unit);
+  const read = readList(typed, Object.hasOwn(SWEEPS, key) ? SWEEPS[key].unit : undefined);
   const values: number[] = [];
   for (const r of read) {
     if (!r.ok) return { ok: false, why: `${r.why} Nothing was added.` };

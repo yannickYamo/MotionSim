@@ -12,6 +12,7 @@ from motionsim.device.schema import ChipKind, Device
 from motionsim.engine import lookup
 from motionsim.engine.losses import energy, voltage
 from motionsim.engine.mosfet import output_charge, recovery_charge
+from motionsim.errors import Refusal
 from motionsim.event import defaults as d
 from motionsim.event.circuit import Capacitance, Circuit, Gate, Loop, Reverse, Switch, Table
 from motionsim.package.materials import body_drop, family
@@ -22,6 +23,10 @@ from motionsim.text import written
 RECOVERY_SHARE = 0.5
 # Ohm: the least slope a conducting reverse path is given, the leads and bond wires of any package.
 LEAST_SLOPE = 2e-3
+# H: the least inductance a commutation loop is drawn with, the least a layout file may give.
+# The loop's current moves through it and the ringing is its own with the output capacitance:
+# with none the current has no time to move in, and the equations of the event have no answer.
+LEAST_LOOP = 0.1e-9
 
 
 @dataclass(frozen=True)
@@ -84,7 +89,16 @@ def _loop(device: Device, given: Detail, out: Built) -> tuple[float, float]:
     if given.l_g is None:
         out.assumed.append(Assumed("l_g", "Gate-loop inductance left out: give yours"))
     out.used |= {"l_loop": l_loop, "l_cs": l_cs, "l_g": given.l_g or 0.0}
-    return l_loop + (given.esl or 0.0), l_cs
+    whole = l_loop + (given.esl or 0.0)
+    if whole < LEAST_LOOP:
+        raise Refusal(
+            f"the switching event needs a loop inductance of at least {_nano(LEAST_LOOP)}, and "
+            f"{written(whole * 1e9, 3)} nH was given: the current moves from one switch to the other through it, "
+            "and with none there is no edge to draw",
+            "give the commutation loop's inductance, or leave it empty for the usual of the package",
+            "l_loop",
+        )
+    return whole, l_cs
 
 
 def _drive(device: Device, given: Detail, out: Built) -> tuple[float, float]:
@@ -102,6 +116,19 @@ def _drive(device: Device, given: Detail, out: Built) -> tuple[float, float]:
         )
     out.used |= {"v_on": v_on, "v_off": v_off}
     return v_on, v_off
+
+
+def _drives_past(v_on: float, plateau: float) -> None:
+    """A driver that does not lift the gate above its plateau never ends the turn-on: at the
+    plateau the channel carries the load's current and nothing is left to move the drain with.
+    Refused as the loss model refuses it, with the two figures."""
+    if v_on <= plateau:
+        raise Refusal(
+            f"the switching event needs a gate drive voltage above the plateau: {written(v_on, 3)} V was given "
+            f"and the plateau is {written(plateau, 3)} V",
+            "raise the gate drive voltage: this switch is usually driven well above its plateau",
+            "v_drive",
+        )
 
 
 def _resistors(device: Device, given: Detail, out: Built) -> tuple[float, float]:
@@ -266,6 +293,7 @@ def build(device: Device, *, v_dc: float, current: float, tj: float, given: Deta
     v_on, v_off = _drive(device, given, out)
     rg_on, _ = _resistors(device, given, out)
     charges = _gate_charges(device, out)
+    _drives_past(v_on, charges.v_pl)
     c_gs, c_gd = charges.capacitances()
     c_oss = _output(device, out)
     v_f, r_f, q_rr = _reverse_path(device, current, tj, v_dc, out)

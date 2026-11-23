@@ -47,7 +47,7 @@ __all__ = [
 
 
 Machine = Annotated[Pmsm | SynRm | Induction | Bldc | BrushedDc | SeriesDc | Stepper, Field(discriminator="type")]
-ADAPTER = TypeAdapter(Machine)
+ADAPTER: TypeAdapter[Machine] = TypeAdapter(Machine)
 
 
 def load_machine(path: str | Path):

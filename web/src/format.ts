@@ -49,11 +49,33 @@ export function watts(w: number | null | undefined): string {
   return Math.abs(shown) >= 1000 ? `${sig((w as number) / 1000)} kW` : `${sig(w)} W`;
 }
 
+/** The labels of one axis's ticks: as many decimals as tell every tick from the next and
+ *  write each as it is, and the same number of them on every tick (0, 0.5, 1.0 is never
+ *  written; 0.0, 0.5, 1.0 is). Ticks zoomed close together keep a label each. */
+export function tickLabels(values: number[]): string[] {
+  const span = Math.max(...values.map(Math.abs), 0);
+  if (!values.length || !values.every(Number.isFinite) || span >= 1e15) return values.map((v) => sig(v));
+  const written = (d: number) => values.map((v) => (Object.is(Number(v.toFixed(d)), -0) ? 0 : v).toFixed(d));
+  // As it is: within a millionth of the distance between two ticks.
+  const steps = values
+    .slice(1)
+    .map((v, k) => Math.abs(v - values[k]))
+    .filter((x) => x > 0);
+  const near = (steps.length ? Math.min(...steps) : Math.max(span, 1)) * 1e-6;
+  for (let d = 0; d <= 9; d++) {
+    const out = written(d);
+    const apart = new Set(out).size === new Set(values).size;
+    if (apart && values.every((v, k) => Math.abs(Number(out[k]) - v) <= near)) return out;
+  }
+  return values.map((v) => sig(v));
+}
+
 export const degrees = (t: number | null | undefined): string =>
   missing(t) ? NONE : `${Math.round(t as number) || 0} °C`;
 
 export const percent = (x: number | null | undefined, digits = 1): string =>
-  missing(x) ? NONE : `${(100 * (x as number)).toFixed(digits)} %`;
+  // A share that rounds to nothing is 0, never -0.
+  missing(x) ? NONE : `${(Number((100 * (x as number)).toFixed(digits)) || 0).toFixed(digits)} %`;
 
 /** A whole number with its thousands set apart by a thin space, which the page reads back:
  *  20 000, never 20,000, which half the world reads as twenty. */

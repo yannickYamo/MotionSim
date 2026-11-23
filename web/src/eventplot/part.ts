@@ -5,7 +5,7 @@
 // each of its two traces.
 
 import type { SwitchingEvent } from "../api";
-import { sig } from "../format";
+import { tickLabels } from "../format";
 import { ticks } from "../charts/scale";
 import { line, names, powerUnit, ranges, sideTicks, visible, xOf, yOf } from "./plot";
 import type { Box, Drawn, Trace } from "./plot";
@@ -59,12 +59,14 @@ function timeTicks(box: Box, v: Span): string {
   const sx = xOf(box, v);
   const y = box.y + box.h + 18;
   const count = Math.max(3, Math.min(10, Math.round(box.w / 110)));
-  const marks = ticks(v.t0 * scale, v.t1 * scale, count)
-    .map((t) => {
+  const at = ticks(v.t0 * scale, v.t1 * scale, count);
+  const labels = tickLabels(at);
+  const marks = at
+    .map((t, k) => {
       const x = sx(t / scale).toFixed(1);
       return (
         `<path class="grid" d="M${x} ${box.y}V${box.y + box.h}"/>` +
-        `<text class="tick" x="${x}" y="${y}" text-anchor="middle">${sig(t, 3)}</text>`
+        `<text class="tick" x="${x}" y="${y}" text-anchor="middle">${labels[k]}</text>`
       );
     })
     .join("");

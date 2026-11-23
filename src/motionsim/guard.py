@@ -370,22 +370,32 @@ def temperature_check(device: Device, op: OperatingPoint, result: Result, juncti
 
 
 def current_checks(
-    device: Device, op: OperatingPoint, i_peak: float, overshoot: float, i_limit: float | None
+    device: Device,
+    op: OperatingPoint,
+    i_peak: float,
+    overshoot: float,
+    i_limit: float | None,
+    ripple_pp: float | None = None,
 ) -> list[Check]:
     """The peak current of one device against its continuous and its pulsed rating.
 
     A rating is one device's. With several in parallel each carries its share of the
     position's current, the hardest-worked of them the most, which is what the solver gives
-    it too.
+    it too. Where the ripple at the switching frequency is known, half of it, peak to peak,
+    rides on the fundamental's peak: that is the current a switch turns off, and the one held
+    against the ratings.
     """
     r = device.ratings
     shared = max(int(op.parallel), 1)
-    each = i_peak * hot_share(device, shared)  # the one that carries most
-    said = (
-        f"{written(each, 3)} A"
-        if shared == 1
-        else f"{written(each, 3)} A a device ({written(i_peak, 3)} A at the switch, shared by {shared})"
-    )
+    share = hot_share(device, shared)  # of the one that carries most
+    half = (ripple_pp or 0.0) / 2
+    each = (i_peak + half) * share
+    said = f"{written(each, 3)} A" if shared == 1 else f"{written(each, 3)} A a device"
+    if half > 0:
+        said += f" with the switching ripple ({written(i_peak * share, 3)} A without"
+        said += ")" if shared == 1 else f"; {written(i_peak + half, 3)} A at the switch, shared by {shared})"
+    elif shared > 1:
+        said += f" ({written(i_peak, 3)} A at the switch, shared by {shared})"
     if each > r.i_nominal:
         out = [
             Check(
@@ -397,23 +407,31 @@ def current_checks(
         ]
     else:
         out = [Check(Level.ok, "current", f"peak current {said} against a {r.i_nominal:g} A rating")]
-    pulsed = _pulsed_check(device, each, shared, overshoot, i_limit)
+    pulsed = _pulsed_check(device, i_peak * share, half * share, shared, overshoot, i_limit)
     return out if pulsed is None else [*out, pulsed]
 
 
-def _pulsed_check(device: Device, each: float, shared: int, overshoot: float, i_limit: float | None) -> Check | None:
+def _pulsed_check(
+    device: Device, settled: float, half: float, shared: int, overshoot: float, i_limit: float | None
+) -> Check | None:
     """The current one device carries against its pulsed rating, where it has one: the
     settled current, the most the drive's limit lets through, or, with no limit known, the
-    settled current with what a current loop overshoots by. None where nothing is to be said."""
+    settled current with what a current loop overshoots by. settled is the fundamental's peak
+    in one device, and half is half the switching ripple that rides on it, peak to peak: nought
+    where none is known. None where nothing is to be said."""
     r = device.ratings
     if r.i_pulsed is None:
         return None
+    each = settled + half
+    said = f"{written(each, 3)} A a device"
+    if half > 0:
+        said += f" with the switching ripple ({written(settled, 3)} A without)"
     # The continuous rating may be passed for a moment; the pulsed rating may not.
     if each > r.i_pulsed:
         return Check(
             Level.fail,
             "current",
-            f"peak current {written(each, 3)} A a device is above its pulsed rating of {r.i_pulsed:g} A, "
+            f"peak current {said} is above its pulsed rating of {r.i_pulsed:g} A, "
             "which nothing may exceed even briefly",
         )
     if i_limit is not None:
@@ -430,16 +448,18 @@ def _pulsed_check(device: Device, each: float, shared: int, overshoot: float, i_
                 "part with a higher pulsed rating",
             )
         return None
-    if each * (1 + overshoot) > r.i_pulsed:
+    if settled * (1 + overshoot) + half > r.i_pulsed:
         # No limit is known, so the settled current is all there is to check. On its way there
         # a current loop passes its reference for a moment, and the rating has no moment to give.
+        # The loop overshoots on the fundamental; the ripple rides on whatever that is.
         return Check(
             Level.caution,
             "current",
-            f"peak current {written(each, 3)} A a device is within its pulsed rating of {r.i_pulsed:g} A once "
+            f"peak current {said} is within its pulsed rating of {r.i_pulsed:g} A once "
             f"settled, with less room than the {overshoot:.0%} a current loop commonly overshoots by on a "
             "step in torque, and no current limit is known for the drive. Hold the drive's limit under "
-            f"{written(r.i_pulsed / (1 + overshoot), 3)} A a device",
+            f"{written((r.i_pulsed - half) / (1 + overshoot), 3)} A a device"
+            + (", the ripple apart" if half > 0 else ""),
         )
     return None
 
@@ -539,6 +559,7 @@ def check(
     junction_margin: float = 25.0,
     overshoot: float = OVERSHOOT,
     i_limit: float | None = None,
+    ripple_pp: float | None = None,
 ) -> list[Check]:
     """Checks on one solved operating point.
 
@@ -547,12 +568,14 @@ def check(
     overshoot: how far a current loop is taken to pass its reference on a step, as a share.
         Used only where no limit is given.
     i_limit: the most the drive lets a switch position carry, A peak, where it is known.
+    ripple_pp: the ripple on the current at the switching frequency, A peak to peak, where it is
+        known: half of it is added to the peak held against the current ratings.
     """
     return [
         *voltage_checks(device, op, result, voltage_share),
         temperature_check(device, op, result, junction_margin),
         *speed_checks(device, op),
-        *current_checks(device, op, i_peak, overshoot, i_limit),
+        *current_checks(device, op, i_peak, overshoot, i_limit, ripple_pp),
         *protection_checks(device),
         data_check(result),
         *taken_checks(result),

@@ -32,6 +32,13 @@ describe("a mission file", () => {
     expect(read.mission.time).toEqual([0, 2, 3]);
     expect(read.notes).toEqual(["2 rows that are not three numbers left out."]);
   });
+  it("reads a figure in tens only: 0x10 is no speed of 16, and its row is left out", () => {
+    const read = ok("0,0,1\n1,0x10,1\n2,200,1\n3,1e3,1\n");
+    expect(read.mission.time).toEqual([0, 2, 3]);
+    expect(read.mission.rpm).toEqual([0, 200, 1000]);
+    expect(read.notes).toContain("1 row that is not three numbers left out.");
+    expect(refused("0;0x10;1\n1;0b11;1\n2;0o7;1\n").why).toBe("that file does not hold rows of time, speed and torque");
+  });
   it("is refused when a speed is beyond any motor, with the row and the figure", () => {
     const r = refused("0,0,1\n1,1e9,1\n2,0,1\n");
     expect(r.why).toBe("row 2 has a speed of 1\u202f000\u202f000\u202f000 rpm, more than any motor turns");

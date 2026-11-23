@@ -30,14 +30,17 @@ from motionsim.service.motion.inputs import Motion, motion_inputs
 def _inrush(data: dict, op: OperatingPoint) -> dict | None:
     from motionsim.starting import inrush
 
+    # The resistor is held to what one can be before the capacitor is looked for: a resistance
+    # below nought is a slip with or without a capacitor to charge. Nought is no resistor.
+    r = data.get("precharge")
+    ohms = None if r in ("", None) else _number(r, "precharge resistance", low=0, field="precharge")
     c_link = data.get("c_link")
     if not c_link:
         return None
-    r = data.get("precharge")
     found = inrush(
         op.v_dc,
         _number(c_link, "DC-link capacitance", low=1e-9, field="c_link"),
-        _number(r, "precharge resistance", low=1e-3, field="precharge") if r else None,
+        _number(ohms, "precharge resistance", low=1e-3, field="precharge") if ohms else None,
     )
     return {"energy": found.energy, "peak": found.peak, "time": found.time}
 
@@ -111,18 +114,23 @@ def motion_checks(m: Motion, run, reached, link, supply: str) -> list[guard.Chec
     from motionsim import dclink
 
     device, op = m.device, m.op
+    # The most a switch turns off is the most, over the motion, of an instant's current with
+    # half its own ripple on top. It is said beside the motion's most current without ripple,
+    # so the ripple handed on is what lies between the two.
+    peak = max(s.heaviest.stage.i_peak for s in run.solved)
+    with_ripple = max(s.heaviest.stage.i_peak + (s.heaviest.ripple_pp or 0.0) / 2 for s in run.solved)
     checks = guard.check(
         device,
         op,
         reached,
-        max(s.heaviest.stage.i_peak for s in run.solved),
+        peak,
         i_limit=guard.current_limit(m.motor, max((s.point.ripple_pp or 0.0) for s in run.solved)),
+        ripple_pp=2 * (with_ripple - peak),
     )
     checks += dclink.check(link, op.v_dc, device.ratings.v_max, supply=supply)
     hardest, most = _hardest(run), _most_ripple_current(run)
     # The ripple is weighed against the most current of the motion, not the current at the
     # instant it is largest: that is often a pause, carrying almost none.
-    peak = max(s.heaviest.stage.i_peak for s in run.solved)
     weighed = SimpleNamespace(stage=SimpleNamespace(i_peak=peak), ripple_pp=hardest.ripple_pp, capacitor_rms=None)
     checks += [c for c in guard.ripple_checks(weighed, op) if c.topic == "ripple"]
     checks += [c for c in guard.ripple_checks(most, op) if c.topic == "link capacitor"]
@@ -231,6 +239,7 @@ def cycle(data: dict, workspace: Workspace) -> dict:
             "slow the motion, lighten the load or raise the supply voltage",
             "motion",
         )
+    told.switched(m, run)
     worst, reached = worst_instant(run, trace)
     c_link = data.get("c_link")
     link = dclink.returned(
@@ -282,7 +291,8 @@ def _traces(m: Motion, run, trace, first: int) -> dict:
             None if s.point is None else s.point.stage.p_electrical + s.point.result.p_inverter for s in run.steps
         ],
         # The junction's swing within one period of the output, or one turn of the load, K.
-        "swing": clean(trace.ripple[first:]) if trace.ripple.size else [None] * len(run.steps),
+        # The trace holds it for the last time through alone, so it is not cut to it again.
+        "swing": clean(trace.ripple) if trace.ripple.size else [None] * len(run.steps),
     }
 
 

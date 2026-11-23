@@ -129,13 +129,16 @@ class OperatingPoint:
         self._check_choices()
         if self.parallel < 1:
             raise BadFigure(f"at least one device at each position, and {self.parallel} was given")
-        if self.modulation_index > self.pwm.max_modulation_index + 1e-9:
+        reached = self.pwm.within_reach(self.modulation_index)
+        if reached is None:
             # Past its linear range a scheme cannot give more voltage, and the waveform the
             # losses are drawn from would not be the one the stage makes.
             raise BadFigure(
                 f"a modulation index of {self.modulation_index:g} is past the linear range of {self.pwm.value} "
-                f"PWM, which ends at {self.pwm.max_modulation_index:.3g}"
+                f"PWM, which ends at {self.pwm.max_written:g}"
             )
+        # The limit typed as it is written is the limit: the point is frozen, so it is set this way.
+        object.__setattr__(self, "modulation_index", reached)
         if not isinstance(self.n_steps, int) or isinstance(self.n_steps, bool) or self.n_steps < FEWEST_STEPS:
             raise BadFigure(
                 f"an output period is integrated over at least {FEWEST_STEPS} samples, and {self.n_steps!r} was given"

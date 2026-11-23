@@ -40,6 +40,24 @@ export const ev = {
   focusTo: "",
 };
 
+/** The event shut and forgotten, with what was on its way for it: a design put in place of
+ *  another (Reset, a setup opened) never shows the event, the answer or the zoom of the last. */
+export function resetEvent(): void {
+  ev.stop?.abort();
+  Object.assign(ev, {
+    open: false,
+    mark: null,
+    key: "",
+    answer: null,
+    asking: "",
+    stop: null,
+    device: "",
+    focusTo: "",
+  });
+  plots.now()?.forgetEvent();
+  ui.pwmOpen = null;
+}
+
 /** The keyboard to the edge pressed, once it is on the page: tried after each drawing of the stage. */
 export function focusOnce(): void {
   const el = ev.focusTo ? document.querySelector<HTMLElement>(ev.focusTo) : null;
@@ -173,6 +191,13 @@ const opener = () =>
 
 /** Where the event was refused, its fold stays, so the figure at fault can be changed there. */
 const detailOnly = (view: Plots) => view.detailFold();
+
+/** The event's own boxes alone, where the design they belong to is refused: the figure at
+ *  fault may be one of them, and is put right where it was typed. */
+export function eventBoxes(): string {
+  const view = plots.now();
+  return ev.open && view ? `<section class="ev">${view.detailFold()}</section>` : "";
+}
 
 const waiting = (what: string) => `<p class="waiting quiet" role="status">${escape(what)}</p>`;
 

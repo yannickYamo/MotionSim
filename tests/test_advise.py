@@ -94,3 +94,19 @@ def test_an_example_motor_wound_for_another_voltage_is_the_same_machine(tmp_path
             )
             # Same shaft power from the same machine: current times voltage is unchanged.
             assert other["stage"]["i_peak"] * bus == pytest.approx(own["stage"]["i_peak"] * start["v_dc"], rel=0.02)
+
+
+@pytest.mark.parametrize("motor, v_dc", [(ROBOT, 48), (MAINS, 300)])
+@pytest.mark.parametrize("rpm", [0, 2000])
+def test_a_point_that_asks_no_current_gives_no_figure_sized_from_it(motor, v_dc, rpm) -> None:
+    """No torque asks no current: there is none to rate a device for, no conduction loss to
+    hold an on-resistance to, and no current at which a transistor crosses an IGBT's drop."""
+    a = advise(motor, rpm, 0.0, v_dc, 16e3)
+    assert a.i_peak == 0.0
+    said = text(a)
+    assert "inf" not in said and "nan" not in said and "0 A or more" not in said
+    assert "Current: this point asks no current, so there is none to size a device for" in said
+    assert "mΩ" not in said
+    # What does not rest on the current is still said: the stage, the voltage class, the packaging.
+    assert "Power stage: a three-phase inverter, 6 switches." in said and "Voltage:" in said and "Packaging:" in said
+    assert "Technology:" in said

@@ -190,18 +190,30 @@ function otherTabBanner(): string {
 function banner(): string {
   if (ui.otherTab) return otherTabBanner();
   if (res.fault) return faultBanner();
-  if (ui.cleared) {
-    const said =
-      "<p><b>What this browser kept from an earlier visit could not be shown, and was cleared.</b> " +
-      "The page has started afresh.</p>";
-    return `<div class="asking" role="status">${icon("info-circle")}<div>${said}</div></div>`;
-  }
-  if (ui.unsaved) {
-    const said = "<p><b>This browser is not keeping what you enter.</b> The page works; a reload starts it afresh.</p>";
-    return `<div class="asking" role="status">${icon("info-circle")}<div>${said}</div></div>`;
-  }
   const refused = refusedHere() ? refusal(res.blocked!) : "";
-  return fetchBanner() + setupBanner() + unusedBanner() + refused + (app.state.step >= MOTOR ? followedNote() : "");
+  // What the browser keeps is said beside the rest, never in its place: a refusal, a note on
+  // a setup opened or a Try again would otherwise be hidden for the whole visit.
+  return (
+    keptBanner() +
+    fetchBanner() +
+    setupBanner() +
+    unusedBanner() +
+    refused +
+    (app.state.step >= MOTOR ? followedNote() : "")
+  );
+}
+
+/** What the browser did with what it keeps for the page: cleared it, or keeps none. */
+function keptBanner(): string {
+  const note = (said: string) => `<div class="asking" role="status">${icon("info-circle")}<div>${said}</div></div>`;
+  if (ui.cleared)
+    return note(
+      "<p><b>What this browser kept from an earlier visit could not be shown, and was cleared.</b> " +
+        "The page has started afresh.</p>",
+    );
+  if (ui.unsaved)
+    return note("<p><b>This browser is not keeping what you enter.</b> The page works; a reload starts it afresh.</p>");
+  return "";
 }
 
 /** The equations or the printed report whose code did not come, with Try again. */

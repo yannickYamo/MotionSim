@@ -4,6 +4,7 @@
 import { api, partsOf } from "../api";
 import type { KeptPart } from "../api";
 import { dropInFlight, schedule } from "../engine";
+import { resetEvent } from "../eventask";
 import { fitFor } from "../engine/fit";
 import { presetsFor } from "../engine/loads";
 import { suggestFor } from "../engine/suggest";
@@ -22,6 +23,7 @@ import { download, partsMoved } from "./reports";
 export function applyState(next: State): void {
   // Nothing on its way for the state before lands on this one.
   dropInFlight();
+  resetEvent();
   resetUndo();
   resetColumns();
   partsMoved();
@@ -39,6 +41,8 @@ export function applyState(next: State): void {
   ui.missionFault = ui.typedRefused = null;
   ui.typedWrong = {};
   ui.typedNotes = {};
+  ui.typedOpen = false;
+  ui.fetchFault = null;
   ui.missionNotes = [];
   res.suggestion = null;
   res.blocked = res.fault = res.waiting = null;

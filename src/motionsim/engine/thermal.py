@@ -55,8 +55,12 @@ def repeating_rise(r, tau, power: np.ndarray, dt: float) -> np.ndarray:
             out += stage_r * power
             continue
         keep = float(np.exp(-dt / stage_tau))
-        from_rest = lfilter([stage_r * (1 - keep)], [1.0, -keep], power)
+        # What a stage gains over a step, and loses over a whole round, is taken as it is and
+        # not as one less what it keeps: for a step far below the time constant that
+        # difference rounds to nothing, and the round's share to nought over nought.
+        gained = -float(np.expm1(-dt / stage_tau))
+        from_rest = lfilter([stage_r * gained], [1.0, -keep], power)
         # Where it starts each time round is where the last round left it.
-        carried = from_rest[-1] / (1 - keep**power.size)
+        carried = from_rest[-1] / -float(np.expm1(-power.size * dt / stage_tau))
         out += from_rest + carried * keep**ends
     return out

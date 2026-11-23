@@ -169,3 +169,87 @@ def test_a_device_the_design_does_not_name_is_refused(tmp_path, capsys, monkeypa
 def test_the_layout_template_is_written_by_the_command_line(capsys) -> None:
     assert cli.main(["template", "layout"]) == 0
     assert capsys.readouterr().out == TEMPLATE
+
+
+# ---------- figures the event cannot be drawn with, and figures left out ----------
+
+
+@pytest.mark.parametrize("key", ["example-mosfet", "example"])
+@pytest.mark.parametrize("henries", [0, 0.05e-9])
+def test_a_loop_of_no_inductance_is_taken_for_the_losses_and_refused_for_the_event(ws, answers, key, henries) -> None:
+    """The loss model reads the loop inductance for the overshoot alone, and nought leaves it
+    out. The event's current moves through that inductance: with none there is no time for it
+    to move in, and nothing to ring. Under the layout file's own least, 0.1 nH, it is refused."""
+    start, _, _ = answers[key]
+    body = {**start, "conditions": {**start["conditions"], "l_loop": henries}, "device": key}
+    assert ask(ws, "/api/point", body)["status"] == 200
+    got = ask(ws, "/api/event", body)
+    assert got["status"] == 422, got
+    assert got["body"]["field"] == "l_loop"
+    assert "loop inductance of at least 0.1 nH" in got["body"]["refused"]
+    assert f"{henries * 1e9:g} nH" in got["body"]["refused"]
+    assert "leave it empty" in got["body"]["fix"]
+
+
+def test_the_event_and_a_layout_file_hold_the_loop_inductance_to_the_same_least() -> None:
+    from motionsim.event.layout import FIGURES
+    from motionsim.event.parts import LEAST_LOOP
+
+    _, factor, low, _, _ = FIGURES["l_loop_nh"]
+    assert pytest.approx(low * factor) == LEAST_LOOP == 0.1e-9
+
+
+def test_a_loop_whose_only_inductance_is_the_capacitors_own_is_drawn(ws, answers) -> None:
+    start, _, _ = answers["example-mosfet"]
+    conditions = {**start["conditions"], "l_loop": 0}
+    asked = {**start, "conditions": conditions, "device": "example-mosfet", "event": {"layout": "esl_nh: 5\n"}}
+    got = ask(ws, "/api/event", asked)
+    assert got["status"] == 200, got
+    assert got["body"]["used"]["l_loop"] == 0
+    assert got["body"]["turn_off"]["v_peak"] > got["body"]["v_dc"]  # 5 nH still overshoots
+
+
+def test_gate_loop_and_common_source_inductance_given_as_nought_are_the_event_with_them_left_out(ws, answers) -> None:
+    start, _, plain = answers["example-mosfet"]
+    got = ask(ws, "/api/event", {**start, "device": "example-mosfet", "event": {"l_g_nh": "0", "l_cs_nh": 0}})
+    assert got["status"] == 200, got
+    assert not {"l_g", "l_cs"} & {a["field"] for a in got["body"]["assumed"]}
+    for edge in ("turn_on", "turn_off"):
+        for figure in ("energy", "v_peak", "i_peak", "dv_dt", "di_dt"):
+            assert got["body"][edge][figure] == plain["body"][edge][figure], (edge, figure)
+
+
+@pytest.mark.parametrize(
+    "key, change, field, said",
+    [
+        ("example-mosfet", {"rg_on": 0}, "rg_on", "turn-on gate resistance cannot be below 0.01 Ω"),
+        ("example", {"rg_off": 0}, "rg_off", "turn-off gate resistance cannot be below 0.01 Ω"),
+        ("example", {"v_drive": 0}, "v_drive", "gate drive voltage cannot be below 0.1 V"),
+        # The made-up MOSFET's gate charge gives its plateau as 4.6 V.
+        ("example-mosfet", {"v_drive": 3}, "v_drive", "gate drive voltage 3 V does not exceed the plateau (4.6 V)"),
+        ("example-mosfet", {"v_drive": 4.6}, "v_drive", "gate drive voltage 4.6 V does not exceed the plateau (4.6 V)"),
+        ("example", {"v_drive": 0.1}, "v_drive", "gate drive voltage above the plateau: 0.1 V was given"),
+    ],
+)
+def test_a_gate_drive_that_cannot_switch_the_part_is_refused_with_its_name(
+    ws, answers, key, change, field, said
+) -> None:
+    start, _, _ = answers[key]
+    got = ask(ws, "/api/event", {**start, "conditions": {**start["conditions"], **change}, "device": key})
+    assert got["status"] == 422, got
+    assert got["body"]["field"] == field
+    assert said in got["body"]["refused"]
+    assert got["body"]["fix"]
+
+
+def test_an_igbt_driven_to_its_plateau_and_no_further_is_refused_for_the_event(ws, answers) -> None:
+    """At the plateau the channel carries the load's current and no more: nothing is left to
+    charge the gate-drain capacitance with, and the edge never ends."""
+    start, _, plain = answers["example"]
+    plateau = plain["body"]["used"]["v_plateau"]
+    assert 5 < plateau < 12  # an IGBT's, between its threshold and the 15 V it is driven with
+    conditions = {**start["conditions"], "v_drive": plateau}
+    got = ask(ws, "/api/event", {**start, "conditions": conditions, "device": "example"})
+    assert got["status"] == 422, got
+    assert got["body"]["field"] == "v_drive"
+    assert f"the plateau is {plateau:g} V" in got["body"]["refused"]

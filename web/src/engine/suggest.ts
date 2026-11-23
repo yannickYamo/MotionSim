@@ -5,8 +5,9 @@ import { api } from "../api";
 import type { Suggest } from "../api";
 import { settle } from "../follow";
 import { latest, once } from "../guard";
+import { presetsFor } from "./loads";
 import { save } from "../state";
-import { MOTOR, SUPPLY } from "../steps";
+import { LOAD, MOTOR, SUPPLY } from "../steps";
 import { app, draw, res, ui, underTest } from "../store";
 
 /** Put what the user has not typed where the device under test starts it. Says what moved,
@@ -52,6 +53,8 @@ export async function suggestFor(): Promise<boolean> {
   if (res.suggestion?.id === id) return false; // another asking of the same has already been taken
   res.suggestion = { id, data };
   const moved = startFrom(id, data);
+  // Loads that were sized before this was known are sized again, for the application it names.
+  if (state.step >= LOAD) void presetsFor();
   if (state.step === MOTOR || state.step === SUPPLY) draw.panel(true);
   draw.stage();
   return moved;

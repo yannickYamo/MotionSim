@@ -6,9 +6,10 @@
 // it is bundled with the page, so it works offline from the built files.
 
 import type { EventEdge, SwitchingEvent } from "../api";
-import { degrees, sentence, sig } from "../format";
+import { sentence, sig } from "../format";
 import { names } from "./plot";
 import { partSlug, partSvg, partTitle, TRACES } from "./part";
+import { pointSaid } from "./point";
 import type { Part } from "./part";
 import { edgeOf } from "./spans";
 import { CLASS } from "./svg";
@@ -65,10 +66,7 @@ export const slug = (name: string) =>
 export const pdfName = (ev: SwitchingEvent, which: Which, part: Part) =>
   `motionsim-${partSlug(which, part)}-${slug(ev.name)}.pdf`;
 
-/** The device and the operating point, in one line. */
-export const pointSaid = (ev: SwitchingEvent) =>
-  `${ev.name}, the hottest switch (${ev.position}), at ${sig(ev.v_dc)} V and ${sig(ev.current)} A, ` +
-  `junction ${degrees(ev.tj)}`;
+export { pointSaid };
 
 /** What was assumed, in one line. */
 export const assumedSaid = (ev: SwitchingEvent) =>
@@ -257,13 +255,23 @@ function foot(doc: Doc, spec: PageSpec, date: Date): void {
   doc.text(latin(spec.footRight), PAGE_W - M, 575, { align: "right" });
 }
 
+/** Words held to one line of a width: where they run past it they end in an ellipsis, so a
+ *  long part name never runs off the page. */
+function oneLine(doc: Doc, text: string, width: number, how: { bold?: boolean; size: number }): string {
+  doc.setFont("helvetica", how.bold ? "bold" : "normal");
+  doc.setFontSize(how.size);
+  const lines = doc.splitTextToSize(latin(text), width) as string[];
+  return lines.length > 1 ? `${lines[0].replace(/[\s,;:(]+$/, "")}...` : text;
+}
+
 /** A page's bytes: an A4 page, landscape, in points. */
 export async function pageBytes(spec: PageSpec, date = new Date()): Promise<ArrayBuffer> {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   doc.setProperties({ title: latin(spec.title), subject: latin(spec.subtitle), creator: "MotionSim" });
-  say(doc, spec.title, M, 50, { bold: true, size: 16, hex: PRINT.ink });
-  say(doc, spec.subtitle, M, 68, { size: 10, hex: PRINT.ink2 });
+  const across = PAGE_W - 2 * M;
+  say(doc, oneLine(doc, spec.title, across, { bold: true, size: 16 }), M, 50, { bold: true, size: 16, hex: PRINT.ink });
+  say(doc, oneLine(doc, spec.subtitle, across - 12, { size: 10 }), M, 68, { size: 10, hex: PRINT.ink2 });
   await drawPlot(doc, spec.svg);
   sideColumn(doc, spec);
   foot(doc, spec, date);
@@ -298,7 +306,7 @@ export async function pdfBytes(
     rows: readoutsFor(edgeOf(ev, which), which, part, ev.v_dc),
     span: `Shown from ${sig(v.t0 * scale, 4)} to ${sig(v.t1 * scale, 4)} ${unit}`,
     assumed: assumedSaid(ev),
-    footRight: "Each edge is made to lose the energy the loss model counts.",
+    footRight: "Each edge is drawn to lose exactly the energy the loss model counts.",
   };
   return pageBytes(spec, date);
 }

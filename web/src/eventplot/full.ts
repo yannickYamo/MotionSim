@@ -2,7 +2,7 @@
 // the loss chart is at and leaves that plot at the zoom it was brought to, and the keyboard
 // goes back to the plot it was opened from.
 
-import { closePlot, openNow, openPlot } from "./dialog";
+import { openPlot } from "./dialog";
 import type { Plottable } from "./dialog";
 import { partSvg, partTitle, TRACES } from "./part";
 import type { Part, PartDrawn } from "./part";
@@ -13,20 +13,19 @@ import { edgeOf, eventNow, resetSpan, setSpan, spanOf } from "./spans";
 import type { Which } from "./svg";
 import { firstSpan, NARROWEST, whole } from "./zoom";
 
-/** The plot open full screen, for the page and its tests: null when none is. */
-export const fullNow = (): { which: Which; part: Part } | null => {
-  const m = openNow() as { which?: Which; part?: Part } | null;
-  return m?.which && m.part ? { which: m.which, part: m.part } : null;
-};
-
 /** Open an edge's pair of traces full screen. */
 export function openFull(which: Which, part: Part): void {
   const ev = eventNow();
   if (!ev) return;
   const edge = () => edgeOf(eventNow() ?? ev, which);
   const p: Plottable<PartDrawn> = {
-    title: partTitle(ev.kind, which, part),
-    said: pointSaid(ev),
+    // Read afresh at each drawing: a later answer drawn behind the dialog is named as it is drawn.
+    get title() {
+      return partTitle((eventNow() ?? ev).kind, which, part);
+    },
+    get said() {
+      return pointSaid(eventNow() ?? ev);
+    },
     narrowest: NARROWEST,
     span: () => spanOf(which, edge()),
     whole: () => whole(edge()),
@@ -49,6 +48,3 @@ export function openFull(which: Which, part: Part): void {
   };
   openPlot(p);
 }
-
-/** Shut the dialog: the keyboard goes back to the plot it was opened from. */
-export const closeFull = closePlot;

@@ -56,7 +56,7 @@ function atPoint(c: Candidate, r: Result): string {
     ? `, ${Math.round(r.tj_range![0])} to ${Math.round(r.tj_range![1])} °C across the thermal assumptions`
     : "";
   return rows([
-    ["Verdict", VERDICTS[c.level] ?? c.level],
+    ["Verdict", Object.hasOwn(VERDICTS, c.level) ? VERDICTS[c.level] : escape(String(c.level))],
     ["Power-stage loss", watts(r.loss)],
     ["Conduction", `${watts(r.conduction)} (${share(r.conduction)})`],
     ["Switching", `${watts(r.switching)} (${share(r.switching)})`],

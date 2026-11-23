@@ -6,9 +6,20 @@ import type { State } from "./state";
 
 type Plain = string | number | boolean | null | Plain[] | { [key: string]: Plain };
 
+/** A figure as YAML reads it back as a number. A very small or very large one is written with
+ *  an exponent, which YAML takes for a number only with a point in it and a sign on it
+ *  (1.0e-8, not 1e-8, which it reads as text). Held to twelve figures, so that a sum made in
+ *  binary (200 ns as 2.0000000000000002e-7) is written as the figure it stands for. */
+export function figure(v: number): string {
+  const said = String(Number(v.toPrecision(12)));
+  if (!said.includes("e")) return said;
+  const [mantissa, exponent] = said.split("e");
+  return `${mantissa.includes(".") ? mantissa : `${mantissa}.0`}e${/^[-+]/.test(exponent) ? exponent : `+${exponent}`}`;
+}
+
 /** A text as YAML reads it back: quoted the way JSON quotes, which YAML takes as it is. */
 const scalar = (v: string | number | boolean | null): string =>
-  v === null ? "null" : typeof v === "string" ? JSON.stringify(v) : String(v);
+  v === null ? "null" : typeof v === "string" ? JSON.stringify(v) : typeof v === "number" ? figure(v) : String(v);
 
 /** Plain data as YAML, a key a line, nested by two spaces. */
 export function yaml(value: Plain, indent = ""): string {

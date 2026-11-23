@@ -19,11 +19,24 @@ from motionsim.observe.figures import Axis, curves_in, digitise, find_frames, ma
 FOLDER = Path(__file__).parent.parent / "datasheets"
 
 
+OPENED: list = []
+
+
 def page(name: str, number: int):
     path = FOLDER / name
     if not path.exists():
         pytest.skip(f"{name} is not in datasheets/")
-    return pdfplumber.open(path).pages[number - 1]
+    pdf = pdfplumber.open(path)
+    OPENED.append(pdf)
+    return pdf.pages[number - 1]
+
+
+@pytest.fixture(autouse=True)
+def _closed():
+    """Each datasheet a test opened is closed after it: a file left open is a warning."""
+    yield
+    while OPENED:
+        OPENED.pop().close()
 
 
 def at(x, y, where):

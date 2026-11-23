@@ -129,7 +129,8 @@ def steady_of(steps, trace, first: int, offset: float) -> list[dict]:
 def worst_swing(steps, trace, first: int, offset: float) -> dict | None:
     """The largest swing a junction goes through within one period of the output or one turn
     of the load, where in the duty it is, and the output's frequency there."""
-    ripple = trace.ripple[first:] if trace.ripple.size else np.zeros(0)
+    # The swings are kept for the last time through alone: they begin where its steps do.
+    ripple = trace.ripple
     if not ripple.size or not np.nanmax(ripple) > 0:
         return None
     k = int(np.nanargmax(ripple))
@@ -170,13 +171,28 @@ def method_said(method: dict) -> str:
     return "the heatsink is held at the temperature given"
 
 
+def _fastest(run):
+    """The stage of the instant whose output turns fastest, or None where nothing turns."""
+    turning = [s.point.stage for s in run.solved if not s.point.stage.stalled and s.sample.motor_rpm != 0]
+    return min(turning, key=lambda st: st.period) if turning else None
+
+
+def switched(m, run) -> None:
+    """A motion whose top speed asks an output faster than the stage switches is refused, as
+    a design point is."""
+    from motionsim.service.validate import turns_slower_than_switched
+
+    fastest = _fastest(run)
+    if fastest is not None:
+        turns_slower_than_switched(fastest, m.op.f_sw, "at the top of the motion ")
+
+
 def pulses(m, run) -> guard.Check | None:
     """The fewest switching periods in one period of the output over the motion, as a
     caution where they are too few."""
-    turning = [s.point.stage for s in run.solved if not s.point.stage.stalled and s.sample.motor_rpm != 0]
-    if not turning:
+    fastest = _fastest(run)
+    if fastest is None:
         return None
-    fastest = min(turning, key=lambda st: st.period)
     return guard.pulses_check(m.op.f_sw, fastest.period, False, "at the top of the motion ")
 
 

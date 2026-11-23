@@ -196,7 +196,9 @@ def propose(
         stall = None
         if design is not None:
             limit = guard.current_limit(motor, design.ripple_pp)
-            checks += guard.check(device, base, design.result, design.stage.i_peak, i_limit=limit)
+            checks += guard.check(
+                device, base, design.result, design.stage.i_peak, i_limit=limit, ripple_pp=design.ripple_pp
+            )
             checks += guard.ripple_checks(design, base)
             tripped = guard.trip_check(motor, rpm, base.v_dc, device.ratings.v_max)
             if tripped is not None:

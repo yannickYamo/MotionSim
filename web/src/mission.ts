@@ -27,7 +27,12 @@ function rowsOf(text: string): { rows: number[][]; skipped: number; commas: stri
     .filter(Boolean);
   // Where semicolons or tabs part the columns, a comma is a decimal point.
   const parted = lines.some((line) => /[;\t]/.test(line));
-  const cell = (c: string) => (c.trim() === "" ? NaN : Number(parted ? c.trim().replace(",", ".") : c.trim()));
+  // A figure in tens, with a point and an exponent at most: 0x10 is no speed.
+  const tens = /^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i;
+  const cell = (c: string) => {
+    const typed = parted ? c.trim().replace(",", ".") : c.trim();
+    return tens.test(typed) ? Number(typed) : NaN;
+  };
   const all = lines.map((line) => line.split(parted ? /[;\t]/ : ",").map(cell));
   const rows = all.filter((r) => r.length >= 3 && r.slice(0, 3).every(Number.isFinite));
   const anyComma = lines.some((line) => line.includes(","));

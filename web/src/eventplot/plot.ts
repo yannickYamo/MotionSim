@@ -4,7 +4,7 @@
 // orange the power lost (the Two Inks Rule); the energy is counted between two hairlines.
 
 import type { EventEdge } from "../api";
-import { sig } from "../format";
+import { tickLabels } from "../format";
 import { ticks } from "../charts/scale";
 import { timeUnit } from "./zoom";
 import type { Span } from "./zoom";
@@ -57,7 +57,9 @@ export function valuesAt(e: EventEdge, at: number): Record<Trace, number> {
 /** Two ranges that hold their data and put zero at the same height, so the two traces of a
  *  plot share a zero line. Room is left above the highest. */
 export function sharedZero(a: [number, number], b: [number, number]): [[number, number], [number, number]] {
-  const top = (r: [number, number]) => Math.max(r[1], 1e-12) * 1.08;
+  // A trace mostly under zero has a top as high above it as it is deep: the zero the two share
+  // then sits no lower than half way, and never pushes the other trace's axis down without end.
+  const top = (r: [number, number]) => Math.max(r[1], -r[0], 1e-12) * 1.08;
   const below = Math.max(-a[0] / top(a), -b[0] / top(b), 0) * 1.04;
   return [
     [-below * top(a), top(a)],
@@ -72,13 +74,19 @@ function rangeOf(x: number[], a: number, b: number): [number, number] {
     lo = Math.min(lo, x[k]);
     hi = Math.max(hi, x[k]);
   }
+  // Zoomed onto a stretch where the trace rests, its axis keeps a thousandth of the trace's
+  // own height: it is drawn flat on a scale that means something, not blown up to 5e-13.
+  let whole = 0;
+  for (const y of x) whole = Math.max(whole, Math.abs(y));
+  if (hi - lo < 1e-3 * whole) hi = lo + 1e-3 * whole;
   return [lo, hi];
 }
 
 /** Where a time falls across the plot. */
-export const xOf = (box: Box, v: Span) => (t: number) => box.x + ((t - v.t0) / (v.t1 - v.t0)) * box.w;
+/** A span of no length, or a range of no height, places everything at its foot: never nowhere. */
+export const xOf = (box: Box, v: Span) => (t: number) => box.x + ((t - v.t0) / (v.t1 - v.t0 || 1)) * box.w;
 export const yOf = (box: Box, r: [number, number]) => (y: number) =>
-  box.y + box.h - ((y - r[0]) / (r[1] - r[0])) * box.h;
+  box.y + box.h - ((y - r[0]) / (r[1] - r[0] || 1)) * box.h;
 
 export function line(
   e: EventEdge,
@@ -96,14 +104,16 @@ export function line(
  *  about `count` of them. */
 export function sideTicks(box: Box, r: [number, number], side: "left" | "right", per = 1, count = 3): string {
   const sy = yOf(box, r);
-  return ticks(r[0] / per, r[1] / per, count)
+  const marks = ticks(r[0] / per, r[1] / per, count);
+  const labels = tickLabels(marks);
+  return marks
     .map((v) => v * per)
-    .map((v) => {
+    .map((v, k) => {
       const y = sy(v).toFixed(1);
       const grid = side === "left" ? `<path class="grid" d="M${box.x} ${y}h${box.w}"/>` : "";
       const x = side === "left" ? box.x - 6 : box.x + box.w + 6;
       const anchor = side === "left" ? "end" : "start";
-      return `${grid}<text class="tick" x="${x}" y="${y}" dy="4" text-anchor="${anchor}">${sig(v / per, 2)}</text>`;
+      return `${grid}<text class="tick" x="${x}" y="${y}" dy="4" text-anchor="${anchor}">${labels[k]}</text>`;
     })
     .join("");
 }
@@ -113,12 +123,14 @@ export function timeAxis(v: Span): string {
   const { unit, scale } = timeUnit(v);
   const sx = xOf(LOW, v);
   const y = LOW.y + LOW.h + 18;
-  const marks = ticks(v.t0 * scale, v.t1 * scale, 5)
-    .map((t) => {
+  const at = ticks(v.t0 * scale, v.t1 * scale, 5);
+  const labels = tickLabels(at);
+  const marks = at
+    .map((t, k) => {
       const x = sx(t / scale).toFixed(1);
       return (
         `<path class="grid" d="M${x} ${TOP.y}V${TOP.y + TOP.h}M${x} ${LOW.y}V${LOW.y + LOW.h}"/>` +
-        `<text class="tick" x="${x}" y="${y}" text-anchor="middle">${sig(t, 3)}</text>`
+        `<text class="tick" x="${x}" y="${y}" text-anchor="middle">${labels[k]}</text>`
       );
     })
     .join("");

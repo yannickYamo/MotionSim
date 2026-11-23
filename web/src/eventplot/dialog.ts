@@ -1,7 +1,7 @@
 // A plot full screen, in a modal dialog over the page blurred behind it: drawn again at the
 // size of the screen, zoomed about the pointer by the wheel or a pinch, moved by a drag, back
 // to its first span on a double press or 0, read at the pointer by a crosshair, and saved as
-// a PDF. What is plotted is handed in (Plottable): a switching event's edge, or a motion
+// a PDF or a PNG image. What is plotted is handed in (Plottable): a switching event's edge, or a motion
 // through minutes. Escape or Close shut it, and the keyboard goes back to where it was opened.
 
 import { escape } from "../format";
@@ -51,9 +51,6 @@ let dialog: HTMLDialogElement | null = null;
 
 const KEYS = "+ and − zoom, the arrows move, 0 goes back, Escape closes";
 
-/** What is open full screen, as the plot handed in names it: null when none is. */
-export const openNow = (): unknown => (open ? open.p.meta : null);
-
 const plotEl = () => dialog?.querySelector<HTMLElement>("[data-full-plot]") ?? null;
 
 function shell(): HTMLDialogElement {
@@ -86,6 +83,7 @@ export function openPlot(p: Plottable): void {
     `<p id="ev-full-said" class="quiet small">${escape(p.said)}</p></div>` +
     `<div class="ev-full-actions">` +
     `<button type="button" class="ghost" data-full-reset>Reset zoom</button>` +
+    `<button type="button" class="ghost" data-full-png>${icon("photo-down")}Export PNG</button>` +
     `<button type="button" class="ghost" data-full-pdf>${icon("download")}Export PDF</button>` +
     `</div><button type="button" class="close" data-full-close aria-label="Close">${icon("x")}</button>` +
     `</header>` +
@@ -97,6 +95,7 @@ export function openPlot(p: Plottable): void {
   if (typeof d.showModal === "function") d.showModal();
   else d.setAttribute("open", "");
   // Drawn again whenever its place changes size: once laid out, on a turn of the phone, on a resize.
+  watch?.disconnect();
   watch = typeof ResizeObserver === "function" ? new ResizeObserver(() => redraw()) : null;
   const el = plotEl();
   if (watch && el) watch.observe(el);
@@ -131,6 +130,13 @@ function redraw(): void {
   const h = Math.max(Math.round(el.clientHeight), 180);
   const { svg, drawn } = open.p.draw(open.p.span(), w, h);
   el.innerHTML = svg;
+  // The words above the plot are those of what is drawn now.
+  const say = (id: string, text: string) => {
+    const at = dialog?.querySelector(id);
+    if (at && at.textContent !== text) at.textContent = text;
+  };
+  say("#ev-full-h", open.p.title);
+  say("#ev-full-said", open.p.said);
   open.drawn = drawn;
   open.w = w;
   if (open.at !== null) cross(open.at);
@@ -287,7 +293,29 @@ function onClick(e: MouseEvent): void {
     return;
   }
   const pdf = t.closest?.<HTMLButtonElement>("[data-full-pdf]");
-  if (pdf) void saveAsPdf(pdf);
+  if (pdf) return void saveAsPdf(pdf);
+  const png = t.closest?.<HTMLButtonElement>("[data-full-png]");
+  if (png) void saveAsPng(png);
+}
+
+/** Export the plot as it is zoomed now, as an image; the button waits while it is made. */
+async function saveAsPng(button: HTMLButtonElement): Promise<void> {
+  const svg = plotEl()?.querySelector<SVGSVGElement>("svg");
+  const status = dialog?.querySelector("#ev-full-status");
+  if (!svg || !open || !status) return;
+  const { title, said } = open.p;
+  button.disabled = true;
+  button.setAttribute("aria-busy", "true");
+  status.textContent = "Making the image…";
+  try {
+    const { savePng } = await import("../charts/png");
+    status.textContent = `Saved as ${await savePng(svg, title, said)}.`;
+  } catch (err) {
+    status.textContent = `The image could not be made: ${String((err as Error)?.message ?? err)}. Try again.`;
+  } finally {
+    button.disabled = false;
+    button.removeAttribute("aria-busy");
+  }
 }
 
 /** Export the plot as it is zoomed now; the button waits while the PDF is made. */

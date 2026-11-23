@@ -27,7 +27,7 @@ make setup
 make check
 ```
 
-which runs everything CI runs: format and lint, the type check, the tests with the coverage floor, the package build, the audits, and the page's own checks.
+which runs the main checks of CI: format and lint, the type check, the tests with the coverage floor, the package build, the audits, and the page's own checks. CI adds the oldest libraries allowed, the installed wheel on three systems, the datasheet reader's check, and the page's races and walks.
 
 ## Tests
 

@@ -12,7 +12,7 @@ from motionsim.engine import OperatingPoint
 from motionsim.engine.notes import Code
 from motionsim.errors import Fault, Refusal
 from motionsim.motor import Unreachable
-from motionsim.service.validate import _number, point
+from motionsim.service.validate import _number, point, turns_slower_than_switched
 
 
 def _free_air(device, conditions: dict, packages: int | None = None):
@@ -86,6 +86,18 @@ FIXES: dict[Code, str] = {
     Code.reach_timing: "lower the switching frequency, or give a shorter dead time",
     Code.reach_other: "change the speed or torque",
 }
+
+
+def _switched(motor, op: OperatingPoint, conditions: dict) -> None:
+    """The design point's output against the switching frequency, before anything is solved:
+    refused where the motor turns faster than the stage switches. A point the motor cannot
+    reach is left for the solve to refuse with its own reason."""
+    rpm, torque = point(conditions)
+    try:
+        asked = motor.stage(rpm, torque, op.v_dc, op.pwm)
+    except (Unreachable, ValueError):
+        return
+    turns_slower_than_switched(asked, op.f_sw)
 
 
 def _unreachable(exc: Unreachable, op: OperatingPoint) -> Refusal:

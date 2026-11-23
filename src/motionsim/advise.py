@@ -9,6 +9,7 @@ simulation of real datasheets decides.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 import numpy as np
@@ -46,6 +47,11 @@ def _class_at_least(volts: float) -> int:
 
 def _current_line(i_peak: float, i_stall: float | None, margin: float) -> str:
     design_for = max(i_peak, i_stall or 0.0)
+    if not design_for > 0:
+        return (
+            "Current: this point asks no current, so there is none to size a device for. Give the "
+            "torque the drive has to make, and the figures that rest on the current are worked out."
+        )
     stall = "" if i_stall is None else f", {written(i_stall, 3)} A holding the same torque at standstill"
     return (
         f"Current: {written(i_peak, 3)} A peak at the design point{stall}. Start with devices rated "
@@ -77,10 +83,15 @@ def _voltage_lines(v_dc: float, v_minimum: int, v_comfortable: int, share: float
 
 
 def _low_voltage_technology(r_target: float, loss_share: float) -> list[str]:
-    return [
+    technology = (
         "Technology: silicon MOSFETs are the usual choice at this voltage. GaN transistors "
         "are worth a look when switching above about 100 kHz or when board area decides: "
-        "they lose less per switching event and take less space.",
+        "they lose less per switching event and take less space."
+    )
+    if not math.isfinite(r_target):  # no current is carried: there is no loss to hold a resistance to
+        return [technology]
+    return [
+        technology,
         f"On-resistance: about {written(r_target * 1e3, 3)} mΩ or less when hot keeps conduction "
         f"loss near {loss_share:.0%} of the motor's power; that is about "
         f"{written(r_target / HOT_RESISTANCE * 1e3, 3)} mΩ on the datasheet's 25 °C line.",
@@ -101,11 +112,12 @@ def _high_voltage_technology(v_comfortable: int, f_sw: float, r_crossover: float
             f"{wide[0].upper() + wide[1:]} lose less when the drive spends most of its time "
             "well below peak current, and at higher switching frequency."
         ]
-    lines.append(
-        f"An IGBT drops about {IGBT_DROP:g} V whatever the current. A transistor conducts "
-        f"with less loss than that at your peak current only if its resistance, hot, is "
-        f"below about {written(r_crossover * 1e3, 3)} mΩ."
-    )
+    if math.isfinite(r_crossover):  # with no current there is none to compare the two at
+        lines.append(
+            f"An IGBT drops about {IGBT_DROP:g} V whatever the current. A transistor conducts "
+            f"with less loss than that at your peak current only if its resistance, hot, is "
+            f"below about {written(r_crossover * 1e3, 3)} mΩ."
+        )
     if v_comfortable <= 650:
         lines.append(
             "If you look at silicon superjunction MOSFETs, take only types with a fast body "

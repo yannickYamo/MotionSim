@@ -172,10 +172,16 @@ h4 {
 .lead {
   margin: 0 0 var(--s5);
   color: var(--ink-2);
-  max-width: 62ch;
 }
 p {
   margin: 0 0 var(--s2);
+}
+/* Prose and list lines break without leaving a word alone on the last line. */
+p,
+li,
+dd,
+figcaption {
+  text-wrap: pretty;
 }
 
 /* ---------- 4. Layout frame ---------- */
@@ -724,9 +730,14 @@ body[data-typing] .schematic .motor .rotor.turning {
 .verdict-strip {
   display: none;
 }
+/* On a very wide screen the drawing, its figures and its charts keep to one measure, set in
+   the middle of the stage: a chart drawn wider than this grows its words past the page's. */
 #stage > * {
   flex: none;
   min-width: 0;
+  width: 100%;
+  max-width: 960px;
+  align-self: center;
 }
 .switcher .chip {
   max-width: 100%;
@@ -1032,7 +1043,6 @@ body[data-stale] .top::after {
   display: grid;
   gap: var(--s2);
   color: var(--ink-2);
-  max-width: 68ch;
 }
 .plain li {
   padding-left: var(--s4);
@@ -1483,27 +1493,6 @@ td.is-unread .help {
 }
 .field {
   min-width: 0;
-}
-.control .in-control {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 100%;
-  background: none;
-  border: 0;
-  border-left: 1px solid var(--edge);
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.control .in-control:hover {
-  color: var(--ink);
-}
-@keyframes leave {
-  to {
-    opacity: 0;
-    transform: translateX(-10px);
-  }
 }
 @keyframes arrive {
   from {
@@ -1962,7 +1951,6 @@ td.is-unread .help {
 .explain {
   margin: var(--s4) 0 var(--s4);
   color: var(--ink-2);
-  max-width: 68ch;
 }
 .explain p:first-child:not(.verdict-line) {
   color: var(--ink);
@@ -2158,7 +2146,6 @@ td.is-unread .help {
   padding: 0;
   display: grid;
   gap: var(--s2);
-  max-width: 70ch;
 }
 .checks li {
   display: flex;
@@ -2251,9 +2238,6 @@ table.data td {
 .facts .wide {
   grid-column: 1 / -1;
 }
-.facts .wide dd.words {
-  max-width: 62ch;
-}
 .after-facts {
   margin-top: var(--s3);
 }
@@ -2287,7 +2271,6 @@ table.data td {
   display: grid;
   justify-items: start;
   gap: var(--s3);
-  max-width: 62ch;
 }
 .compare-start p {
   margin: 0;
@@ -2738,11 +2721,10 @@ table.data td {
   background: var(--ink-2);
   height: 2px;
 }
-.key.speed {
-  background: var(--ink);
-  height: 2px;
-}
+/* A tick label of six figures (150000 rpm) is a little wider than the margin drawn for it:
+   it runs into the gutter beside the chart, and is not cut at the drawing's edge. */
 .chart {
+  overflow: visible;
   display: block;
   width: 100%;
   height: auto;
@@ -2750,6 +2732,57 @@ table.data td {
 }
 .chart.small {
   max-width: 356px;
+}
+/* A drawing with the button that saves it as an image on its top right corner, over the
+   band where a chart names its axis on the left and draws nothing on the right. */
+.chart-box {
+  position: relative;
+}
+.chart-box.small {
+  max-width: 356px;
+}
+.chart-save {
+  position: absolute;
+  top: var(--s2);
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    background-color 0.15s var(--ease);
+}
+.chart-save .icon {
+  width: 18px;
+  height: 18px;
+}
+.chart-save:hover,
+.chart-save:focus-visible {
+  color: var(--ink);
+  border-color: var(--line-strong);
+  background: var(--raised);
+}
+.chart-save:active {
+  transform: scale(0.96);
+}
+.chart-save[aria-busy] {
+  opacity: 0.5;
+  cursor: progress;
+}
+.plate {
+  position: relative;
+}
+.plate > .chart-save {
+  top: var(--s2);
+  right: var(--s2);
 }
 .chart .grid {
   stroke: var(--line);
@@ -3026,9 +3059,9 @@ table.data td {
   margin-bottom: var(--s2);
 }
 .when-narrow + .caption,
+.chart-box + .caption,
 .chart + .caption {
   margin-top: var(--s2);
-  max-width: 68ch;
 }
 /* The main drawing of a tab is drawn twice, for a wide panel and for a narrow one, and the
    one that fits is shown: a wide drawing squeezed into a narrow panel is too small to read. */
@@ -3070,11 +3103,12 @@ table.data td {
 }
 .pwm-view .caption {
   margin-top: var(--s3);
-  max-width: 68ch;
 }
 /* Charts set one above another: the same air between each, and under a chart's key. */
 #tab-body .chart + .chart,
-#tab-body .legend.inline + .chart {
+#tab-body .chart-box + .chart-box,
+#tab-body .legend.inline + .chart,
+#tab-body .legend.inline + .chart-box {
   margin-top: var(--s5);
 }
 .chart .zero {
@@ -3103,6 +3137,11 @@ table.data td {
   display: none;
 }
 @media print {
+  /* A button that saves a chart as an image has no use on paper. */
+  .chart-save,
+  .ev-save {
+    display: none !important;
+  }
   @page {
     margin: 16mm;
   }
@@ -3463,6 +3502,15 @@ table.data td {
     z-index: 4;
     height: 52px;
     background: var(--ground);
+  }
+  /* From here down the bar's buttons are icons with their names kept for a screen reader:
+     five names in full do not fit beside the brand under some 820px, and pushed the page
+     sideways at a tablet's width. */
+  .top-button span {
+    display: none;
+  }
+  .top {
+    gap: var(--s2);
   }
   #rail {
     padding: var(--s2) var(--s3);

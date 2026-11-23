@@ -130,12 +130,16 @@ async function comparedCycles(run: Run, list: Series[], shownId: string): Promis
 }
 
 /** The results of the open tab for the device on the drawing alone. */
-async function tabResults(run: Run, req: ReturnType<typeof request> & { device: string }): Promise<void> {
+async function tabResults(
+  run: Run,
+  req: ReturnType<typeof request> & { device: string },
+  ownMap = true,
+): Promise<void> {
   const { state } = app;
   const cycle = () => api.cycle({ ...req, ...motionRequest(state) });
   // The motion is followed whatever tab is open: the verdict on the device rests on it too.
   if (res.cycle === null) await run("cycle", cycle, (v) => (res.cycle = v));
-  if (state.tab === "losses" && shown.map && res.grid === null) {
+  if (ownMap && state.tab === "losses" && shown.map && res.grid === null) {
     await run(
       "map",
       () => api.map({ ...req, ...mapRange(8) }),
@@ -181,11 +185,11 @@ export async function deep(): Promise<void> {
   if (wide && (state.compare === "loads" || state.tab === "motion")) {
     if (!(await comparedCycles(run, list, c.id))) return;
   }
-  if (wide && mapsCompared()) {
-    await comparedMaps(run, list);
-    return;
-  }
-  await tabResults(run, req);
+  // The maps of what is compared stand beside the design's own results, not in their place:
+  // its motion is still asked for, or its verdict would wait for ever.
+  const maps = wide && mapsCompared();
+  await tabResults(run, req, !maps);
+  if (maps) await comparedMaps(run, list);
 }
 
 /** The design point of each thing compared that changes an input. Returns false when the user

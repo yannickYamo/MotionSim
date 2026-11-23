@@ -45,6 +45,8 @@ from motionsim.text import written
 from motionsim.transient import ChipState, Lag
 
 LEGS = "abcd"
+# The most current a leg is taken to carry, A either way: what a point told outright is held to.
+MOST_CURRENT = 1e5
 # The most instants a trajectory is solved at. A longer trace is put on this many evenly
 # spaced instants: enough for an output period at a few hundred switching periods, and a
 # solve that stays under a second.
@@ -124,13 +126,27 @@ def _legs(columns: dict[str, np.ndarray]) -> list[str]:
     legs = [leg for leg in LEGS if f"i_{leg}" in columns]
     if not legs:
         raise BadTrajectory("no current column found: expected i_a, with d_a")
+    # A column read past would be a leg left out, and the answer one for another stage.
+    known = {"time_s"} | {f"{figure}_{leg}" for leg in legs for figure in "id"}
+    unknown = [name for name in columns if name not in known]
+    if unknown:
+        raise BadTrajectory(
+            f"{_and(unknown)} {'is not a column' if len(unknown) == 1 else 'are not columns'} of a trajectory: "
+            "after time_s the columns are i_a and d_a, then i_b and d_b, up to i_d and d_d"
+        )
     for leg in legs:
         if f"d_{leg}" not in columns:
             raise BadTrajectory(f"current i_{leg} has no duty cycle d_{leg}")
         duty = columns[f"d_{leg}"]
         if duty.min() < -1e-6 or duty.max() > 1 + 1e-6:
             raise BadTrajectory(f"d_{leg} must lie between 0 and 1: it is a fraction of the PWM period")
+        if np.abs(columns[f"i_{leg}"]).max() > MOST_CURRENT:
+            raise BadTrajectory(f"i_{leg} cannot be above {written(MOST_CURRENT, 3)} A either way")
     return legs
+
+
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
 def roles(trajectory: Trajectory) -> list[Role]:
@@ -215,6 +231,13 @@ def run(device: Device, trajectory: Trajectory, op: OperatingPoint) -> Outcome:
     over and over. `tj_from_start` runs through it once with every junction
     starting at the heatsink temperature, using the same losses.
     """
+    if trajectory.duration * op.f_sw < 1:
+        # A duty cycle is an average over one switching period: a trace shorter than one holds none.
+        raise BadTrajectory(
+            f"it spans {written(trajectory.duration, 3)} s, shorter than one switching period at "
+            f"{written(op.f_sw / 1e3, 3)} kHz ({written(1e6 / op.f_sw, 3)} µs): a duty cycle is an average over a "
+            "switching period, so a trace has to last one at least"
+        )
     stage = roles(trajectory)
     power = sum(float(np.mean(trajectory.duty[leg] * trajectory.current[leg])) for leg in trajectory.legs) * op.v_dc
     result = solve_roles(

@@ -12,6 +12,9 @@ import { plainRefusal } from "./wording";
 
 let pending: AbortController | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
+// The slower results wait on a timer of their own: a change of the map's range must not
+// take the place of an answer that a design figure has just asked for.
+let deepTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** From this moment the figures on screen are not those of the inputs, and are marked so. */
 function markStale(): void {
@@ -31,8 +34,8 @@ export function schedule(): void {
 
 /** The slower results again, a moment after the map's own range stops changing. */
 export function scheduleDeep(): void {
-  clearTimeout(timer);
-  timer = setTimeout(() => void deep(), 500);
+  clearTimeout(deepTimer);
+  deepTimer = setTimeout(() => void deep(), 500);
 }
 
 /** Nothing that was worked out is an answer for the inputs as they stand. */

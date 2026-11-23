@@ -2,13 +2,13 @@
 // and the equations it works with.
 
 import { api, Refused } from "../api";
-import type { Cycle } from "../api";
+import type { Candidate, Cycle, Result } from "../api";
 import { designFile } from "../designfile";
 import { startWaiting } from "../elapsed";
 import { latest } from "../guard";
 import { fetchAgain } from "../refetch";
 import { motionRequest, request } from "../state";
-import { app, draw, focused, res, ui, underTest } from "../store";
+import { app, draw, focused, inputsNow, pending, res, ui, underTest } from "../store";
 import { $, say } from "../views/html";
 
 /** The equations and the printed report are fetched when first asked for: neither is needed
@@ -125,6 +125,10 @@ export async function printReport(): Promise<void> {
   if (!c || !r || res.fault) return;
   // Asked for a state no longer on the page by the time it is ready: not printed.
   const current = latest("print");
+  // The inputs the report is of: a figure changed while it is made ready, and it is not printed,
+  // or old results would be set beside the new inputs.
+  const of = inputsNow();
+  const still = () => current() && inputsNow() === of && !res.stale;
   // The motion belongs in the report; work it out if the user has not opened that tab.
   if (res.cycle === null) {
     let cycle: Cycle | Refused | null;
@@ -134,11 +138,11 @@ export async function printReport(): Promise<void> {
       cycle = e instanceof Refused ? e : null;
     }
     // Asked for a state no longer on the page: neither kept nor printed.
-    if (!current()) return;
+    if (!still()) return;
     res.cycle = cycle;
   }
   const code = await fetched("report", () => import("../views/report"));
-  if (!code || !current()) return;
+  if (!code || !still()) return;
   const { reportPage } = code;
   let host = document.querySelector<HTMLElement>("#report");
   if (!host) {
@@ -147,7 +151,24 @@ export async function printReport(): Promise<void> {
     document.body.append(host);
   }
   host.innerHTML = reportPage(c, r);
+  written = { of: inputsNow(), page: reportPage };
   window.print();
+}
+
+/** The report last made ready to print, and the inputs it is of. */
+let written: { of: string; page: (c: Candidate, r: Result) => string } | null = null;
+
+/** The browser's own Print, asked after a figure moved: the report made ready before is of
+ *  the inputs before. It is written again from the answer on the page, or taken away where
+ *  there is none yet, so that a report of other inputs is never what is printed. */
+export function reportForPrint(): void {
+  const host = document.querySelector<HTMLElement>("#report");
+  if (!host || !written || written.of === inputsNow()) return;
+  const c = focused();
+  const fresh = c?.result && !pending() && !res.fault && !res.blocked;
+  const wait = "<p>The figures changed since this report was made. Print again once the page has worked them out.</p>";
+  host.innerHTML = fresh ? written.page(c, c.result!) : wait;
+  if (fresh) written.of = inputsNow();
 }
 
 /** The design as a file `motionsim design run` takes: the made-up parts by their names, the

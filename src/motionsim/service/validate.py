@@ -391,28 +391,44 @@ def _conditions(data: dict, motor) -> OperatingPoint:
     return conditions(data, motor.default_pwm)
 
 
+def switches_enough(f_out: float, f_sw: float, where: str = "", lower: str = "the output frequency") -> None:
+    """An output that turns faster than the stage switches is refused: there is no pulse to
+    make it from. Asked wherever an output frequency is known, of a point told outright or of
+    a motor's speed, so that every way of asking is answered alike. lower: what the user has
+    to lower, where it is not the output frequency itself."""
+    if not f_out > f_sw:
+        return
+    raise Refusal(
+        f"{where}the output frequency of {f_out:g} Hz is above the switching frequency of {f_sw:g} Hz",
+        f"a stage switches many times in each turn of its output: lower {lower} or raise the switching frequency",
+        "f_out" if lower == "the output frequency" else "f_sw",
+    )
+
+
+def turns_slower_than_switched(stage, f_sw: float, where: str = "") -> None:
+    """The same of a motor's stage: its output frequency is its speed's, so the speed is what
+    to lower. A motor standing still, or one whose stage has no output period, is not asked."""
+    if stage.stalled or not stage.period > 0 or not math.isfinite(stage.period):
+        return
+    switches_enough(1.0 / stage.period, f_sw, where, "the speed")
+
+
 def electrical(data: dict, op: OperatingPoint) -> OperatingPoint:
     """An operating point told outright, with no motor to work it out from: the current,
     the modulation index, the power factor and the output frequency, each within bounds."""
     f_out = _number(data.get("f_out", 50.0), "output frequency", low=0, field="f_out")
-    if f_out > op.f_sw:
-        raise Refusal(
-            f"the output frequency of {f_out:g} Hz is above the switching frequency of {op.f_sw:g} Hz",
-            "a stage switches many times in each turn of its output: lower the output frequency or raise the switching frequency",
-            "f_out",
-        )
+    switches_enough(f_out, op.f_sw)
     m = _number(data.get("m", 0.0), "modulation index", low=0, field="m")
-    most = op.pwm.max_modulation_index
-    if m > most + 1e-9:
+    if op.pwm.within_reach(m) is None:
         raise Refusal(
-            f"the modulation index is at most {most:.3g} with {op.pwm.value} PWM, and {m:g} was given",
+            f"the modulation index is at most {op.pwm.max_written:g} with {op.pwm.value} PWM, and {m:g} was given",
             "lower the modulation index"
             + ("" if op.pwm is not Pwm.sine else ", or take space-vector PWM, which reaches 1.155"),
             "m",
         )
     return replace(
         op,
-        i_rms=_number(data.get("i_rms"), "current", low=0, high=1e5, field="i_rms"),
+        i_rms=_number(data.get("i_rms"), "current", low=0, high=MOST_CURRENT, field="i_rms"),
         modulation_index=m,
         power_factor=_number(data.get("pf", 1.0), "power factor", low=-1, high=1, field="pf"),
         f_out=f_out,
@@ -427,6 +443,7 @@ def point(data: dict) -> tuple[float, float]:
     )
 
 
+MOST_CURRENT = 1e5  # A rms: past any winding, and any stage this tool is for
 MOST_SPEED = 1e6  # rpm: past any rotor that holds together
 MOST_TORQUE = 1e6  # N·m
 

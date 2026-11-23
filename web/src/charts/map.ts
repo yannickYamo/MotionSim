@@ -1,8 +1,8 @@
 // The speed-torque map, a cell for each point, coloured by the metric shown.
 
 import type { MapGrid } from "../api";
-import { sig } from "../format";
-import { nextId, plotRect } from "./frame";
+import { sentence, sig } from "../format";
+import { nextId, plotRect, savable } from "./frame";
 import type { Box } from "./frame";
 import { figures } from "./scale";
 
@@ -168,9 +168,10 @@ export function heatMap(
   const unreached = data.flat().length - flat.length;
   const gaps = unreached ? `; ${unreached} of ${data.flat().length} points cannot be reached` : "";
   const said = `${title} over speed and torque: ${ends}${gaps}`;
-  return `<svg class="chart map" viewBox="0 0 520 ${compact ? 350 : 374}" role="img" aria-label="${said}">
+  const svg = `<svg class="chart map" viewBox="0 0 520 ${compact ? 350 : 374}" role="img" aria-label="${said}">
 ${hatching(m.hatch)}
 ${cells}${plotRect(box)}${mapTicks(m)}
-${compact ? "" : mapAxisNames(box, axes)}</svg>
+${compact ? "" : mapAxisNames(box, axes)}</svg>`;
+  return `${savable(svg, `${sentence(title)} over speed and torque`, ends)}
 ${range ? "" : mapScale(lo, hi, metric)}`;
 }

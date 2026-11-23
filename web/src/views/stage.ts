@@ -4,6 +4,7 @@
 import { notRefused } from "../api";
 import type { Candidate, DeviceSummary, Result } from "../api";
 import { pwmChart } from "../charts";
+import { saveButton } from "../charts/frame";
 import { degrees, escape, percent, sentence, sig, watts } from "../format";
 import { icon } from "../icons";
 import { schematic } from "../schematic";
@@ -21,7 +22,7 @@ import {
   verdictOf,
   worst,
 } from "../store";
-import { ev, eventSlot, focusOnce } from "../eventask";
+import { ev, eventBoxes, eventSlot, focusOnce } from "../eventask";
 import { renderCompareArea } from "./comparebar";
 import { renderBarStatus } from "./rail";
 import { put } from "./morph";
@@ -56,7 +57,11 @@ function drawPlate(c: Candidate | null, shown: DeviceSummary | undefined, wait: 
     $("#plate").classList.add("is-first");
     setTimeout(() => $("#plate").classList.remove("is-first"), 1200);
   }
-  put($("#plate"), schematic({ ...deviceDrawn(c, shown, wait), ...supplyDrawn(), rotor: rotorDrawn() }));
+  put(
+    $("#plate"),
+    schematic({ ...deviceDrawn(c, shown, wait), ...supplyDrawn(), rotor: rotorDrawn() }) +
+      saveButton("The power stage", c?.name ?? ""),
+  );
 }
 
 /** The device on the drawing, and what of its answer is drawn: nothing while the answer is on
@@ -287,7 +292,12 @@ function pwmBlock(c: Candidate): string {
     `</div></div>`;
   const said = `<p class="quiet">${escape(sentence(c.pwm!.position))}, the hottest switch of ${escape(c.name)}.</p>`;
   const summary = `<summary>${icon("adjustments")}Where the loss comes from, period by period</summary>`;
-  const chart = pwmChart(c.pwm!, n, ev.open ? ev.mark : null);
+  const chart = pwmChart(
+    c.pwm!,
+    n,
+    ev.open ? ev.mark : null,
+    `${sentence(c.pwm!.position)}, the hottest switch of ${c.name}`,
+  );
   return `<details class="pwm-fold"${open}>${summary}${head}${said}${chart}${eventSlot(c)}</details>`;
 }
 
@@ -308,6 +318,16 @@ function verdictStrip(c: Candidate | null, wait: boolean): string {
   return `${verdict(verdictOf(c).level)}<a class="link" href="#panel" tabindex="-1">Why${icon("chevron-down")}</a>`;
 }
 
+/** The loss chart with the switching event under it. While the answer for a figure just typed
+ *  is on its way they stay, marked as not yet of the inputs: a box of the event being typed
+ *  in is never taken from under the keyboard. A design refused keeps the event's boxes, to
+ *  put the figure right in. */
+function drawPwm(c: Candidate | null, r: Result | null, wait: boolean): void {
+  const pwm = $("#pwm");
+  if (r && c?.pwm && !refusedNow()) put(pwm, pwmBlock(c));
+  else if (!(wait && ev.open && pwm.childElementCount)) put(pwm, refusedNow() ? eventBoxes() : "");
+}
+
 export function renderStage(): void {
   const { setup } = app;
   const wait = pending();
@@ -325,7 +345,7 @@ export function renderStage(): void {
   // the drawing are always those of the design.
   put($("#readouts"), cells);
   if (app.state.step === RESULTS) renderCompareArea();
-  put($("#pwm"), r && c?.pwm && !refusedNow() ? pwmBlock(c) : "");
+  drawPwm(c, r, wait);
   focusOnce();
   roll(before);
   renderBarStatus();

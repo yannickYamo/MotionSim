@@ -3,7 +3,7 @@
 
 import type { Segment } from "../api";
 import { sig } from "../format";
-import { between, frame, HALF, hotSeries, nothing } from "./frame";
+import { between, frame, HALF, hotSeries, nothing, savable } from "./frame";
 import { along, scale, ticks } from "./scale";
 
 /** The motion the user drew: load speed against time. */
@@ -31,7 +31,8 @@ export function motionPreview(segments: Segment[]): string {
     d += `L${sx(t)} ${sy(speeds[2 * k + 1])}`;
   });
   const said = `Load speed against time: ${sig(total)} s, ${between(speeds, "rpm")}`;
-  return `<svg class="chart small" viewBox="${view}" role="img" aria-label="${said}">
+  const svg = `<svg class="chart small" viewBox="${view}" role="img" aria-label="${said}">
 ${frame({ box, sx, sy }, ticks(0, span, 4), yt, "time, s", "load speed, rpm")}
 ${hotSeries("speed", d)}</svg>`;
+  return savable(svg, "Load speed against time", "", true);
 }

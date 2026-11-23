@@ -394,3 +394,64 @@ def test_the_chips_of_a_discrete_part_lie_on_its_tab_and_apart() -> None:
                     assert chip.y - chip.height / 2 >= -1e-9 and chip.y + chip.height / 2 <= height + 1e-9
                 # The diode starts where the switch has ended, with their gap between.
                 assert diode.y - diode.height / 2 >= switch.y + switch.height / 2 + 0.9e-3, (outline, rated, variant)
+
+
+# --- tables a loss is read from ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "voltage, charge, said",
+    [
+        ([0.0, 0.0], [0.0, 1e-9], "oss_voltage has to rise"),  # nothing to read between, and 0/0 past it
+        ([50.0, 10.0], [1e-9, 2e-9], "oss_voltage has to rise"),
+        ([-10.0, 0.0], [0.0, 1e-9], "end above zero"),
+        ([0.0, 50.0], [0.0, -1e-9], "oss_charge cannot be negative"),
+        ([0.0, 25.0, 50.0], [0.0, 2e-9, 1e-9], "cannot fall"),  # charge is an area: it only grows
+    ],
+)
+def test_an_output_charge_table_that_cannot_be_read_is_refused(voltage, charge, said) -> None:
+    table = {**CHARGE, "q_oss_scaling": "table", "oss_voltage": voltage, "oss_charge": charge}
+    with pytest.raises(ValidationError, match=said):
+        ChargeModel(**table)
+
+
+def test_an_output_charge_table_that_rises_is_read() -> None:
+    """Between 0 and 50 V the charge is read off the table: at 25 V, half of 30 nC."""
+    from motionsim.engine.mosfet import output_charge
+
+    table = ChargeModel(**{**CHARGE, "q_oss_scaling": "table", "oss_voltage": [0.0, 50.0], "oss_charge": [0.0, 30e-9]})
+    assert output_charge(table, 25.0) == pytest.approx(15e-9)
+    # A charge that stays level from one voltage to the next is a table still.
+    ChargeModel(**{**CHARGE, "q_oss_scaling": "table", "oss_voltage": [0.0, 50.0], "oss_charge": [1e-9, 1e-9]})
+
+
+def test_a_device_file_with_an_output_charge_table_of_one_voltage_is_refused_not_crashed(capsys, tmp_path) -> None:
+    import yaml
+
+    device = yaml.safe_load(EXAMPLE_MOSFET.read_text(encoding="utf-8"))
+    device["switch"]["charge"].update(q_oss_scaling="table", oss_voltage=[0, 0], oss_charge=[0, 1e-9])
+    path = tmp_path / "part.yaml"
+    path.write_text(yaml.safe_dump(device), encoding="utf-8")
+    point = ["--vdc", "48", "--irms", "30", "--m", "0.9", "--pf", "0.85", "--fsw", "20000", "--tsink", "60"]
+    assert main(["simulate", str(path), *point, "--vdrive", "10", "--rgon", "5", "--rgoff", "5"]) == 2
+    err = capsys.readouterr().err
+    assert "is not a device model" in err and "oss_voltage has to rise" in err
+
+
+@pytest.mark.parametrize(
+    "table, said",
+    [
+        (dict(rg_values=[5.0, 10.0], rg_factor=[1.0, 0.0]), "rg_factor has to be above zero"),
+        (dict(rg_values=[5.0, 10.0], rg_factor=[-1.0, 1.0]), "rg_factor has to be above zero"),
+        (dict(v_values=[200.0, 400.0], v_factor=[0.0, 1.0]), "v_factor has to be above zero"),
+        (dict(v_values=[200.0, 400.0], v_factor=[1.0, -2.0]), "v_factor has to be above zero"),
+        (dict(rg_values=[10.0, 5.0], rg_factor=[1.0, 0.8]), "rg_values has to rise"),
+        (dict(v_values=[400.0, 400.0], v_factor=[1.0, 1.0]), "v_values has to rise"),
+    ],
+)
+def test_a_correction_to_a_switching_energy_that_is_not_a_multiple_is_refused(table, said) -> None:
+    """A factor is the energy as a multiple of the energy at the reference: nought or less
+    would make a loss vanish or turn negative, and no datasheet's figure says that."""
+    with pytest.raises(ValidationError, match=said):
+        SwitchingEnergy(**{**ENERGY, **table})
+    SwitchingEnergy(**{**ENERGY, "rg_values": [5.0, 10.0], "rg_factor": [0.8, 1.0]})

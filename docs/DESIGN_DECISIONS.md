@@ -41,7 +41,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 - Margins a specialist applies without thinking are checked and explained: voltage against the supply, junction temperature, peak and stall current, dead time, results that rest on assumed data.
 - The output is a verdict with its reasons, and not only numbers.
 
-**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing a few figures from a datasheet, and two made-up parts to try, are there to make that first step short.
+**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing a few figures from a datasheet, and six made-up parts to try, are there to make that first step short.
 
 ## Data: the datasheet is the model
 

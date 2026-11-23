@@ -85,13 +85,13 @@ def _held_note(gate, device, asked, out: dict) -> str | None:
             "speed, not the limit"
         )
     said = (
-        f"Edges held to {limit / 1e9:g} V/ns by the limit, through the gate resistance it chose: "
-        f"the fastest here is {per_ns(fastest)}, at {edge}"
+        f"Edge speed is limited to {limit / 1e9:g} V/ns, by the gate resistance chosen for that limit. "
+        f"The fastest edge here is {per_ns(fastest)}, at {edge}"
     )
     if gate.faster is not None and gate.faster >= 1.5:
         said += (
-            f"; this {device.technology} could switch about {gate.faster:.0f}× faster, held then by its "
-            "driver's peak current and its channel"
+            f". Without the limit this {device.technology} could switch about {gate.faster:.0f}× faster: "
+            "its driver's peak current and its channel would then set the pace"
         )
     return said
 

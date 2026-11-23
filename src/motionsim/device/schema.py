@@ -7,6 +7,7 @@ All quantities are SI (V, A, J, K/W, s) except temperatures, which are in °C.
 
 from __future__ import annotations
 
+import itertools
 from enum import Enum
 from typing import Literal
 
@@ -175,6 +176,9 @@ class SwitchingEnergy(_Model):
                     raise ValueError(f"{what} have to be lists of the same length, of two values or more")
                 if any(b <= a for a, b in zip(at, at[1:], strict=False)):
                     raise ValueError(f"{what.split()[0]} has to rise from one value to the next")
+                if not all(f > 0 for f in factor):
+                    # A multiple of the energy at the reference: nought or less would take the loss away.
+                    raise ValueError(f"{what.split()[-1]} has to be above zero at every value")
         return self
 
 
@@ -270,9 +274,24 @@ class ChargeModel(_Model):
                 "is that plus the charge at threshold"
             )
         if self.q_oss_scaling == "table":
-            if not self.oss_voltage or not self.oss_charge or len(self.oss_voltage) != len(self.oss_charge):
-                raise ValueError("a tabulated output charge needs oss_voltage and oss_charge of equal length")
+            _check_charge_table(self.oss_voltage, self.oss_charge)
         return self
+
+
+def _check_charge_table(voltage: list[float] | None, charge: list[float] | None) -> None:
+    """An output charge against voltage that can be read: the charge is read between its
+    voltages and carried on from the last of them, so the voltages rise to one above zero;
+    and it is the area under a capacitance, which is never negative and never falls."""
+    if not voltage or not charge or len(voltage) != len(charge):
+        raise ValueError("a tabulated output charge needs oss_voltage and oss_charge of equal length")
+    if any(b <= a for a, b in itertools.pairwise(voltage)):
+        raise ValueError("oss_voltage has to rise from one value to the next")
+    if not voltage[-1] > 0:
+        raise ValueError("oss_voltage has to end above zero")
+    if any(q < 0 for q in charge):
+        raise ValueError("oss_charge cannot be negative")
+    if any(b < a for a, b in itertools.pairwise(charge)):
+        raise ValueError("oss_charge cannot fall from one voltage to the next")
 
 
 class ChipKind(str, Enum):

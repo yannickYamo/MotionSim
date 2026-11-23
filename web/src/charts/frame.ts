@@ -1,7 +1,8 @@
 // What every chart is drawn with: its frame and plot area, its rules and tick labels, the
 // names of its axes, its lines, and the words it says when there is nothing to draw.
 
-import { escape, sig } from "../format";
+import { escape, sig, tickLabels } from "../format";
+import { icon } from "../icons";
 
 export interface Box {
   x: number;
@@ -17,6 +18,17 @@ export type Scale = (v: number) => number;
  *  half of it is that size: charts set one above another line up, axis for axis. */
 export const FULL = { view: "0 0 540 272", box: { x: 56, y: 36, w: 460, h: 184 } };
 export const HALF = { view: "0 0 356 236", box: { x: 48, y: 32, w: 286, h: 150 } };
+
+/** The button that saves the drawing it stands on as a PNG image, named for what it shows:
+ *  `under` is said beneath the name on the image (the device, the point). */
+export const saveButton = (title: string, under = ""): string =>
+  `<button type="button" class="chart-save" data-save-png="${escape(title)}"` +
+  `${under ? ` data-under="${escape(under)}"` : ""} aria-label="Save as a PNG image: ${escape(title)}" ` +
+  `title="Save as PNG">${icon("photo-down")}</button>`;
+
+/** A drawing with the button that saves it, set on its top right corner. */
+export const savable = (svg: string, title: string, under = "", small = false): string =>
+  `<div class="chart-box${small ? " small" : ""}" data-png-host>${svg}${saveButton(title, under)}</div>`;
 
 /** The ids given to the parts of a drawing that another part points at. Each is given once,
  *  so that two charts on one page never share one. */
@@ -41,25 +53,22 @@ export function between(values: number[], unit: string): string {
   return lo === hi ? `steady at ${sig(lo)} ${unit}` : `between ${sig(lo)} and ${sig(hi)} ${unit}`;
 }
 
-/** A tick label: whole numbers stay whole. */
-const tickText = (v: number) => (Number.isInteger(v) ? String(v) : sig(v, 2));
-
 /** The outline of a plot area. */
 export const plotRect = (box: Box) =>
   `<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>`;
 
 /** A grid line up the plot at one value, with its tick label under the plot. */
-function xRule(box: Box, v: number, sx: Scale): string {
+function xRule(box: Box, v: number, sx: Scale, label: string): string {
   const at = `x="${sx(v)}" y="${box.y + box.h + 16}"`;
   const rule = `<path class="grid" d="M${sx(v)} ${box.y}v${box.h}"/>`;
-  return `${rule}<text class="tick" ${at} text-anchor="middle">${tickText(v)}</text>`;
+  return `${rule}<text class="tick" ${at} text-anchor="middle">${label}</text>`;
 }
 
 /** A grid line across the plot at one value, with its tick label left of the plot. */
-export function yRule(box: Box, v: number, sy: Scale): string {
+export function yRule(box: Box, v: number, sy: Scale, label: string): string {
   const at = `x="${box.x - 8}" y="${sy(v) + 4}"`;
   const rule = `<path class="grid" d="M${box.x} ${sy(v)}h${box.w}"/>`;
-  return `${rule}<text class="tick" ${at} text-anchor="end">${tickText(v)}</text>`;
+  return `${rule}<text class="tick" ${at} text-anchor="end">${label}</text>`;
 }
 
 /** What the two axes of a plot measure: the x axis under its right end, the y axis above its left. */
@@ -78,7 +87,10 @@ interface Plot {
 
 /** The rules and tick labels of a plot, its outline, and what its two axes measure. */
 export function frame({ box, sx, sy }: Plot, xt: number[], yt: number[], xLabel: string, yLabel: string): string {
-  const grid = xt.map((v) => xRule(box, v, sx)).join("") + yt.map((v) => yRule(box, v, sy)).join("");
+  const xl = tickLabels(xt);
+  const yl = tickLabels(yt);
+  const grid =
+    xt.map((v, k) => xRule(box, v, sx, xl[k])).join("") + yt.map((v, k) => yRule(box, v, sy, yl[k])).join("");
   return `${grid}${plotRect(box)}${axisNames(box, xLabel, yLabel)}`;
 }
 

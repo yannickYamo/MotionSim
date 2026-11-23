@@ -38,5 +38,8 @@ export function notReady(): string {
   if (res.fault) return `<p class="empty">Not worked out until the engine answers again.</p>`;
   const c = focused();
   if (res.proposal && c && !c.result) return cannotRun(c);
+  // The answer has come and no device in it can be run here: nothing more is on its way.
+  const unrun = res.proposal && !c ? res.proposal.candidates.find((x) => !x.result) : null;
+  if (unrun) return cannotRun(unrun);
   return waiting("Working out the losses.", res.staleSince);
 }

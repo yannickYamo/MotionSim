@@ -6,12 +6,11 @@
   border-top: 1px solid var(--line);
   padding-top: var(--s4);
 }
-/* The event's prose wraps inside the section at a reading measure, however wide the stage. */
+/* The event's prose takes the width of the plots it is about, and breaks a long word. */
 .ev > p,
 .ev-assumed,
 .ev-sheet caption,
 .ev-sheet + p {
-  max-width: 68ch;
   overflow-wrap: anywhere;
 }
 .ev h3 {
@@ -48,11 +47,55 @@
   margin: var(--s4) 0 0;
   font-weight: 500;
 }
-/* Where the edge limit is what slows the part: one line above the edges, in ink. */
+/* The switch and its operating point: figures under their names, ruled like the facts of a tab. */
+.ev-point {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) repeat(3, minmax(0, 1fr));
+  gap: 0 var(--s4);
+  margin: var(--s3) 0 var(--s3);
+  padding: var(--s2) 0;
+  border-block: 1px solid var(--line);
+}
+.ev-point dt {
+  color: var(--ink-3);
+  font-size: 0.88rem;
+}
+.ev-point dd {
+  margin: 0;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+@container (max-width: 520px) {
+  .ev-point {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--s2) var(--s4);
+  }
+  .ev-point div:first-child {
+    grid-column: 1 / -1;
+  }
+}
+/* Where the edge limit is what slows the part: one note above the edges, in ink, set off by a rule. */
 .ev-held {
-  margin: var(--s3) 0 0;
+  display: flex;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
   font-size: 0.92rem;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+.ev-held svg {
+  flex: none;
+  margin-top: 2px;
+}
+.ev > .ev-indicative {
+  margin-top: var(--s3);
+}
+.ev-how {
+  margin: var(--s2) 0 0;
 }
 .ev-held svg {
   width: 16px;
@@ -92,6 +135,12 @@
   padding: 0 var(--s2);
   gap: var(--s1);
   font-size: 0.88rem;
+}
+/* The button that saves an edge's plot as an image: an icon alone, as wide as it is high. */
+.ev-edge-actions button.ev-save {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
 }
 .ev-edge-actions .icon {
   width: 18px;
@@ -178,6 +227,7 @@
 .ev-read {
   display: block;
   min-height: 2.8em;
+  overflow-wrap: anywhere;
   margin-top: var(--s2);
 }
 .ev-figures {
@@ -243,7 +293,6 @@
 .ev-assumed {
   margin: 0;
   padding-left: var(--s5);
-  max-width: 70ch;
 }
 .ev-assumed li + li {
   margin-top: var(--s2);

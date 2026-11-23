@@ -354,9 +354,14 @@ export function sizedEarlier(state: State): boolean {
  *  break-away torque at standstill. */
 function turning(l: State["load"]) {
   return {
-    ...(l.tumble_mass > 0 && l.tumble_radius > 0 ? { tumble: { mass: l.tumble_mass, radius: l.tumble_radius } } : {}),
-    ...(l.pulsation_torque > 0 ? { pulsation: { torque: l.pulsation_torque, per_turn: 1 } } : {}),
-    ...(l.breakaway_torque > 0 && l.breakaway_rpm > 0
+    // Left out where it is nought, which is how a load without it says so. A figure below
+    // nought is sent as typed: the engine refuses it by name, where leaving it out would
+    // change the answer without a word.
+    ...(Number(l.tumble_mass) !== 0 && Number(l.tumble_radius) !== 0
+      ? { tumble: { mass: l.tumble_mass, radius: l.tumble_radius } }
+      : {}),
+    ...(Number(l.pulsation_torque) !== 0 ? { pulsation: { torque: l.pulsation_torque, per_turn: 1 } } : {}),
+    ...(Number(l.breakaway_torque) !== 0 && Number(l.breakaway_rpm) !== 0
       ? { breakaway: { torque: l.breakaway_torque, rpm: l.breakaway_rpm } }
       : {}),
   };
@@ -370,7 +375,7 @@ export function motionRequest(state: State) {
   const l = state.load;
   const gravity = Number(l.mass) !== 0 && Number(l.arm) !== 0 ? { gravity: { mass: l.mass, arm: l.arm } } : {};
   const vehicle =
-    l.v_mass > 0 && l.wheel_radius > 0
+    Number(l.v_mass) !== 0 && Number(l.wheel_radius) !== 0
       ? {
           vehicle: {
             mass: l.v_mass,

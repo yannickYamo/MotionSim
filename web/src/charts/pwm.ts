@@ -1,8 +1,8 @@
 // The switching chart: a few PWM periods of one switch, the current it carries and what it loses.
 
 import type { SwitchingPeriod } from "../api";
-import { sig } from "../format";
-import { FULL, plotRect, yRule } from "./frame";
+import { sig, tickLabels } from "../format";
+import { FULL, plotRect, savable, yRule } from "./frame";
 import type { Box, Scale } from "./frame";
 import { ticks } from "./scale";
 
@@ -13,9 +13,9 @@ const EDGE = 0.07; // of a period: the width a spike is drawn with
 
 /** What is said under the switching chart about the spikes being drawn wider than they are. */
 const PWM_CAPTION =
-  `<p class="quiet small caption">Held at the instant of the turn where this switch works hardest. ` +
-  `A switching spike lasts well under a microsecond; it is drawn wider, ` +
-  `with its area kept equal to the energy lost.</p>`;
+  `<p class="quiet small caption">Shown at the point of the electrical turn where this switch works hardest. ` +
+  `A real switching spike lasts under a microsecond, so each is drawn wider here; ` +
+  `its area still equals the energy lost.</p>`;
 
 /** How one switching chart is laid out: the share of a period the switch is on, how high each
  *  spike stands, the top of the power scale, and the scales of time, power and current. */
@@ -81,12 +81,19 @@ function pwmPaths(
 /** The spikes of one kind of edge, as one control: pressed, or Enter or Space on it, it shows
  *  that edge through time under the chart. Each spike carries a wider strip to be pressed by,
  *  since a spike is drawn only a few pixels wide. The edge shown is marked. */
-function spikeControl(which: "on" | "off", d: string, at: number[], marked: boolean): string {
+function spikeControl(which: "on" | "off", d: string, at: number[], others: number[], marked: boolean): string {
   if (!d) return "";
   const box = PWM_BOX;
   const name = which === "on" ? "turn-on" : "turn-off";
+  // 24 wide around the spike, but never past half way to a spike of the other kind: at a
+  // high duty a turn-off stands just before the next turn-on, and each keeps its own press.
   const hits = at
-    .map((x) => `<rect class="spike-hit" x="${(x - 12).toFixed(1)}" y="${box.y}" width="24" height="${box.h}"/>`)
+    .map((x) => {
+      const left = Math.max(x - 12, ...others.filter((o) => o < x).map((o) => (o + x) / 2));
+      const right = Math.min(x + 12, ...others.filter((o) => o > x).map((o) => (o + x) / 2));
+      const w = Math.max(right - left, 1).toFixed(1);
+      return `<rect class="spike-hit" x="${left.toFixed(1)}" y="${box.y}" width="${w}" height="${box.h}"/>`;
+    })
     .join("");
   return (
     `<g class="spike${marked ? " is-shown" : ""}" role="button" tabindex="0" data-event-show="${which}" ` +
@@ -123,27 +130,30 @@ function pwmTimeAxis(p: SwitchingPeriod, periods: number): string {
  *  carries above, what it loses below. Conduction is the low block while it is on; each
  *  turn-on and turn-off is a spike whose area is the energy lost in it. A real spike is
  *  far narrower and taller than can be drawn, so the spikes are widened and say so. */
-export function pwmChart(p: SwitchingPeriod, periods = 5, shown: "on" | "off" | null = null): string {
+export function pwmChart(p: SwitchingPeriod, periods = 5, shown: "on" | "off" | null = null, under = ""): string {
   const top = PWM_TOP;
   const box = PWM_BOX;
   const m = pwmLayout(p, periods);
   const { current, conduction, on, off, at } = pwmPaths(p, periods, m);
   const share = `${sig(p.current)} A, on ${Math.round(m.on * 100)} % of each period`;
   const said = `${periods} switching periods: current through the switch, ${share}, and the power it loses`;
-  const rules = ticks(0, m.yMax, 3)
-    .map((v) => yRule(box, v, m.sy))
-    .join("");
+  const marks = ticks(0, m.yMax, 3);
+  const labels = tickLabels(marks);
+  const rules = marks.map((v, k) => yRule(box, v, m.sy, labels[k])).join("");
   const heading = `switch current: ${share}`;
-  return `<svg class="chart pwm" viewBox="${FULL.view}" role="group" aria-label="${said}">
+  const span = periods === 1 ? "one switching period" : `${periods} switching periods`;
+  const title = `Power lost in the switch over ${span}`;
+  const svg = `<svg class="chart pwm" viewBox="${FULL.view}" role="group" aria-label="${said}">
 <text class="axis" x="${top.x}" y="${top.y - 16}">${heading}</text>
 <path class="grid" d="M${top.x} ${m.iy(0)}h${top.w}"/><path class="series current" d="${current}"/>
 <text class="axis" x="${box.x}" y="${box.y - 14}">power lost in the switch, W</text>
 ${rules}
 ${plotRect(box)}
 <path class="area conduction" d="${conduction}"/>
-${spikeControl("on", on, at.on, shown === "on")}${spikeControl("off", off, at.off, shown === "off")}
+${spikeControl("on", on, at.on, at.off, shown === "on")}${spikeControl("off", off, at.off, at.on, shown === "off")}
 ${pwmTimeAxis(p, periods)}
-</svg>
+</svg>`;
+  return `${savable(svg, title, under)}
 ${pwmLegend(p, m.on)}
 ${PWM_CAPTION}`;
 }

@@ -127,3 +127,22 @@ def test_two_parts_of_one_name_are_two_rows_told_apart(capsys) -> None:
     cli.main([*argv, "--rpm", "1000", "--torque", "1", "--tsink", "60", "--json"])
     names = [c["name"] for c in json.loads(capsys.readouterr().out)["candidates"]]
     assert len(set(names)) == 2, names
+
+
+def test_a_range_that_starts_below_zero_is_read_as_a_range(capsys) -> None:
+    """-2:2:3 is three torques from -2 to 2 N·m, and -1000:1000:2 the two speeds at its ends:
+    written after its flag with a space, as the help shows a range, it is not another flag."""
+    argv = ["map", "example-mosfet", "--motor", PMSM, "--vdc", "48", "--fsw", "20000", "--tsink", "60", "--json"]
+    assert cli.main([*argv, "--rpm", "-1000:1000:2", "--torque", "-2:2:3"]) == 0
+    answer = json.loads(capsys.readouterr().out)
+    assert answer["torque"] == [-2.0, 0.0, 2.0] and answer["rpm"] == [-1000.0, 1000.0]
+    # Written with an equals sign it reads the same.
+    assert cli.main([*argv, "--rpm=-1000:1000:2", "--torque=-2:2:3"]) == 0
+    again = json.loads(capsys.readouterr().out)
+    assert (again["torque"], again["rpm"]) == (answer["torque"], answer["rpm"])
+    # A range to a negative end, and a flag that is no figure, are told apart as before.
+    assert cli.main([*argv, "--rpm", "500:1000:2", "--torque", "-2:-1:2"]) == 0
+    assert json.loads(capsys.readouterr().out)["torque"] == [-2.0, -1.0]
+    with pytest.raises(SystemExit):
+        cli.main([*argv, "--rpm", "500:1000:2", "--torque", "-o"])
+    assert "expected one argument" in capsys.readouterr().out

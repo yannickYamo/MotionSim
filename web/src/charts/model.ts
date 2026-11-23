@@ -1,8 +1,8 @@
 // The tables of a device model against current, and a limit against one condition.
 
 import type { ModelTable } from "../api";
-import { degrees, escape, sig } from "../format";
-import { between, frame, FULL, HALF, line, nothing } from "./frame";
+import { degrees, escape, sentence, sig } from "../format";
+import { between, frame, FULL, HALF, line, nothing, savable } from "./frame";
 import type { Box, Scale } from "./frame";
 import { along, extend, figures, ticks, withRoom } from "./scale";
 
@@ -61,8 +61,9 @@ export function tableChart(title: string, t: ModelTable): string {
     .join("");
   const temps = order.map((c) => degrees(c.tj)).join(", ");
   const said = escape(`${title} against current: up to ${sig(yRaw * factor)} ${unit} at ${temps}`);
-  return `<figure class="read-chart"><svg class="chart small" viewBox="${view}" role="img" aria-label="${said}">
-${frame({ box, sx, sy }, ticks(0, xMax, 4), yt, "current, A", `${title}, ${unit}`)}${lines}</svg>
+  const svg = `<svg class="chart small" viewBox="${view}" role="img" aria-label="${said}">
+${frame({ box, sx, sy }, ticks(0, xMax, 4), yt, "current, A", `${title}, ${unit}`)}${lines}</svg>`;
+  return `<figure class="read-chart">${savable(svg, `${title} against current`, `at ${temps}`, true)}
 <ul class="legend inline">${legend}</ul></figure>`;
 }
 
@@ -128,6 +129,7 @@ export function limitChart(
   const marked = mark ? `; marked, ${mark.label}` : "";
   const said = escape(`${what}: ${between(figures(ys).length ? figures(ys) : up, "").trim()}${marked}`);
   const curve = `<path class="series read-hot" d="${line(xs, ys, sx, sy)}"/>`;
-  return `<svg class="chart${wide ? "" : " small"}" viewBox="${view}" role="img" aria-label="${said}">
+  const svg = `<svg class="chart${wide ? "" : " small"}" viewBox="${view}" role="img" aria-label="${said}">
 ${frame({ box, sx, sy }, ticks(x0, x1, wide ? 5 : 4), yt, xLabel, yLabel)}${curve}${dot}</svg>`;
+  return savable(svg, sentence(what), "", !wide);
 }

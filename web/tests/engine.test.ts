@@ -255,6 +255,8 @@ describe("the loads usual for a motor", () => {
     app.state.step = LOAD;
     app.state.loadTouched = true; // figures of the user's own: the list alone is looked at
     const asked = presetsFor();
+    // The loads are asked once what suits the part is known: the motor moves after that.
+    await vi.waitFor(() => expect(mock.loads).toHaveBeenCalledTimes(1));
     app.state.motors = { ...app.state.motors, [app.state.kind]: { ...app.state.motors[app.state.kind], rs: 0.5 } };
     first.give({ loads: [{ id: "conveyor" }] as never[] });
     await asked;

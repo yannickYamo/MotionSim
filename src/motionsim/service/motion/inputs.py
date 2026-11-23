@@ -128,11 +128,56 @@ def _load_and_profile(data: dict, mission) -> tuple[Load | None, Profile | None]
         return Load.model_validate(data["load"]), Profile.model_validate(data["profile"])
     except (ValidationError, KeyError) as exc:  # figures that do not make a load or a motion
         if mission is None:
+            said, field = _load_figure(exc) if isinstance(exc, ValidationError) else (reason_of(exc), "")
             raise Refusal(
-                f"the load or motion values do not fit: {reason_of(exc)}",
+                f"the load or motion values do not fit: {said}",
                 "check the load and motion values",
+                field,
             ) from None
         return None, None
+
+
+# Each figure of a load by where it sits in it: the name of its box in the load's form, what
+# it is in words, and its unit. A weight on an arm, a vehicle and a tumbling load each have a
+# mass, and a refusal says which.
+LOAD_FIGURES: dict[tuple[str, ...], tuple[str, str, str]] = {
+    ("gear_ratio",): ("gear_ratio", "the gear ratio", ""),
+    ("gear_efficiency",): ("gear_efficiency", "the gear efficiency", ""),
+    ("motor_inertia",): ("motor_inertia", "the rotor inertia", "kg·m²"),
+    ("inertia",): ("inertia", "the load inertia", "kg·m²"),
+    ("constant_torque",): ("constant_torque", "the steady torque", "N·m"),
+    ("friction_coulomb",): ("friction_coulomb", "the friction", "N·m"),
+    ("friction_viscous",): ("friction_viscous", "the friction growing with speed", "N·m per rad/s"),
+    ("fan_coefficient",): ("fan_coefficient", "the fan constant", "N·m per (rad/s)²"),
+    ("gravity", "mass"): ("mass", "the weight on the arm", "kg"),
+    ("gravity", "arm"): ("arm", "the arm length", "m"),
+    ("vehicle", "mass"): ("v_mass", "the mass carried", "kg"),
+    ("vehicle", "wheel_radius"): ("wheel_radius", "the wheel radius", "m"),
+    ("vehicle", "rolling_resistance"): ("rolling_resistance", "the rolling resistance", ""),
+    ("vehicle", "drag_area"): ("drag_area", "the drag area", "m²"),
+    ("vehicle", "slope_percent"): ("slope_percent", "the slope", "%"),
+    ("tumble", "mass"): ("tumble_mass", "the tumbling load", "kg"),
+    ("tumble", "radius"): ("tumble_radius", "the drum radius", "m"),
+    ("pulsation", "torque"): ("pulsation_torque", "the torque pulse", "N·m"),
+    ("pulsation", "per_turn"): ("pulsation_per_turn", "the pulses in a turn", ""),
+    ("breakaway", "torque"): ("breakaway_torque", "the break-away torque", "N·m"),
+    ("breakaway", "rpm"): ("breakaway_rpm", "the speed the break-away torque is gone by", "rpm"),
+}
+BOUNDS = ("greater_than", "greater_than_equal", "less_than", "less_than_equal")  # refusals that end in a figure
+
+
+def _load_figure(exc) -> tuple[str, str]:
+    """What a load's or a motion's figures were refused for, and the box of the figure: a
+    load's own figure by its name in the load's form, with its unit after the bound."""
+    from motionsim.text import plain_error
+
+    error = exc.errors()[0]
+    place = tuple(str(part) for part in error.get("loc", ()))
+    if exc.title != "Load" or place not in LOAD_FIGURES:
+        return reason_of(exc), ""
+    field, words, unit = LOAD_FIGURES[place]
+    said, _ = plain_error(error, {place[-1]: words})
+    return (f"{said} {unit}" if unit and error.get("type") in BOUNDS else said), field
 
 
 # A heatsink in air given without its heat capacity is taken to reach 63% of its rise in this
@@ -180,23 +225,41 @@ def _heatsink(data: dict, op: OperatingPoint, length: float = 0.0, steady: bool 
 
     h = data.get("heatsink")
     h = h if isinstance(h, dict) else {}
+    # Each figure given is held to what it can be, whether or not this motion's cooling comes
+    # to use it: a resistance below nought is a slip wherever it was typed. Nought itself is
+    # refused too, since the heatsink's time constant is its resistance times its capacity.
+    rth = (
+        None
+        if h.get("rth") in ("", None)
+        else _number(h["rth"], "heatsink resistance", low=0.01, high=500, field="rth")
+    )
     method, capacity = sink_method(op, h, length, steady)
+    given = (
+        None
+        if h.get("capacity") in ("", None)
+        else _number(h["capacity"], "heatsink heat capacity", low=0.1, field="capacity")
+    )
+    own = op.rth_sink is None and op.rth_free is None and rth is not None and given is not None
+    # Followed, the heatsink cools to this air: up to 150 °C. Not followed, the figure may be
+    # the heatsink's own temperature, handed on where no air was given: up to its 200 °C.
+    ambient = (
+        None
+        if h.get("t_ambient") in ("", None)
+        else _number(h["t_ambient"], "ambient temperature", low=-40, high=150 if own else 200, field="t_ambient")
+    )
     if op.rth_sink is not None and capacity:
         return Heatsink(
             rth=op.rth_sink, capacity=capacity, t_ambient=op.t_sink, assumed=method.get("assumed", False)
         ), method
-    if op.rth_sink is None and op.rth_free is None and h.get("rth") and h.get("capacity"):
+    if own:
+        assert rth is not None and given is not None
         return Heatsink(
-            rth=_number(h["rth"], "heatsink resistance", low=0.01, field="rth"),
-            capacity=_number(h["capacity"], "heatsink heat capacity", low=0.1, field="capacity"),
+            rth=rth,
+            capacity=given,
             # The air is where the heatsink starts from, where no other is given.
-            t_ambient=_number(
-                op.t_sink if h.get("t_ambient") in ("", None) else h["t_ambient"],
-                "ambient temperature",
-                low=-40,
-                high=150,
-                field="t_ambient",
-            ),
+            t_ambient=_number(op.t_sink, "ambient temperature", low=-40, high=150, field="t_ambient")
+            if ambient is None
+            else ambient,
         ), {"method": "from cold", "tau": None}
     return None, method
 

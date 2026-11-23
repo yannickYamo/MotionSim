@@ -30,6 +30,23 @@ import { forgetDevice, undoForget } from "./undo";
 
 type Press = (el: HTMLElement) => void;
 
+/** Save the drawing a button stands on as a PNG image, and say that it was, or why not. The
+ *  button waits while the image is made. */
+async function savePngOf(el: HTMLElement): Promise<void> {
+  const host = el.closest("[data-png-host], .ev-edge, #plate");
+  const svg = host?.querySelector<SVGSVGElement>("svg.chart, svg.schematic");
+  if (!svg || el.getAttribute("aria-busy")) return;
+  el.setAttribute("aria-busy", "true");
+  try {
+    const { savePng } = await import("../charts/png");
+    say(`Saved as ${await savePng(svg, el.dataset.savePng || "Chart", el.dataset.under ?? "")}.`);
+  } catch (err) {
+    say(`The image could not be made: ${String((err as Error)?.message ?? err)}.`);
+  } finally {
+    el.removeAttribute("aria-busy");
+  }
+}
+
 function zoom(el: HTMLElement): void {
   const { state } = app;
   const now = ZOOMS.indexOf(state.pwmPeriods);
@@ -254,6 +271,7 @@ function retryResults(): void {
  *  that the pressed element carries is the one that answers. */
 const PRESSES: [string, Press][] = [
   ["zoom", zoom],
+  ["savePng", (el) => void savePngOf(el)],
   ["eventShow", (el) => openEvent((el.dataset.eventShow as "on" | "off") || null)],
   ["eventBox", (el) => toEventBox(el.dataset.eventBox!)],
   ["edgeLimitGo", toEdgeLimit],

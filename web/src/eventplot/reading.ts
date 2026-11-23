@@ -10,9 +10,15 @@ export function readingAt(kind: string, e: Parameters<typeof valuesAt>[0], t: nu
   const at = valuesAt(e, t);
   const n = names(kind);
   const { unit, scale } = timeUnit(v);
+  // A trace at rest reads 0, not what the arithmetic left of it (1.89e-59 W): a value under a
+  // millionth of the trace's own largest is nothing. The time likewise, against the span.
+  const largest = (x: number[]) => x.reduce((m, y) => Math.max(m, Math.abs(y)), 0);
+  const read = (value: number, of: number) => sig(Math.abs(value) < 1e-6 * of ? 0 : value);
+  const when = Math.abs(t) < 1e-6 * Math.max(Math.abs(v.t0), Math.abs(v.t1)) ? 0 : t * scale;
   return (
-    `At ${sig(t * scale, 4)} ${unit}: ${n.v_ds} ${sig(at.v_ds)} V, ${n.i} ${sig(at.i)} A, ` +
-    `${n.v_gs} ${sig(at.v_gs)} V, ${n.p} ${sig(at.p)} W`
+    `At ${sig(when, 4)} ${unit}: ${n.v_ds} ${read(at.v_ds, largest(e.v_ds))} V, ` +
+    `${n.i} ${read(at.i, largest(e.i))} A, ` +
+    `${n.v_gs} ${read(at.v_gs, largest(e.v_gs))} V, ${n.p} ${read(at.p, largest(e.p))} W`
   );
 }
 

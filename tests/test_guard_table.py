@@ -129,6 +129,18 @@ CASES = [
     ("current", dict(device=part(i_pulsed=200.0), i_peak=29.0, overshoot=0.15), OK),
     ("current", dict(device=part(i_pulsed=33.0), i_peak=28.6, overshoot=0.15), OK),
     ("current", dict(device=part(i_pulsed=33.0), i_peak=28.8, overshoot=0.15), CAUTION),
+    # The switching ripple rides on the fundamental: half of it, peak to peak, is added to
+    # the peak a switch turns off. 28 A with 4 A of ripple peaks at 30 A, with 4.2 A at 30.1 A.
+    ("current", dict(i_peak=28.0, ripple_pp=4.0), OK),
+    ("current", dict(i_peak=28.0, ripple_pp=4.2), CAUTION),
+    # 50 A with 20 A of ripple peaks at 60 A, the pulsed rating itself (a caution: it is over
+    # the 30 A continuous rating); with 20.2 A it peaks at 60.1 A, past it.
+    ("current", dict(device=part(i_pulsed=60.0), i_peak=50.0, ripple_pp=20.0, overshoot=0.0), CAUTION),
+    ("current", dict(device=part(i_pulsed=60.0), i_peak=50.0, ripple_pp=20.2, overshoot=0.0), FAIL),
+    # A loop's overshoot is on the fundamental, and the ripple rides on that: 15% over 20 A is
+    # 23 A, and 4 A of ripple makes 25 A; 4.2 A makes 25.1 A, past a 25 A pulsed rating.
+    ("current", dict(device=part(i_pulsed=25.0), i_peak=20.0, ripple_pp=4.0, overshoot=0.15), OK),
+    ("current", dict(device=part(i_pulsed=25.0), i_peak=20.0, ripple_pp=4.2, overshoot=0.15), CAUTION),
     # A drive limit above the pulsed rating is a caution whatever the settled current.
     ("current", dict(device=part(i_pulsed=60.0), i_peak=20.0, i_limit=60.0), OK),
     ("current", dict(device=part(i_pulsed=60.0), i_peak=20.0, i_limit=60.5), CAUTION),
@@ -356,3 +368,31 @@ def test_a_point_outside_its_data_names_the_first_reason_and_counts_the_rest() -
     )
     alone = guard.data_check(solved(validity=Validity.extrapolated, outside=reasons[:1]))
     assert alone.message.endswith("far past the data")
+
+
+def test_the_current_held_against_the_ratings_carries_half_the_switching_ripple() -> None:
+    """104 A of fundamental with 37.6 A of ripple, peak to peak, turns off 104 + 18.8 = 122.8 A:
+    past a 110 A pulsed rating that 104 A alone is within. The sentence gives both figures."""
+    device = part(i_pulsed=110.0)
+    found = [c for c in checks_for(dict(device=device, i_peak=104.0, ripple_pp=37.6)) if c.topic == "current"]
+    assert [c.level for c in found] == [CAUTION, FAIL]
+    assert "peak current 123 A with the switching ripple (104 A without)" in found[0].message
+    assert "123 A a device with the switching ripple (104 A without) is above its pulsed rating of 110 A" in (
+        found[1].message
+    )
+    # Two in parallel carry half each: 61.4 A with the ripple, 52 A without.
+    shared = [
+        c
+        for c in checks_for(dict(device=device, op=point(parallel=2), i_peak=104.0, ripple_pp=37.6, i_limit=100.0))
+        if c.topic == "current"
+    ]
+    assert "61.4 A a device with the switching ripple (52 A without; 123 A at the switch, shared by 2)" in (
+        shared[0].message
+    )
+
+
+def test_with_no_ripple_known_the_current_check_reads_as_it_did() -> None:
+    """A point told outright has no motor inductance to work a ripple out from."""
+    for unknown in (dict(), dict(ripple_pp=None), dict(ripple_pp=0.0)):
+        found = [c for c in checks_for(dict(i_peak=20.0, **unknown)) if c.topic == "current"]
+        assert [c.message for c in found] == ["peak current 20 A against a 30 A rating"]

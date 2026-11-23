@@ -5,6 +5,47 @@ What each version changed for someone using the tool. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html): before 1.0.0, a change in the
 second number may change a figure or a file format, and says so here.
 
+## [Unreleased]
+
+### Added
+
+- Every chart of the page, and the drawing of the power stage, is saved as a PNG image from a button in its corner: the loss chart, each edge of the switching event (and its full-screen plot, beside Export PDF), the loss map, the motion's charts and the limits. The image is the chart as it stands, zoom included, in the page's colours and typeface, under its name and the part and point it is of, at twice the screen's sharpness or more. Nothing leaves the machine.
+
+### Changed
+
+- Captions, notes and lists under a chart run the width of the chart they stand under; on a very wide screen the stage keeps to one measure in the middle. The switch and the point a switching event is worked out at are four figures in a row, and what holds the edges is set apart in its own note, in plainer words: "Edge speed is limited to 5 V/ns, by the gate resistance chosen for that limit. The fastest edge here is 2.9 V/ns, at turn-off."
+- An axis writes all its ticks with the same number of decimals, and a plot zoomed close keeps a label on each tick.
+
+- The peak current held against a device's continuous and pulsed ratings carries half the ripple at the switching frequency wherever a motor's inductance gives it (`motor`, `propose`, `cycle`, `design`, and the page): it is the current a switch turns off. The check says both: "peak current 123 A with the switching ripple (104 A without)". A motor of little inductance that passed its pulsed rating on the fundamental alone can now fail it. A point told outright has no ripple to count and reads as before.
+- `motionsim motor` cautions where the switching frequency makes fewer than 15 switching periods in a period of the output, as `propose`, `cycle` and `design` do; and a speed whose output frequency is above the switching frequency is refused by all four, as `simulate` refuses it.
+- The modulation index space-vector PWM reaches is written 1.155 everywhere, and 1.155 typed is taken as the limit, 2/√3.
+
+### Fixed
+
+- A device file whose output-charge table does not rise in voltage to a value above zero, or whose charge is negative or falls, is refused as not a device model; so is a correction to a switching energy (`rg_factor`, `v_factor`) that is nought or negative, which made the loss vanish.
+- A trajectory shorter than one switching period, a current past 100 000 A in one, and a column a trajectory does not have (`ib` for `i_b`) are each refused with the reason; before, the first two ended in a fault or in figures that were not numbers, and the third was read past, leaving a leg out.
+- `motionsim advise` at a point that asks no current says there is none to size a device for, where it printed "inf mΩ" and "rated for 0 A or more".
+- `motionsim map --torque -2:2:3` reads a range that starts below zero, as `--torque=-2:2:3` did.
+- `python -m motionsim` runs the command line.
+- A made-up part opened at the results says the same on a first visit and after a reload: the load of its application is sized once the application is known, where the usual load could stand in its place until the page was loaded again.
+- A design file saved from the page with a very small figure in it (a 10 nH loop inductance) is read back by `motionsim design run`: the figure is written as YAML reads a number.
+- What the browser keeps comes back whole after a reload: what a cooling was sized for, and a board layout file given for the switching event. A kept state the page cannot use no longer clears the rest.
+- A report printed, the motion or the limits asked, or the page reset while an answer is on its way shows the answer of what is on the page now. Reset also forgets the switching event and its zoom. The full-screen plot is named for the event it draws.
+- A note that the browser is not keeping what you enter no longer hides a refusal or the Try again of a failed answer.
+- Text from a device file is shown as text everywhere in the report and the starting values.
+- A profile file with a figure that is not a decimal number (`0x10`) is refused, not read as 16.
+- A motion repeated twice or more is followed and drawn: a long one ended in a fault ("list index out of range"), and a short one lost its temperature swing.
+- A figure typed into a box of the switching event stays under the keyboard while the answer is worked out again, and a design refused for such a figure keeps the boxes to put it right in.
+- A load reached from a made-up part (a washing machine's drum, a compressor, a vehicle) is the same after every reload; it could come back as the motor's usual load.
+- A part that cannot be run at the design point says so on the Motion and Limits tabs, which kept "Working out the losses".
+- The browser's own Print, after a figure has moved, prints the report of the figures on the page.
+- At a high duty each spike of the loss chart opens its own edge: a press on a turn-on opened the turn-off before it.
+- A trace at rest in a plot of the switching event reads 0 (not 1.89e-59 W), and its axis keeps a scale that means something when zoomed there.
+- The page no longer scrolls sideways at a tablet's width, and a tick label of six figures is no longer cut at a chart's edge.
+- A switching event asked with no loop inductance, or with a gate drive at or below the plateau, is refused with the reason; the first ended in a fault and the second did not end.
+- A switching event that cannot be followed to its end is refused with the reason, naming the figure to change: a common-source inductance as large as the whole commutation loop on an IGBT made the gate ring without end, and the page waited for ever (in the browser, with the engine held). An event at a loop inductance of a fraction of a nanohenry is now answered in seconds.
+- A mass, a radius, a heatsink's resistance, a precharge resistor or an ambient temperature that cannot be (−5 kg, −5 K/W) is refused by the name of its box; some were left out without a word, which changed the answer.
+
 ## [0.6.0] - 2026-11-20
 
 ### Added
@@ -261,5 +302,6 @@ second number may change a figure or a file format, and says so here.
 
 - From a datasheet or measurements to losses, junction temperatures and a verdict, for seven kinds of motor, on a local page and from the command line.
 
+[Unreleased]: https://github.com/yannickYamo/MotionSim/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/yannickYamo/MotionSim/releases/tag/v0.6.0
 [0.4.2]: https://github.com/yannickYamo/MotionSim/releases/tag/v0.4.2

@@ -81,20 +81,45 @@ export function applyPreset(p: LoadPreset): void {
   save(state);
 }
 
-const presetKey = (): string => {
-  const { kind, conditions: c, motors } = app.state;
-  return `${kind}|${c.rpm}|${c.torque}|${c.v_dc}|${JSON.stringify(motors[kind] ?? {})}`;
-};
-
 /** The load of step 4 while the user has not put in figures of their own: the kind they
  *  picked where this motor is offered it, else the usual one for the motor. It depends on
  *  the motor and on the pick alone, never on which motors were looked at on the way. */
 export const loadFor = (list: LoadPreset[], picked: string, suggested = ""): LoadPreset | undefined =>
   list.find((p) => p.id === picked) ?? list.find((p) => p.id === suggested) ?? list[0];
 
+/** The application each device is tried on, as the engine said it: kept by device, so that the
+ *  loads are never sized for a part before what suits it is known. */
+const applications = new Map<string, string>();
+
 /** The application the device under test is tried on, where it is a made-up part with one. */
-const suggestedLoad = (): string =>
-  res.suggestion && res.suggestion.id === underTest() ? (res.suggestion.data.application?.id ?? "") : "";
+const suggestedLoad = (): string => {
+  const id = underTest();
+  if (!id) return "";
+  if (res.suggestion?.id === id) return res.suggestion.data?.application?.id ?? "";
+  return applications.get(id) ?? "";
+};
+
+/** Wait until what suits the device under test is known (the question is asked once, and
+ *  shared with whoever else asks it). Loads sized before it would be the motor's usual ones,
+ *  put in place of the application's and kept: a reload would then change the load. */
+async function applicationKnown(): Promise<void> {
+  const id = underTest();
+  if (!id || applications.has(id) || res.suggestion?.id === id) return;
+  try {
+    const data = await once(`suggest:${id}`, () => api.suggest(id));
+    applications.set(id, data?.application?.id ?? "");
+  } catch {
+    // Nothing is known of what suits it: the usual load stands.
+  }
+}
+
+/** What the loads were asked and sized for: the motor, its design point, and the application
+ *  the part under test is tried on. Loads that landed before that application was known are
+ *  sized again once it is, or the usual load would stand in the application's place. */
+const presetKey = (): string => {
+  const { kind, conditions: c, motors } = app.state;
+  return `${kind}|${c.rpm}|${c.torque}|${c.v_dc}|${JSON.stringify(motors[kind] ?? {})}|${suggestedLoad()}`;
+};
 
 /** The loads are sized from the design point, so when that moves they are sized again:
  *  the load of step 4, unless the user has put in figures of their own, and the ones set
@@ -120,6 +145,9 @@ function sizeLoads(fresh: LoadPreset[]): void {
 export async function presetsFor(): Promise<void> {
   const { state } = app;
   const c = state.conditions;
+  const asked = latest("presets");
+  await applicationKnown();
+  if (!asked()) return; // asked again since, for the page as it is now
   const key = presetKey();
   if (res.presets?.key === key) return;
   const current = latest("presets");

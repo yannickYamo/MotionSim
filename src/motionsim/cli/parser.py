@@ -47,8 +47,10 @@ class Parser(argparse.ArgumentParser):
         self._negative_number_matcher = NEGATIVE
 
 
-# A negative figure as it may be written: -1, -1.5, -.5, -1e9, -2.5E-3, -inf.
-NEGATIVE = re.compile(r"^-(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?$|^-(?:inf|infinity|nan)$", re.IGNORECASE)
+# A negative figure as it may be written: -1, -1.5, -.5, -1e9, -2.5E-3, -inf. And a range that
+# starts with one, low:high or low:high:count: -2:2:3.
+_NUMBER = r"(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?"
+NEGATIVE = re.compile(rf"^-{_NUMBER}(?::[-+]?{_NUMBER}){{0,2}}$|^-(?:inf|infinity|nan)$", re.IGNORECASE)
 
 
 class JsonParser(Parser):

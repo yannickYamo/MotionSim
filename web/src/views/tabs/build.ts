@@ -212,9 +212,10 @@ function startingValue(r: Recommendation): string {
 
 /** One starting value with the reasons under it; one without a figure is marked as an open question. */
 function startingSection(r: Recommendation): string {
-  const name = NAMES[r.topic] ?? sentence(r.topic);
+  // A topic the page has no name for is the engine's own word: shown as text, like any other.
+  const name = Object.hasOwn(NAMES, r.topic) ? NAMES[r.topic] : escape(sentence(r.topic));
   const value = `<span class="rec-value">${escape(startingValue(r))}</span>`;
-  const heading = `<h4>${icon(ICONS[r.topic] ?? "settings")}${name}${value}</h4>`;
+  const heading = `<h4>${icon(Object.hasOwn(ICONS, r.topic) ? ICONS[r.topic] : "settings")}${name}${value}</h4>`;
   const lines = `<ul class="plain small">${r.lines.map((l) => `<li>${escape(sentence(l))}</li>`).join("")}</ul>`;
   const open = Object.keys(r.value).length ? "" : " open-question";
   return `<section class="rec${open}">${heading}${lines}</section>`;

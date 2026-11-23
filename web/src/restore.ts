@@ -21,6 +21,11 @@ const COOLINGS: State["conditions"]["cooling"][] = ["held", "heatsink", "none", 
 /** The most instants of a mission profile, and characters of a text, that are taken back. */
 const MOST_INSTANTS = 20000;
 const MOST_TEXT = 400;
+/** Two texts are longer by their nature: what a cooling was sized for (every input of the
+ *  sizing, written out), and a board layout file. Each is taken back whole, up to its own bound. */
+const MOST_SIZING = 8000;
+const MOST_LAYOUT = 2_000_000;
+const longText = (v: unknown, most: number): string => (typeof v === "string" && v.length <= most ? v : "");
 
 const isRecord = (v: unknown): v is Json => typeof v === "object" && v !== null && !Array.isArray(v);
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -65,6 +70,14 @@ function like<T extends object>(saved: unknown, fresh: T): T {
   return out as T;
 }
 
+/** The event's own figures, and its layout file whole: a layout too long to take back is
+ *  dropped with its name, so that the page never names a file it no longer holds. */
+function eventOf(saved: unknown, fresh: State["event"]): State["event"] {
+  const event = like(saved, fresh);
+  const layout = longText(isRecord(saved) ? saved.layout : "", MOST_LAYOUT);
+  return { ...event, layout, layout_name: layout ? event.layout_name : "" };
+}
+
 /** A record of figures and choices, as a motor's are: text and numbers under plain names. */
 function figures(saved: unknown): Record<string, string | number> {
   if (!isRecord(saved)) return {};
@@ -76,7 +89,9 @@ function figures(saved: unknown): Record<string, string | number> {
 function segmentsOf(saved: unknown, fresh: Segment[]): Segment[] {
   if (!Array.isArray(saved)) return fresh;
   const good = saved.filter(
-    (s): s is Segment => isRecord(s) && isNumber(s.duration) && isNumber(s.speed_start) && isNumber(s.speed_end),
+    // A stretch lasts some time: one of no length, or of less, is not a stretch.
+    (s): s is Segment =>
+      isRecord(s) && isNumber(s.duration) && s.duration > 0 && isNumber(s.speed_start) && isNumber(s.speed_end),
   );
   const kept = good.map((s) => ({
     duration: s.duration,
@@ -107,6 +122,8 @@ function missionOf(saved: unknown): Mission | null {
   const whole_ = columns.every((c) => Array.isArray(c) && c.length === n && c.every(isNumber));
   if (!whole_ || n < 2 || n > MOST_INSTANTS) return null;
   const [time, rpm, torque] = columns as number[][];
+  // Its instants run forward: a profile whose time goes back is not one.
+  if (time.some((t, k) => k > 0 && t <= time[k - 1])) return null;
   return { name: saved.name, time, rpm, torque };
 }
 
@@ -212,7 +229,12 @@ function visitedOf(saved: Json): number[] {
  */
 function shaped(raw: unknown, setup: Setup, keepDevices = false): State | null {
   const saved = plain(raw);
-  if (!isRecord(saved) || !isText(saved.kind) || !setup.motors[saved.kind] || !Array.isArray(saved.devices))
+  if (
+    !isRecord(saved) ||
+    !isText(saved.kind) ||
+    !Object.hasOwn(setup.motors, saved.kind) ||
+    !Array.isArray(saved.devices)
+  )
     return null;
   const state = drawnFrom(saved, setup, keepDevices);
   return "phases" in saved ? state : asSaved(state);
@@ -258,7 +280,7 @@ function drawnFrom(saved: Json, setup: Setup, keepDevices: boolean): State {
       interface: oneOf(conditions.interface, ["", "pad"] as const, ""),
       edge_limit: oneOf(conditions.edge_limit, EDGE_LIMITS, fresh.conditions.edge_limit),
       sized: oneOf(conditions.sized, ["", "rth_sink", "board_area"] as const, ""),
-      sizedFor: typeof conditions.sizedFor === "string" ? conditions.sizedFor : "",
+      sizedFor: longText(isRecord(saved.conditions) ? saved.conditions.sizedFor : "", MOST_SIZING),
     },
     typed: textsOf(saved.typed),
     typedOf: Object.fromEntries(
@@ -270,7 +292,7 @@ function drawnFrom(saved: Json, setup: Setup, keepDevices: boolean): State {
     sink: like(saved.sink, fresh.sink),
     start: like(saved.start, fresh.start),
     map: like(saved.map, fresh.map),
-    event: like(saved.event, fresh.event),
+    event: eventOf(saved.event, fresh.event),
     sweep: like(saved.sweep, fresh.sweep),
     segments: segmentsOf(saved.segments, fresh.segments),
     phases: phasesOf(saved.phases),

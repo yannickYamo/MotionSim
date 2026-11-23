@@ -182,11 +182,11 @@ def test_the_event_says_the_limit_set_the_resistors_and_how_much_faster_the_part
     fastest = max(abs(held["turn_on"]["dv_dt"]), abs(held["turn_off"]["dv_dt"]))
     assert fastest >= 2.5e9
     assert held["held"].startswith(
-        f"Edges held to 5 V/ns by the limit, through the gate resistance it chose: the fastest here is "
+        f"Edge speed is limited to 5 V/ns, by the gate resistance chosen for that limit. The fastest edge here is "
         f"{fastest / 1e9:.2g} V/ns, at turn-"
     )
-    assert "; this GaN HEMT could switch about " in held["held"]
-    assert held["held"].endswith("× faster, held then by its driver's peak current and its channel")
+    assert ". Without the limit this GaN HEMT could switch about " in held["held"]
+    assert held["held"].endswith("× faster: its driver's peak current and its channel would then set the pace")
     free = _ask(ws, "/api/event", _gan_design(ws, "none"))["body"]
     assert free["held"] is None and not [a for a in free["assumed"] if a["field"] == "edge_limit"]
     assert free["turn_off"]["dv_dt"] > 3 * held["turn_off"]["dv_dt"]

@@ -1,4 +1,6 @@
-# One command for everything CI runs: `make check`. `make help` lists the rest.
+# One command for the checks to pass before a change is sent: `make check`. CI runs these and
+# more (the oldest libraries allowed, the installed wheel, the reader, the races and the walks).
+# `make help` lists the rest.
 # For Linux and macOS; on Windows, run the commands of a target by hand (CONTRIBUTING.md).
 
 PYTHON ?= python3
@@ -60,7 +62,7 @@ page-check: ## the page's lint, types, tests and build; the built page is the co
 	cd web && npx playwright install chromium
 	cd web && npm run journey
 
-check: lint typecheck test package audit page-check ## everything CI runs
+check: lint typecheck test package audit page-check ## the checks to pass before a change is sent
 
 clean: ## remove the caches the targets above leave behind
 	$(BIN)/python -c "import shutil; [shutil.rmtree(d, ignore_errors=True) for d in ('dist', 'build', 'htmlcov', '.pytest_cache', '.mypy_cache', '.ruff_cache')]"

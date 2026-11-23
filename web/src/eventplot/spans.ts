@@ -37,6 +37,12 @@ export function setSpan(which: Which, v: Span): void {
   if (current && plot) plot.innerHTML = plotSvg(current, which);
 }
 
+/** Nothing is held of an event: the design it was of is gone, and its zoom with it. */
+export function forgetEvent(): void {
+  spans.clear();
+  current = null;
+}
+
 /** Back to the span first shown. */
 export function resetSpan(which: Which): void {
   if (current) setSpan(which, firstSpan(edgeOf(current, which)));

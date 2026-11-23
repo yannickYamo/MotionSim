@@ -134,8 +134,42 @@ def test_a_modulation_index_past_what_the_scheme_reaches_is_refused(pwm, most, f
     over = round(most + 0.01, 2)
     with pytest.raises(Refusal) as caught:
         validate.electrical({"m": over, "i_rms": 10}, op)
-    assert str(caught.value) == f"the modulation index is at most {most:.3g} with {pwm} PWM, and {over:g} was given"
+    said = {"sine": "1", "space-vector": "1.155"}[pwm]  # the one figure the help and every refusal give
+    assert str(caught.value) == f"the modulation index is at most {said} with {pwm} PWM, and {over:g} was given"
     assert caught.value.fix == fix and caught.value.field == "m"
+
+
+def test_the_space_vector_limit_as_the_tool_writes_it_is_taken_as_the_limit() -> None:
+    """2/√3 is 1.1547, which the help and the refusals write as 1.155. Typed so, it is the
+    limit itself: the stage is worked out at 2/√3, and 1.156 is refused with the same figure."""
+    from motionsim.service import validate
+
+    op = validate.conditions({**SENT, "pwm": "space-vector"})
+    assert validate.electrical({"m": 1.155, "i_rms": 10}, op).modulation_index == 2 / math.sqrt(3)
+    with pytest.raises(Refusal, match=r"at most 1\.155 with space-vector PWM, and 1\.156 was given"):
+        validate.electrical({"m": 1.156, "i_rms": 10}, op)
+    # The engine, asked directly, takes and says the same.
+    assert replace(op, modulation_index=1.155, i_rms=10.0).modulation_index == 2 / math.sqrt(3)
+    with pytest.raises(BadFigure, match=r"1\.156 is past the linear range of space-vector PWM, which ends at 1\.155"):
+        replace(op, modulation_index=1.156, i_rms=10.0)
+    # Sine PWM ends at 1, and nothing is rounded towards it.
+    with pytest.raises(BadFigure, match=r"1\.0004 is past the linear range of sine PWM, which ends at 1$"):
+        replace(op, modulation_index=1.0004, i_rms=10.0, pwm=validate.Pwm.sine)
+
+
+def test_the_command_line_takes_the_modulation_index_its_help_offers(capsys) -> None:
+    from motionsim import cli
+
+    # No current and no dead time: nothing is taken from the voltage, and the limit can be asked for.
+    point = ["--vdc", "300", "--irms", "0", "--pf", "0.85", "--fsw", "8000", "--tsink", "60", "--tdead", "0"]
+    point += ["--pwm", "space-vector"]
+    assert cli.main(["simulate", "example", *point, "--m", "1.155"]) == 0
+    capsys.readouterr()
+    assert cli.main(["simulate", "example", *point, "--m", "1.156"]) == 2
+    assert "at most 1.155 with space-vector PWM" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        cli.main(["simulate", "--help"])
+    assert "modulation index, 0 to 1.155" in " ".join(capsys.readouterr().out.split())
 
 
 @pytest.mark.parametrize("part", ["start", "heatsink", "load", "profile"])

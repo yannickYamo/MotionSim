@@ -108,15 +108,17 @@ def charge_energies(
     the leg and any recovery charge, each taken through the full DC voltage.
     tj and technology are for the recovery charge alone: see recovery_charge.
     """
+    c = chip.charge
+    assert c is not None  # a transistor with no measured energy has a charge model: the device model sees to it
+    # A drive voltage that was given and cannot switch the part is said first: no gate resistor
+    # is chosen for it, and saying the resistors are missing would send the user the wrong way.
+    if op.v_drive is not None and op.v_drive <= c.v_plateau:
+        raise MissingGateDrive(f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)")
     if op.v_drive is None or op.rg_on is None or op.rg_off is None:
         raise MissingGateDrive(
             "this device has no measured switching energy; give the gate drive voltage and the "
             "turn-on and turn-off gate resistances to estimate it from charge"
         )
-    c = chip.charge
-    assert c is not None  # a transistor with no measured energy has a charge model: the device model sees to it
-    if op.v_drive <= c.v_plateau:
-        raise MissingGateDrive(f"gate drive voltage {op.v_drive:g} V does not exceed the plateau ({c.v_plateau:g} V)")
     moved = c.q_gs - c.q_g_th + c.q_gd
     t_on = moved * op.rg_on / (op.v_drive - c.v_plateau)
     t_off = moved * op.rg_off / c.v_plateau

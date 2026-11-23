@@ -1,6 +1,7 @@
 // What the user does, and what the page does about it, wired to the page: what is typed,
 // chosen, pressed, kept open, dropped, and the keys.
 
+import { reportForPrint } from "./actions/reports";
 import { goTo } from "./actions";
 import { addPart } from "./actions/parts";
 import { followOtherTabs } from "./actions/setup";
@@ -56,6 +57,7 @@ export function wire(): void {
     if ((e.target as HTMLElement).matches?.("input[data-bind]")) redrawNow();
   });
   document.addEventListener("keydown", saveKey);
+  window.addEventListener("beforeprint", reportForPrint);
   page.addEventListener("dragover", onDrag);
   page.addEventListener("drop", onDrag);
 }

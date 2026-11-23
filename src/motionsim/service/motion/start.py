@@ -11,7 +11,7 @@ from motionsim.engine import OperatingPoint
 from motionsim.errors import Refusal
 from motionsim.motor import Unreachable
 from motionsim.motor.machines import Pmsm
-from motionsim.service.validate import _number
+from motionsim.service.validate import MOST_CURRENT, MOST_SPEED, _number
 from motionsim.text import written
 
 if TYPE_CHECKING:
@@ -23,7 +23,9 @@ SENSORLESS = ("pmsm", "bldc", "synrm")  # motors whose drive must find the rotor
 
 def _start_number(given: dict):
     """A figure of the start, or None where it was left open."""
-    return lambda key, name, **limits: None if given.get(key) in ("", None) else _number(given[key], name, **limits)
+    return lambda key, name, **limits: (
+        None if given.get(key) in ("", None) else _number(given[key], name, field=key, **limits)
+    )
 
 
 def _flux_start(given: dict, motor):
@@ -32,7 +34,7 @@ def _flux_start(given: dict, motor):
 
     lr = motor.lm + motor.llr
     usual = 3 * lr / motor.rr if motor.rr > 0 else 0.0
-    flux = _start_number(given)("flux_time", "flux build-up time", low=0, high=30)
+    flux = _start_number(given)("flux_time", "flux build-up time", low=0, high=30, unit="s")
     flux = usual if flux is None else flux
     lines = [
         f"before any torque, the magnetising current is held for {written(flux, 2)} s to build the "
@@ -56,11 +58,11 @@ def _open_loop_start(given: dict, c: dict, motor, op: OperatingPoint):
         ).i_peak
     except Unreachable:
         design = 0.0
-    current = number("current", "start current", low=0)
+    current = number("current", "start current", low=0, high=MOST_CURRENT, unit="A")
     peak = design if current is None else current * math.sqrt(2)
-    align = number("align_time", "alignment time", low=0, high=30)
+    align = number("align_time", "alignment time", low=0, high=30, unit="s")
     align = 0.5 if align is None else align
-    handover = number("handover_rpm", "handover speed", low=0)
+    handover = number("handover_rpm", "handover speed", low=0, high=MOST_SPEED, unit="rpm")
     handover = 0.1 * abs(_number(c.get("rpm"), "speed", field="rpm")) if handover is None else handover
     lines = [
         f"alignment: {written(peak / math.sqrt(2), 3)} A rms held still for {align:g} s, to swing the rotor to a known position",

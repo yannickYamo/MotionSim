@@ -40,6 +40,11 @@ describe("a figure that is missing", () => {
     expect(watts(0)).toBe("0 W");
     expect(degrees(-0.4)).toBe("0 °C");
   });
+  it("is a zero without a sign where a share below nothing rounds to nothing", () => {
+    expect(percent(-0.0001)).toBe("0.0 %");
+    expect(percent(-0.00001, 0)).toBe("0 %");
+    expect(percent(-0.0006)).toBe("-0.1 %");
+  });
 });
 
 describe("small figures and figures at the edge of a unit", () => {

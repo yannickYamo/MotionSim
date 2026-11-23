@@ -2,9 +2,9 @@
 // and the things compared on one chart.
 
 import type { Cycle } from "../api";
-import { degrees, escape, sig } from "../format";
+import { degrees, escape, sentence, sig } from "../format";
 import type { Box, Scale } from "./frame";
-import { between, frame, FULL, hotSeries, line, nothing, ratingLine } from "./frame";
+import { between, frame, FULL, hotSeries, line, nothing, ratingLine, savable, saveButton } from "./frame";
 import { along, figures, lengthOf, scale, ticks } from "./scale";
 
 /** The time axis of a motion: seconds, or minutes once it lasts more than three of them. */
@@ -221,11 +221,14 @@ export function timeChart(c: Cycle): string {
   const open = (which: string, name: string, svg: string) =>
     `<button type="button" class="mo-plot" data-motion-full="${which}" ` +
     `aria-label="Open ${escape(name)} full screen">${svg}</button>`;
-  return `${open("tj", "the junction temperature", temperatureChart(c))}
+  const kept = (which: string, name: string, svg: string) =>
+    `<div class="chart-box" data-png-host>${open(which, name, svg)}` +
+    `${saveButton(`${sentence(name.replace(/^the /, ""))} over the motion`)}</div>`;
+  return `${kept("tj", "the junction temperature", temperatureChart(c))}
 ${temperatureLegend(c.sink_name ?? "heatsink")}
-${open("rpm", "the motor speed", against(c, c.rpm, "rpm", "speed", "Motor speed"))}
-${open("torque", "the motor torque", against(c, c.torque, "N·m", "speed", "Motor torque"))}
-${open("i_peak", "the motor current", against(c, amps, "A peak", "hot", "Motor current", "current"))}`;
+${kept("rpm", "the motor speed", against(c, c.rpm, "rpm", "speed", "Motor speed"))}
+${kept("torque", "the motor torque", against(c, c.torque, "N·m", "speed", "Motor torque"))}
+${kept("i_peak", "the motor current", against(c, amps, "A peak", "hot", "Motor current", "current"))}`;
 }
 
 /** One thing compared, with its series on the chart. */
@@ -249,7 +252,8 @@ export function overlayChart(list: Compared[], limit: number): string {
   const sx = (t: number) => box.x + along(t, 0, tMax) * box.w;
   const sy = (v: number) => box.y + box.h - along(v, lo, hi) * box.h;
   const limitLine = limit <= hi ? ratingLine(box, sy, limit) : "";
-  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${overlaySaid(list, limit)}">
+  const svg = `<svg class="chart" viewBox="${view}" role="img" aria-label="${overlaySaid(list, limit)}">
 ${frame({ box, sx, sy }, ticks(0, tMax), ticks(lo, hi, 4), "time, s", "hottest junction, °C")}${limitLine}
 ${list.map((s, k) => `<path class="series s${k}" d="${line(s.time, s.tj, sx, sy)}"/>`).join("")}</svg>`;
+  return savable(svg, "Hottest junction over the motion", list.map((s) => s.name).join(", "));
 }

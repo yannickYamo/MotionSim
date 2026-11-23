@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Setup } from "../src/api";
-import { designFile, yaml } from "../src/designfile";
+import { designFile, figure, yaml } from "../src/designfile";
 import { initial } from "../src/state";
 
 const setup = JSON.parse(readFileSync("tests/fixtures/setup.json", "utf8")) as Setup;
@@ -33,6 +33,33 @@ describe("a design file from the page", () => {
       encoding: "utf8",
     });
     expect(JSON.parse(out)).toEqual(data);
+  });
+  it("writes a very small or very large figure with a point and a signed exponent, as YAML reads a number", () => {
+    expect(figure(1e-8)).toBe("1.0e-8");
+    expect(figure(5e-7)).toBe("5.0e-7");
+    expect(figure(1.5e-9)).toBe("1.5e-9");
+    expect(figure(1e21)).toBe("1.0e+21");
+    // A sum made in binary is written as the figure it stands for.
+    expect(figure(2.0000000000000002e-7)).toBe("2.0e-7");
+  });
+  it("leaves a figure of an ordinary size as it is", () => {
+    expect(figure(1.5)).toBe("1.5");
+    expect(figure(20000)).toBe("20000");
+    expect(figure(0)).toBe("0");
+  });
+  it("holds no figure YAML would take for text, with a loop of 10 nH and a link capacitor of 0.5 µF", () => {
+    const state = { ...initial(setup), devices: ["example"] };
+    state.conditions.l_loop_nh = "10";
+    state.conditions.t_dead_ns = "200";
+    state.sink.c_link_uf = "0.5";
+    state.motors.pmsm.inertia = 5e-7;
+    const text = designFile(state, new Set(["example"]), "example");
+    // 1e-8 without a point is text to a YAML reader: every exponent stands on a figure with one.
+    expect(text).not.toMatch(/(?<![\d.])\d+e[-+]?\d+\b/);
+    expect(text).toContain("\n  l_loop: 1.0e-8\n");
+    expect(text).toContain("\n  t_dead: 2.0e-7\n");
+    expect(text).toContain("\n  inertia: 5.0e-7\n");
+    expect(text).toMatch(/\nc_link: 5\.0e-7(\n|$)/);
   });
   it("names the part the design started from first, and a made-up part by its name", () => {
     const state = { ...initial(setup), devices: ["example", "example-mosfet"] };
