@@ -97,7 +97,12 @@ def test_the_step_rule_and_the_budget_leave_a_made_up_parts_event_as_it_was(ws, 
     for edge in ("turn_on", "turn_off"):
         assert now[edge]["t"] == before[edge]["t"]
         for name in FIGURES:
-            assert now[edge][name] == pytest.approx(before[edge][name], rel=1e-9), (edge, name)
+            was = before[edge][name]
+            # A figure an edge does not have (no ringing found, no tail) is absent on both paths.
+            if was is None:
+                assert now[edge][name] is None, (edge, name)
+            else:
+                assert now[edge][name] == pytest.approx(was, rel=1e-9), (edge, name)
 
 
 @pytest.mark.parametrize(
