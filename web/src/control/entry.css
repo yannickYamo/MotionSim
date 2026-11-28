@@ -1,0 +1,42 @@
+/* The way into the control lab under the results, and the shell the lab opens in: all of
+   the lab's look that comes with the page itself. The rest is fetched with the lab. */
+
+.control-entry {
+  margin-top: var(--s6);
+  padding-top: var(--s5);
+  border-top: 1px solid var(--line);
+}
+.control-entry h3 {
+  margin-top: 0;
+}
+.control-entry p {
+  margin: var(--s2) 0 0;
+  text-wrap: pretty;
+}
+.control-entry .quiet .icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: -3px;
+  color: var(--ink-3);
+}
+dialog.control-lab {
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  background: var(--ground);
+  color: var(--ink);
+  border: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+dialog.control-lab::backdrop {
+  background: var(--ground);
+}
+dialog.control-lab > .waiting,
+dialog.control-lab > .fault {
+  margin: var(--s7) var(--s5);
+}

@@ -3,13 +3,13 @@
 
 import { Refused } from "../api";
 import type { Probe } from "../api";
-import { degrees, escape, sentence, sig } from "../format";
+import { degrees, escape, num, ratio, sentence } from "../format";
 import { icon } from "../icons";
 import { res } from "../store";
 import { refusal, waiting } from "./html";
 
 /** A scale as the page says it: "1.6×". */
-const times = (k: number) => `${Number(sig(k, 3))}×`;
+const times = (k: number) => `${ratio(k)}×`;
 
 /** What one probe came to, in a few words: it passes, it runs too hot, or something else gives. */
 export function probeWords(p: Probe): string {
@@ -58,7 +58,7 @@ export function largestLoad(): string {
   if (!biggest) {
     return `<p><button type="button" class="ghost" data-largest>${icon("plus")}Find the largest load</button></p>`;
   }
-  const k = sig(biggest.scale, 2);
+  const k = num(biggest.scale, 2);
   if (biggest.scale < 1) {
     const said =
       `The load of step 4 is already too much: it would have to be ${k} times what it is. ` +

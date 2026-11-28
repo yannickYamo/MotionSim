@@ -1,0 +1,139 @@
+/* The settings of a page served on this machine: its entry in the bar's menu, and its dialog. */
+
+/* The entry shows only on a page that has the dialog, and the dialog is drawn only where the
+   engine is a server on this machine: the hosted page, whose engine is in the browser, has
+   no server to keep a key and shows no entry. */
+.top-menu .settings-entry {
+  display: none;
+}
+#app:has(#settings-dialog) .top-menu .settings-entry {
+  display: flex;
+}
+
+/* The dialog, in the shape of the page's other small dialog. */
+.settings-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: var(--s5);
+  background: var(--ground);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  color: var(--ink);
+  overscroll-behavior: contain;
+}
+.settings-dialog::backdrop {
+  background: rgb(0 0 0 / 0.6);
+}
+.settings-dialog .dialog-head h2 {
+  margin: 0;
+  font-size: 1.3rem;
+}
+.settings-dialog h3 {
+  margin: var(--s5) 0 var(--s3);
+}
+/* How the key stands: a mark and a sentence. The mark carries the tone, never alone. */
+.settings-state,
+.settings-note {
+  display: flex;
+  gap: var(--s2);
+  margin: 0 0 var(--s4);
+  color: var(--ink-2);
+}
+.settings-state b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.settings-state .icon,
+.settings-note .icon {
+  margin-top: 1px;
+  color: var(--ink-3);
+}
+.settings-state.is-set .icon {
+  color: var(--ok);
+}
+.settings-note .icon {
+  color: var(--caution);
+}
+.settings-dialog .control input {
+  width: 100%;
+}
+.settings-dialog .fault {
+  margin: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .settings-dialog[open] {
+    transition:
+      opacity var(--dur-2) var(--ease-out),
+      transform var(--dur-2) var(--ease-out),
+      display 200ms allow-discrete,
+      overlay 200ms allow-discrete;
+    @starting-style {
+      opacity: 0;
+      transform: scale(0.97);
+    }
+  }
+}
+@media (max-width: 600px) {
+  /* On a phone the dialog is a sheet from the foot of the screen, as the others are. */
+  .settings-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    padding: var(--s4) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+  }
+}
+
+/* The coding agent's part: the code and the command, each read-only with its presses beside it,
+   and the log of what the agent did, a hairline between entries. */
+.settings-dialog .agent-copyable {
+  display: flex;
+  gap: var(--s2);
+}
+.settings-dialog .agent-copyable input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.settings-dialog .agent-copyable button {
+  flex: none;
+  gap: var(--s2);
+}
+.agent-log {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.agent-log li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.agent-log time,
+.agent-log-state {
+  color: var(--ink-3);
+}
+.agent-log-who {
+  color: var(--ink);
+  font-weight: 500;
+}
+.agent-log-what {
+  flex: 1 1 16rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .settings-dialog .agent-copyable {
+    flex-wrap: wrap;
+  }
+}
+#settings-agent .field + .field {
+  margin-top: var(--s4);
+}

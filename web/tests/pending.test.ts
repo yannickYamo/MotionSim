@@ -114,7 +114,9 @@ describe("the page when the engine gives no answer, with figures from before", (
       renderPanel(true);
       const see = document.querySelector<HTMLButtonElement>('#panel .actions .primary[data-step="4"]')!;
       expect(see.disabled).toBe(true);
-      expect(see.getAttribute("aria-describedby")).toBe("fault");
+      // The reason is said in the bar beside it, and the notice is named too.
+      expect(see.getAttribute("aria-describedby")).toBe("need-answer fault");
+      expect(document.querySelector("#panel .actions #need-answer")?.textContent).toMatch(/Not worked out/);
     } finally {
       res.offline = false;
       res.fault = null;

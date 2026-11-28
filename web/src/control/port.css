@@ -1,0 +1,109 @@
+/* The port to a microcontroller, under the export's result: the chip picker, the press, and
+   what came of it. The page's shared tokens alone. */
+.lab-port {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.lab-port-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+}
+.lab-port-ask label {
+  flex-basis: 100%;
+  color: var(--ink-2);
+}
+.lab-port-box {
+  width: min(280px, 100%);
+  height: 44px;
+}
+.lab-port-go {
+  min-height: 44px;
+}
+.lab-port .lab-more {
+  margin-top: 0;
+}
+.lab-port-what ul,
+.lab-port-result ul {
+  max-width: 72ch;
+  margin: var(--s1) 0 var(--s2);
+  padding-left: var(--s4);
+  color: var(--ink-2);
+}
+.lab-port-what li + li,
+.lab-port-checks li + li {
+  margin-top: var(--s1);
+}
+.lab-port > [role="status"]:empty,
+.lab-port-status.is-empty {
+  display: none;
+}
+/* While the port is made: what is under way, and the seconds counted against the most it is
+   waited for. A refusal or a stop is said with a mark, in the caution ink, never left quiet. */
+.lab-port-status {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 72ch;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+.lab-port-status.is-failed {
+  color: var(--caution);
+}
+.lab-port-status .icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.lab-port-elapsed {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lab-port-key {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s2);
+  max-width: 72ch;
+  margin: 0;
+  color: var(--ink-2);
+}
+.lab-port-key .icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+}
+.lab-port-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s1);
+  max-width: 72ch;
+}
+.lab-port-result p {
+  margin: 0;
+}
+.lab-port-result[data-compiled="no"] strong,
+.lab-port-checks [data-ok="no"] strong {
+  color: var(--fail);
+}
+.lab-port-result[data-compiled="yes"] > p:first-child strong {
+  color: var(--ok);
+}
+.lab-port-warnings code,
+.lab-port-files code {
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-port * {
+    transition: none;
+  }
+}

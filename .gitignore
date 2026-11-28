@@ -7,6 +7,9 @@ datasheets/
 .env
 .DS_Store
 runs/
+# Private notes and agents' worktrees: never part of the public tree.
+private/
+.claude/
 measurements/
 
 .coverage

@@ -1,0 +1,188 @@
+/* The page's chat: a panel at the side that leaves the page in reach. Drawn only where a server
+   on this machine answers it, as the settings are. */
+.top .chat-button,
+.lab-ask {
+  display: none;
+}
+body:has(#chat-panel) .top .chat-button,
+body:has(#chat-panel) .lab-ask {
+  display: inline-flex;
+}
+
+.chat-panel {
+  position: fixed;
+  /* Below the bars, so the page's and the lab's own buttons stay in reach. */
+  inset: 80px var(--s4) var(--s4) auto;
+  width: min(420px, calc(100vw - 2 * var(--s4)));
+  height: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  z-index: 40;
+}
+.chat-panel[open] {
+  display: flex;
+}
+.chat-panel .dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.chat-panel .dialog-head h2 {
+  margin: 0;
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.chat-panel .chat-head-actions {
+  display: flex;
+  gap: var(--s1);
+}
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.chat-empty {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1.5;
+}
+.chat-empty ul {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+/* A question to start from: asked with a press. */
+.chat-example {
+  width: 100%;
+  padding: var(--s2) var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.chat-example:hover {
+  border-color: var(--line-strong);
+  color: var(--ink);
+}
+/* Where it cannot answer, said before anything is typed: the caution's icon and word. */
+.chat-unready {
+  display: flex;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r);
+  background: color-mix(in oklab, var(--caution) 9%, var(--ground));
+  font-size: var(--t-small);
+  line-height: 1.5;
+}
+.chat-unready > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--caution);
+}
+.chat-unready strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.chat-unready p {
+  margin: var(--s1) 0 var(--s2);
+  color: var(--ink-2);
+}
+.chat-msg {
+  max-width: 92%;
+  padding: var(--s2) var(--s3);
+  border-radius: var(--r);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-msg.you {
+  align-self: flex-end;
+  background: var(--raised);
+  border: 1px solid var(--line);
+}
+.chat-msg.it {
+  align-self: flex-start;
+  border-left: 2px solid var(--orange);
+  padding-left: var(--s3);
+}
+.chat-msg.working {
+  color: var(--ink-3);
+  border-left-color: var(--line-strong);
+}
+.chat-meta {
+  display: block;
+  margin-top: var(--s1);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+}
+.chat-form {
+  display: flex;
+  gap: var(--s2);
+  padding: var(--s3) var(--s4) var(--s4);
+  border-top: 1px solid var(--line);
+}
+.chat-form textarea {
+  flex: 1;
+  min-height: 44px;
+  max-height: 160px;
+  resize: vertical;
+  padding: var(--s2) var(--s3);
+  background: var(--ground);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-body);
+}
+.chat-form textarea:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+.chat-form button[type="submit"] {
+  align-self: flex-end;
+  min-height: 44px;
+  padding: 0 var(--s4);
+  background: var(--orange);
+  color: var(--on-orange);
+  border: 0;
+  border-radius: var(--r);
+  font-weight: 600;
+}
+.chat-form button[type="submit"]:disabled {
+  opacity: 0.5;
+}
+@media (max-width: 640px) {
+  .chat-panel {
+    inset: auto 0 0 0;
+    width: 100vw;
+    height: 80dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+}

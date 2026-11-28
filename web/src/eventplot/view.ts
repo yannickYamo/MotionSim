@@ -1,9 +1,11 @@
-// The switching event under the loss chart: its turn-on and its turn-off side by side (one
-// above the other on a phone), each zoomed on its own, with what is read from it beside it,
-// the datasheet's times against the model's, what was assumed, and the event's own fold.
+// The switching event under the loss chart: its turn-on and its turn-off, each a panel the
+// width of the column (side by side only where each has 520 px), each zoomed on its own, with
+// what is read from it under it, the datasheet's times against the model's, what was assumed,
+// and the event's own fold.
 // This code is fetched only once the event is first asked for.
 
 import "./event.css";
+import "../charts/plot.css";
 import type { EventEdge, SwitchingEvent } from "../api";
 import { degrees, escape, sentence, sig } from "../format";
 import { icon } from "../icons";
@@ -12,7 +14,7 @@ import type { Part } from "./part";
 import { wirePlots } from "./pointer";
 import { pointSaid } from "./point";
 import { assumedList, datasheetTable, edgeFigures, eventNotes } from "./readouts";
-import { edgeOf, holdEvent, plotSvg } from "./spans";
+import { edgeOf, fitKey, holdEvent, plotSvg } from "./spans";
 import type { Which } from "./svg";
 
 export { detailFold, estimateSaid, geometry } from "./detail";
@@ -63,28 +65,40 @@ const TRACE_WORDS: Record<Part, string> = { vi: "voltage and current", gp: "gate
  *  the voltage (with the current), the gate (with the power). */
 function fullButtons(which: Which, name: string): string {
   const one = (part: Part, said: string) =>
-    `<button type="button" class="ghost ev-full-open" data-full-open="${which}:${part}" ` +
+    `<button type="button" class="plot-act ev-full-open" data-full-open="${which}:${part}" ` +
     `aria-label="Open the ${name.toLowerCase()}'s ${TRACE_WORDS[part]} full screen">` +
     `${icon("maximize")}${escape(said)}</button>`;
   const both = one("vi", "Voltage") + one("gp", "Gate");
   return `<div class="ev-full-opens" role="group" aria-label="Full screen">${both}</div>`;
 }
 
+/** The header line of an edge's panel: where the plot belongs and which edge it is, in the
+ *  mono face, and its actions as quiet buttons at the line's right end. */
+function edgeHead(ev: SwitchingEvent, which: Which, name: string): string {
+  return (
+    `<figcaption class="plot-head"><h4 class="plot-path">Switching event` +
+    `<span class="plot-sep" aria-hidden="true">/</span><span class="plot-what">${name}</span></h4>` +
+    `<div class="ev-edge-actions plot-acts">${fullButtons(which, name)}` +
+    `<button type="button" class="plot-act" data-event-reset="${which}">Reset zoom</button>` +
+    `<button type="button" class="plot-act is-icon ev-save" data-save-png="${name} of one switching event" ` +
+    `data-under="${escape(pointSaid(ev))}" aria-label="Save the ${name.toLowerCase()} plot as a PNG image" ` +
+    `title="Save as PNG">${icon("photo-down")}</button></div>` +
+    `</figcaption>`
+  );
+}
+
+/** One edge as a panel of its own, the width of the column: its header line, its two plots
+ *  drawn at the size they are shown, the line read at the pointer, and its figures as a grid. */
 function edgePanel(ev: SwitchingEvent, which: Which, marked: boolean, both: boolean): string {
   const name = which === "on" ? "Turn-on" : "Turn-off";
   const keys = "+ and − zoom, the arrows move, 0 goes back, Enter opens it full screen";
   return (
-    `<figure class="ev-edge${marked ? " is-marked" : ""}" data-key="ev-${which}">` +
-    `<figcaption><h4>${name}</h4><div class="ev-edge-actions">${fullButtons(which, name)}` +
-    `<button type="button" class="ghost" data-event-reset="${which}">Reset zoom</button>` +
-    `<button type="button" class="ghost ev-save" data-save-png="${name} of one switching event" ` +
-    `data-under="${escape(pointSaid(ev))}" aria-label="Save the ${name.toLowerCase()} plot as a PNG image" ` +
-    `title="Save as PNG">${icon("photo-down")}</button></div>` +
-    `</figcaption>` +
+    `<figure class="ev-edge plot-panel${marked ? " is-marked" : ""}" data-key="ev-${which}">` +
+    edgeHead(ev, which, name) +
     (both ? "" : indicative(edgeOf(ev, which))) +
-    `<div class="ev-plot" tabindex="0" role="group" data-edge-plot="${which}" ` +
+    `<div class="ev-plot" tabindex="0" role="group" data-edge-plot="${which}" data-fit="${fitKey(which)}" ` +
     `aria-label="${name} plot: ${keys}" aria-describedby="ev-read-${which}">${plotSvg(ev, which)}</div>` +
-    `<output class="ev-read quiet small" id="ev-read-${which}">Point at the plot to read each trace.</output>` +
+    `<output class="ev-read plot-read" id="ev-read-${which}">Point at the plot to read each trace.</output>` +
     edgeFigures(edgeOf(ev, which), which, ev.v_dc) +
     `</figure>`
   );

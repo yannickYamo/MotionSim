@@ -604,3 +604,27 @@ def test_on_modules_of_one_leg_each_a_trajectory_heats_each_case_with_its_own_le
     assert together.tj_switch_peak - BASE.t_sink == pytest.approx(
         layer * (leg(10.0) + leg(4.0)) + RTH * leg(10.0), rel=1e-6
     )
+
+
+def test_a_drive_at_rest_carries_no_start_current_and_one_being_aligned_does() -> None:
+    from motionsim.load import Sample
+    from motionsim.starting import Start, with_start
+
+    start = Start(method="open_loop", current=4.0, align_time=0.2, handover_rpm=300.0)
+    rest = Sample(
+        time=0.0, duration=480.0, load_speed=0.0, load_acceleration=0.0, angle=0.0, motor_rpm=0.0, motor_torque=0.0
+    )
+    turning = Sample(
+        time=0.0, duration=1.0, load_speed=1.0, load_acceleration=0.0, angle=0.0, motor_rpm=100.0, motor_torque=0.5
+    )
+    # Off, the stage carries nothing: the off time of a duty costs no loss.
+    assert rest.resting and start.floor(rest.motor_rpm, rest.resting) is None
+    # Under the handover speed, driven, it carries the start's current; and while it aligns.
+    assert start.floor(turning.motor_rpm, turning.resting) == 4.0
+    aligned = with_start([turning], start)[0]
+    assert aligned.aligning and not aligned.resting and start.floor(aligned.motor_rpm, aligned.resting) == 4.0
+    # Standing still against a torque is not rest.
+    holding = Sample(
+        time=0.0, duration=1.0, load_speed=0.0, load_acceleration=0.0, angle=0.0, motor_rpm=0.0, motor_torque=1.0
+    )
+    assert not holding.resting and start.floor(0.0, holding.resting) == 4.0

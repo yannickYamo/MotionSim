@@ -1,6 +1,7 @@
+import { driveAssumed } from "../drive";
 import type { LoadPreset } from "../api";
 import { motionPreview } from "../charts";
-import { escape, sentence, sig, whole } from "../format";
+import { escape, num, ratio, sentence, whole } from "../format";
 import { icon } from "../icons";
 import type { State } from "../state";
 import { plainly } from "../parse";
@@ -8,6 +9,8 @@ import { LOAD } from "../steps";
 import { app, res, ui } from "../store";
 import { field, fold, idOf, refusal, saidAt, select } from "./html";
 import { nextButton } from "./rail";
+import { isProposed } from "../engine/proposed";
+import { proposalBlock } from "./proposed";
 
 const LOAD_FIELDS: Record<string, [string, string, string]> = {
   gear_ratio: ["Gear ratio", ": 1", "Motor turns per load turn. 1 for direct drive."],
@@ -118,10 +121,10 @@ function missionSet(m: NonNullable<State["mission"]>): string {
   const most = (values: number[]) => values.reduce((a, b) => Math.max(a, Math.abs(b)), 0);
   const top = most(m.rpm);
   const peak = most(m.torque);
-  const lasts = sig(m.time[m.time.length - 1] - m.time[0]);
+  const lasts = num(m.time[m.time.length - 1] - m.time[0]);
   return (
     `<div class="read-result" role="status"><p>${icon("circle-check")}<b>${escape(m.name)}</b> is the motion: ` +
-    `${m.time.length} instants over ${lasts} s, up to ${sig(top)} rpm and ${sig(peak)} N·m at the motor.</p>` +
+    `${m.time.length} instants over ${lasts} s, up to ${num(top)} rpm and ${num(peak)} N·m at the motor.</p>` +
     ui.missionNotes.map((n) => `<p class="quiet">${escape(n)}</p>`).join("") +
     `<p class="quiet">The load figures below are not used while a mission profile is set.</p>` +
     `<p><button type="button" class="ghost" data-drop-mission>${icon("x")}Take the profile out</button></p></div>` +
@@ -147,13 +150,20 @@ function missionLine(): string {
   );
 }
 
-/** How long a motion lasts, in minutes once it is long. */
-export function lasting(seconds: number): string {
+/** How long a motion lasts, in minutes once it is long; the most it lasts (`upTo`) where a
+ *  stretch of it ends as soon as the junction is steady. */
+export function lasting(seconds: number, upTo = false): string {
   if (!(seconds > 0)) return "";
-  if (seconds < 120) return `About ${sig(seconds, 2)} s`;
+  const head = upTo ? "Up to" : "About";
+  if (seconds < 120) return `${head} ${num(seconds, 2)} s`;
   const min = Math.round(seconds / 60);
-  return min >= 120 ? `About ${sig(min / 60, 2)} h` : `About ${min} min`;
+  return min >= 120 ? `${head} ${num(min / 60, 2)} h` : `${head} ${min} min`;
 }
+
+/** Whether a stretch of the motion ends as soon as the junction is steady. */
+type Stretch = { until_steady?: boolean };
+const endsSteady = (p: { segments?: Stretch[]; phases?: { segments: Stretch[] }[] | null }): boolean =>
+  [...(p.segments ?? []), ...(p.phases ?? []).flatMap((x) => x.segments)].some((x) => x.until_steady === true);
 
 /** The motor such products usually have, and whether the user's can run the application:
  *  offered, never put in for them. */
@@ -168,43 +178,62 @@ function usualMotor(p: LoadPreset): string {
     `Use the motor this application usually has</button>`;
   const said =
     `${can}Such products usually have a ${poles}-pole ${kind} motor, here wound for your ` +
-    `${sig(m.v_dc)} V supply and judged at ${sig(m.point.rpm)} rpm and ${sig(m.point.torque)} N·m. ` +
+    `${num(m.v_dc)} V supply and judged at ${num(m.point.rpm)} rpm and ${num(m.point.torque)} N·m. ` +
     "Using it fills in only the motor's figures and design point you have not typed yourself.";
   const sign = icon(can ? "alert-triangle" : "info-circle");
   return `<p class="fact${can ? " warn" : ""}">${sign}<span>${said} ${button}</span></p>`;
 }
 
-/** Where each figure of the application comes from, folded away. */
-function whyFold(p: LoadPreset): string {
+/** Where each figure of the application comes from: a typical product of the kind. */
+function whyList(p: LoadPreset): string {
   if (!p.why?.length || !p.usage) return "";
   const use = p.usage;
-  const usage = `<li>${escape(sentence(use.said))}: ${sig(use.per_year)} ${use.unit} a year, for its life.</li>`;
+  const usage = `<li>${escape(sentence(use.said))}: ${num(use.per_year)} ${use.unit} a year, for its life.</li>`;
   const lines = p.why.map((w) => `<li>${escape(sentence(w))}.</li>`).join("");
-  return (
-    `<details class="more" data-fold="why"><summary>${icon("info-circle")}Where these figures come from` +
-    `<span class="quiet">a typical product of the kind</span></summary>` +
-    `<ul class="plain small">${lines}${usage}</ul></details>`
-  );
+  return `<h4>Where the figures come from</h4><ul class="plain small">${lines}${usage}</ul>`;
 }
 
-/** The kinds of load this motor commonly drives, one to pick; nothing while there are none to show. */
+/** The head of an application's one line: up to its first colon or comma. */
+const firstClause = (about: string): string => about.split(/[:,] /)[0];
+
+/** The kinds of load this motor commonly drives, one to pick: a name, one line and how long its
+ *  motion lasts; nothing while there are none to show. The chosen one's story is one press away. */
 function loadKinds(list: LoadPreset[]): string {
   if (!list.length) return "";
   const { state } = app;
   const kind = (p: LoadPreset, k: number) => {
     const on = p.id === state.loadKind;
     const tag = k === 0 ? '<span class="tag">usual for this motor</span>' : "";
-    const own = p.motor ? '<span class="tag quiet">its own motor</span>' : "";
+    const lasts = p.duration
+      ? `<span class="kind-time">${lasting(p.duration, endsSteady(p))
+          .replace(/^About /, "")
+          .replace(/^Up to/, "up to")}</span>`
+      : "";
     return (
-      `<label class="kind${on ? " is-on" : ""}">` +
+      `<label class="kind${on ? " is-on" : ""}" title="${escape(p.about)}">` +
       `<input type="radio" name="load-kind" value="${p.id}" data-load ${on ? "checked" : ""}/>` +
-      `<span class="kind-name">${escape(p.label)}${tag}${own}</span>` +
-      `<span class="kind-about">${escape(p.about)}.${p.duration ? ` ${lasting(p.duration)}.` : ""}</span></label>`
+      `<span class="kind-name">${escape(p.label)}${tag}</span>${lasts}` +
+      `<span class="kind-about">${escape(firstClause(p.about))}</span></label>`
     );
   };
   return (
-    `<fieldset class="kinds loads"><legend>Kind of load</legend>` +
+    `<fieldset class="kinds loads compact"><legend>Kind of load</legend>` +
     `<div class="family">${list.map(kind).join("")}</div></fieldset>`
+  );
+}
+
+/** The chosen kind's story, folded: what its motion is, the motor such products have, and
+ *  where its figures come from. */
+function storyFold(p: LoadPreset, sized: string): string {
+  const steady = endsSteady(p);
+  const time = p.duration
+    ? ` ${lasting(p.duration, steady)}${steady ? ": the run ends once the junction is steady" : ""}.`
+    : "";
+  const about = `<p>${escape(sentence(p.about))}.${time}</p>`;
+  return (
+    `<details class="more" data-fold="load-story"><summary>${icon("plus")}About this load` +
+    `<span class="quiet">${escape(p.label)}${p.motor ? ", with its own motor" : ""}</span></summary>` +
+    `${about}${sized}${usualMotor(p)}${whyList(p)}</details>`
   );
 }
 
@@ -223,7 +252,7 @@ function loadFigures(shown: string[]): string {
     "load-figures",
     "adjustments",
     "Change the load's figures",
-    state.loadTouched ? "yours" : "sized to your motor: put in your own",
+    state.loadTouched ? "yours" : `${isProposed() ? "proposed for this part" : "sized to your motor"}: put in your own`,
     `<div class="fields">${shown.map(one).join("")}</div>${every}`,
     Object.keys(LOAD_FIELDS),
   );
@@ -264,7 +293,7 @@ function phasesTable(phases: NonNullable<State["phases"]>): string {
     ].filter(Boolean);
     return (
       `<tr><th scope="row">${escape(p.name)}</th><td>${p.repeat > 1 ? `${p.repeat} ×` : ""}</td>` +
-      `<td>${sig(lasts)} s</td><td>${whole(top)} rpm` +
+      `<td>${num(lasts)} s</td><td>${whole(top)} rpm` +
       `${how.length ? ` <span class="quiet">${how.join(", ")}</span>` : ""}</td></tr>`
     );
   };
@@ -284,7 +313,7 @@ function stretchesFold(): string {
   const phases = state.phases?.length ? phasesTable(state.phases) : "";
   const open = res.blocked?.field === "motion" || !!ui.missionFault;
   const seconds = state.segments.reduce((n, x) => n + Number(x.duration || 0), 0);
-  const total = sig(seconds);
+  const total = num(seconds);
   const head =
     `<thead><tr><th scope="col">Lasts</th><th scope="col">From</th><th scope="col">To</th>` +
     `<th scope="col"><span class="sr">Remove</span></th></tr></thead>`;
@@ -294,7 +323,7 @@ function stretchesFold(): string {
       `<span class="quiet">${state.segments.length}</span></summary>\n${table}</details>`
     : table;
   const said = phases
-    ? `${state.phases!.length} phases, ${lasting(seconds).toLowerCase()}`
+    ? `${state.phases!.length} phases, ${lasting(seconds, endsSteady({ phases: state.phases })).toLowerCase()}`
     : `${state.segments.length} stretches, ${total} s`;
   return (
     `<details class="more" data-fold="motion"${open ? " open" : ""}><summary>${icon("adjustments")}Change the motion` +
@@ -373,15 +402,27 @@ export function loadPanel(): string {
   const chosen = list.find((p) => p.id === state.loadKind);
   const shown = chosen?.fields ?? OWN_LOAD_FIELDS;
   const kinds = loadKinds(list);
+  // The duty leads the step; what the part could carry is offered under it, as a proposal.
+  const proposal = `<div id="load-proposal">${proposalBlock()}</div>`;
+  // Until the user changes a figure or takes the load as theirs, it is the page's assumption,
+  // and said to be: opening the step is not choosing it.
+  const assumed = driveAssumed(state);
+  // Taking the load is its own line under the words: a button set inside a sentence pushes the
+  // line it is on apart from the others.
+  const take = assumed
+    ? `<p class="use-load-line"><button type="button" class="ghost use-load" data-use-load>` +
+      `${icon("circle-check")}Use this load</button></p>`
+    : "";
   const lead =
-    `<p class="lead">Pick what the motor drives. It starts sized to your motor, so it runs as it is. ` +
-    `These are the loads this kind of motor commonly drives; any other can be entered by its figures.</p>`;
-  const note = !state.mission && (chosen || state.loadTouched) ? loadNote(chosen?.link ?? "") : "";
-  const extra = !state.mission && chosen ? usualMotor(chosen) + whyFold(chosen) : "";
+    `<p class="lead">${assumed ? "Assumed duty" : "Your duty"}: what the motor drives, with its usual load and ` +
+    `motion. Change any figure below.</p>${take}`;
+  // Your own figures are said in the open; how a kind was sized is part of its story.
+  const note = !state.mission && state.loadTouched ? loadNote("") : "";
+  const extra = !state.mission && chosen ? storyFold(chosen, state.loadTouched ? "" : loadNote(chosen.link ?? "")) : "";
   return (
     `<h2 tabindex="-1">What the motor moves</h2>${lead}\n` +
     `${missionBlock()}${state.mission ? "" : kinds}\n` +
-    `<div id="load-note">${note}${extra}</div>\n` +
+    `${proposal}<div id="load-note">${note}${extra}</div>\n` +
     `${loadFigures(shown)}\n` +
     `<h3>The motion</h3>\n` +
     `<div id="motion-preview"></div>\n` +
@@ -400,22 +441,22 @@ function motionAgainstDesign(): string {
   const design = Math.abs(state.conditions.rpm);
   const round = (v: number) => whole(v);
   const over = top > design * 1.01;
-  const geared = gear !== 1 ? `, the load's speed times the ${sig(gear)}:1 gear` : "";
+  const geared = gear !== 1 ? ` (load × ${ratio(gear)}:1 gear)` : "";
   const against = over
-    ? `That is above the ${round(design)} rpm you gave as the design speed in step 3: ` +
-      `the device was tested at the lower speed. Raise the design speed, or slow the motion.`
-    : `Your design speed in step 3 is ${round(design)} rpm.`;
+    ? `, above the ${round(design)} rpm design point: the part was judged at the lower speed. ` +
+      `Raise the design speed, or slow the motion.`
+    : `; design point ${round(design)} rpm.`;
   return (
     `<p class="fact${over ? " warn" : ""}">${icon(over ? "alert-triangle" : "info-circle")}` +
-    `<span>At the motor this motion reaches ${round(top)} rpm${geared}. ${against}</span></p>`
+    `<span>Top speed at the motor ${round(top)} rpm${geared}${against}</span></p>`
   );
 }
 
 /** Under the kinds of load: how this one was sized, or that its figures are now the user's own. */
 function loadNote(link: string): string {
   return app.state.loadTouched
-    ? `<p class="fact">${icon("info-circle")}<span>These are your own figures now: ` +
-        `they stay as they are when the motor or the design point changes. ` +
+    ? `<p class="fact">${icon("info-circle")}<span>Your own figures: kept when the motor or the design point ` +
+        `changes. ` +
         `<button type="button" class="link" data-resize-load>Size this load to the motor again</button></span></p>`
     : `<p class="fact">${icon("info-circle")}<span>${escape(link)}</span></p>`;
 }

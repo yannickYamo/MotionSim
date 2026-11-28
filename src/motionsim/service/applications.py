@@ -191,6 +191,31 @@ def _ceiling_fan(at: Point) -> tuple[dict, dict]:
     return load, {"phases": phases}
 
 
+def _drone(at: Point) -> tuple[dict, dict]:
+    load = {
+        "gear_ratio": 1,
+        "gear_efficiency": 1,
+        "motor_inertia": 4e-6,
+        "inertia": 1.2e-5,
+        "fan_coefficient": 7.3e-9,
+        "friction_coulomb": 2e-3,
+    }
+    phases = [
+        phase("arm", [seg(0.5, 0, 0), seg(0.5, 0, 12_000)]),
+        phase("take-off", [seg(1, 12_000, 50_000), seg(15, 50_000, 50_000)]),
+        phase("cruise", [seg(1, 50_000, 36_000), seg(600, 36_000, 36_000, until_steady=True)]),
+        phase(
+            "manoeuvres",
+            [seg(0.3, 36_000, 46_000), seg(3, 46_000, 46_000), seg(0.3, 46_000, 30_000), seg(3, 30_000, 30_000)]
+            + [seg(0.3, 30_000, 36_000), seg(3, 36_000, 36_000)],
+            10,
+        ),
+        phase("descent and landing", [seg(2, 36_000, 26_000), seg(60, 26_000, 26_000), seg(1, 26_000, 12_000)]),
+        phase("disarm", [seg(0.5, 12_000, 0)]),
+    ]
+    return load, {"phases": phases}
+
+
 MIN_COMPRESSOR = 1200  # rpm, the slowest a rotary compressor is run: below it, its oil is not pumped
 # s: switched off at that speed, the gas stops the shaft in about the time its own torque takes,
 # 3e-4 kg·m² from 1200 rpm on 2 N·m, so that the drive gives no torque on the way down.
@@ -464,6 +489,24 @@ APPLICATIONS: dict[str, Application] = {
             "a fan's torque rising with the square of speed",
             "an impeller of a few grams at the edge of a 25 mm wheel and a magnet of a few millimetres: 10 g·cm² in all (1e-6 kg·m²)",
             "the run is held until the junction is steady, then the boost for a minute",
+        ),
+    ),
+    "drone": Application(
+        "Drone propulsion",
+        "A small propeller or ducted fan at 50 000 rpm on a four-pole motor: take-off at full throttle, a cruise until "
+        "steady, manoeuvres and a landing",
+        ("fan_coefficient", "inertia", "friction_coulomb"),
+        _drone,
+        Usage(150, "runs", "150 flights a year, about three a week through the flying season"),
+        motor="drone",
+        start="open_loop",
+        why=(
+            "a multirotor's or a small fixed-wing aircraft's propulsion unit on a 12-cell battery: about 1 kW on the "
+            "shaft at 50 000 rpm, a propeller's torque rising with the square of speed",
+            "a fan of about 70 mm and the rotor it sits on: 16 g·cm² in all (1.6e-5 kg·m²), little enough that the "
+            "throttle moves the speed within a few tenths of a second",
+            "take-off at full throttle for 15 s, a cruise at 36 000 rpm held until the junction is steady, ten turns "
+            "of throttle steps between 30 000 and 46 000 rpm, a descent at 26 000 rpm and a landing",
         ),
     ),
     "ceiling_fan": Application(

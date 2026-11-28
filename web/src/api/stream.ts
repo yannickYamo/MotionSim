@@ -78,9 +78,25 @@ async function readAll<T>(
     held = rest;
     for (const text of lines) {
       const read = readLine<T>(route, text, onStep);
-      if (read) return read.done;
+      if (read) {
+        // The answer is the last line: what is left (the close) is read to its end, so the
+        // request finishes as it should and is never cut off as if it had been stopped.
+        void drained(reader);
+        return read.done;
+      }
     }
     if (chunk.done) throw new Error("the answer was cut short");
+  }
+}
+
+/** The rest of an answer read and let go: a request stopped after its answer is no fault. */
+async function drained(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
+  try {
+    while (!(await reader.read()).done) {
+      /* nothing more is said after the answer */
+    }
+  } catch {
+    /* stopped once its answer was in: as normal */
   }
 }
 

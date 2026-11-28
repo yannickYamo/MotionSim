@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Setup } from "../src/api";
 import { setPath } from "../src/boxes";
 import { onChange } from "../src/events/choosing";
+import { settle } from "../src/follow";
 import { fromSetupFile, restore } from "../src/restore";
 import { initial, KEY, request } from "../src/state";
 import { MOTOR } from "../src/steps";
@@ -94,6 +95,49 @@ describe("the motor step of a permanent-magnet motor", () => {
     const said = box("motors.pmsm.pole_pairs").closest(".field")!.textContent;
     expect(said).toContain("Poles come in pairs");
     expect(said).toContain("14 is still in use.");
+  });
+});
+
+describe("magnets set in or buried", () => {
+  const pick = (path: string, value: string) => {
+    const el = document.querySelector<HTMLSelectElement>(`select[data-bind="${path}"]`)!;
+    el.value = value;
+    onChange({ target: el } as unknown as Event);
+  };
+  it("are sent as chosen, and the step asks for both axes' inductances, line to line", () => {
+    renderPanel();
+    pick("motors.pmsm.magnets", "interior");
+    expect(app.state.motors.pmsm.magnets).toBe("interior");
+    expect(ui.notes.size).toBe(0); // the word is taken, not refused as a figure
+    expect(document.querySelector('[data-bind="motors.pmsm.l"]')).toBeNull();
+    expect(labelOf("motors.pmsm.ld")).toBe("Inductance Ld, line to line");
+    // The example's one 0.12 mH a phase becomes both axes', 0.24 mH between terminals.
+    expect(box("motors.pmsm.lq").value).toBe("0.24");
+    setPath("motors.pmsm.lq", "0.48", true, "mH");
+    const motor = sent();
+    expect(motor.magnets).toBe("interior");
+    expect(motor.ld).toBe(0.00012);
+    expect(motor.lq).toBe(0.00024); // half of 0.48 mH
+    expect("l" in motor).toBe(false);
+    pick("motors.pmsm.magnets", "surface");
+    expect(sent().l).toBe(0.00012);
+  });
+  it("are settled to the device's example without its one inductance coming back beside the two", () => {
+    // What a browser kept from before: buried magnets, both axes given, the rest the example's.
+    app.state.motors.pmsm = { ...app.state.motors.pmsm, magnets: "interior", ld: 7e-5, lq: 1.5e-4 };
+    delete app.state.motors.pmsm.l;
+    app.state.motorOwn = { pmsm: ["magnets", "lq"] };
+    const changes = settle(app.state, app.setup, null);
+    const motor = sent();
+    expect("l" in motor).toBe(false);
+    expect([motor.ld, motor.lq]).toEqual([7e-5, 1.5e-4]);
+    expect(changes.some((c) => c.path === "motors.pmsm.l")).toBe(false);
+  });
+  it("leave a brushed motor's drive as the word chosen", () => {
+    app.state.kind = "dc";
+    renderPanel();
+    pick("motors.dc.drive", "bipolar");
+    expect(sent().drive).toBe("bipolar");
   });
 });
 

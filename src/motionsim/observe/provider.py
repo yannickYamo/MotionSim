@@ -25,8 +25,10 @@ redirect, not put in a message, not written to a file.
 
 from __future__ import annotations
 
+import contextlib
 import ipaddress
 import json
+import logging
 import os
 import threading
 import time
@@ -34,11 +36,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import warnings
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
+
+from motionsim.text import whole
 
 ANTHROPIC_MODEL = "claude-opus-5-5"
 TIMEOUT = 600.0  # s; a long datasheet takes a model some minutes
@@ -74,8 +78,9 @@ class ReaderFailed(RuntimeError):
     known, what to do about that cause."""
 
     def __init__(self, reason: str, fix: str = "") -> None:
-        super().__init__(reason)
-        self.fix = fix
+        # A service's own words may repeat the key it was sent: never past here.
+        super().__init__(scrub(reason))
+        self.fix = scrub(fix)
 
 
 class ReaderRefused(ReaderFailed):
@@ -151,7 +156,7 @@ class Ledger:
     def summary(self) -> str:
         """One line for the person who pays: calls made and tokens used."""
         calls = f"{self.calls} model call{'' if self.calls == 1 else 's'}"
-        line = f"{calls}, {self.input_tokens:,} tokens in and {self.output_tokens:,} out"
+        line = f"{calls}, {whole(self.input_tokens)} tokens in and {whole(self.output_tokens)} out"
         if self.unreported:
             line += f" ({self.unreported} of the calls did not say what they used)"
         return line
@@ -167,6 +172,87 @@ def _named(env: Mapping[str, str]) -> str:
     return model
 
 
+# The variables that set a reader up, any one of them.
+SETS_UP = ("MOTIONSIM_LLM_URL", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", *(name for name, _ in SERVICES))
+
+
+def _no_saved_key() -> str:
+    return ""
+
+
+# The key kept by the page's own settings, asked for each time a reader is chosen, so that a
+# key saved a moment ago is the one used with no restart. The program that serves the page
+# puts its lookup here (motionsim.app); a command of the command line has none, and reads
+# the environment alone.
+saved_key: Callable[[], str] = _no_saved_key
+
+
+# The variables a key is given in: whatever they hold is taken out of any words said.
+KEYS_IN = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "MOTIONSIM_LLM_KEY", *(name for name, _ in SERVICES))
+SHORTEST_KEY = 8  # characters: anything shorter is no key, and taking it out would garble words
+
+
+def known_keys() -> list[str]:
+    """Every key this process could send: the environment's and the one saved from the page,
+    longest first so that a key inside another is taken out with it."""
+    found = {os.environ.get(name, "").strip() for name in KEYS_IN}
+    # A saved key that cannot be looked up is none to take out.
+    with contextlib.suppress(Exception):
+        found.add(saved_key())
+    return sorted((key for key in found if len(key) >= SHORTEST_KEY), key=len, reverse=True)
+
+
+def scrub(text: str) -> str:
+    """The words with every key this process holds taken out, as it is sent, and as JSON
+    writes it: whatever leaves the process or is logged has been through this."""
+    for key in known_keys():
+        text = text.replace(key, "[key]")
+        written = json.dumps(key)[1:-1]
+        if written != key:
+            text = text.replace(written, "[key]")
+    return text
+
+
+class Scrubbed(logging.Filter):
+    """A log handler's filter: a record's words, and its traceback's, said without a key."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        clean = scrub(message)
+        if clean != message:
+            record.msg, record.args = clean, None
+        if record.exc_info and not record.exc_text:
+            record.exc_text = logging.Formatter().formatException(record.exc_info)
+        if record.exc_text:
+            record.exc_text = scrub(record.exc_text)
+        return True
+
+
+def in_environment(env: Mapping[str, str] | None = None) -> bool:
+    """Whether the environment itself sets a reader up, whole or in part."""
+    env = os.environ if env is None else env
+    return any(env.get(name) for name in SETS_UP)
+
+
+def environment() -> Mapping[str, str]:
+    """Where a reader and its key are looked up, and the one place they are: the process's
+    environment, which wins wherever it sets a reader up, and otherwise the same with the
+    key saved from the page standing as Anthropic's."""
+    if in_environment():
+        return os.environ
+    key = saved_key()
+    return {**os.environ, "ANTHROPIC_API_KEY": key} if key else os.environ
+
+
+def anthropic_arguments() -> dict[str, str]:
+    """What Anthropic's library is handed besides what it reads from the environment itself:
+    the saved key, where that is the one in use, and nothing otherwise."""
+    if in_environment():
+        return {}
+    key = saved_key()
+    return {"api_key": key} if key else {}
+
+
 def chosen(env: Mapping[str, str] | None = None) -> Reader:
     """The reader the environment sets up. Raises NoReader with what to set where none is.
 
@@ -176,7 +262,7 @@ def chosen(env: Mapping[str, str] | None = None) -> Reader:
     GEMINI_API_KEY, XAI_API_KEY. The Anthropic key and token are left for its library to
     read: they are never copied into the reader returned here.
     """
-    env = os.environ if env is None else env
+    env = environment() if env is None else env
     url = env.get("MOTIONSIM_LLM_URL", "").strip().rstrip("/")
     if url:
         return Reader("chat", _named(env), url, env.get("MOTIONSIM_LLM_KEY", "").strip())
@@ -216,8 +302,7 @@ def plain(detail: object, secret: str = "") -> str:
         message = error.get("message") if isinstance(error, dict) else error
         if isinstance(message, str):
             text = message
-    if secret:
-        text = text.replace(secret, "[key]")
+    text = scrub(text.replace(secret, "[key]") if secret else text)
     text = " ".join("".join(ch if ch.isprintable() else " " for ch in text).split())
     return text if len(text) <= SAID else text[:SAID].rstrip() + "…"
 

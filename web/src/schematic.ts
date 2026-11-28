@@ -3,6 +3,8 @@
 
 import type { Position, Result, Stage } from "./api";
 import { degrees, escape, sig } from "./format";
+import { FRONT_END_ROOM, frontEnd, frontEndSpoken } from "./schematic/frontend";
+import type { FrontEndDrawn } from "./schematic/frontend";
 import { H, LEFT, MID, RAIL_BOTTOM, RAIL_TOP, tapY, W } from "./schematic/geometry";
 import { motor, motorName } from "./schematic/motor";
 import type { Rotor } from "./schematic/motor";
@@ -57,6 +59,8 @@ interface SchematicInput {
   ruledOut?: boolean;
   deviceName: string | null;
   battery: boolean;
+  /** The stage between the mains and the link, where the drive is fed from the mains. */
+  frontEnd?: FrontEndDrawn | null;
   pack: Packaging | null;
   parallel: number; // devices side by side at each switch
   motorKnown: boolean; // false until the user has reached the motor step
@@ -81,8 +85,23 @@ const CAPACITOR =
   `<path class="wire" d="M${LEFT} ${RAIL_TOP}V${MID - 6}M${LEFT} ${MID + 6}V${RAIL_BOTTOM}"/>` +
   `<path d="M${LEFT - 13} ${MID - 6}h26M${LEFT - 13} ${MID + 6}h26"/>`;
 
+/** The link split in two capacitors about its midpoint, as a three-level front end needs it. */
+const CAPACITOR_SPLIT =
+  `<path class="wire" d="M${LEFT} ${RAIL_TOP}V${MID - 66}M${LEFT} ${MID - 54}V${MID + 54}` +
+  `M${LEFT} ${MID + 66}V${RAIL_BOTTOM}"/>` +
+  `<path d="${[-66, -54, 54, 66].map((y) => `M${LEFT - 13} ${MID + y}h26`).join("")}"/>` +
+  `<circle class="node" cx="${LEFT}" cy="${MID}" r="3"/>`;
+
 /** The supply at the left of the drawing, with its voltage once that is known. */
-function sourceOf(battery: boolean, vdc: number | null): string {
+function sourceOf(battery: boolean, vdc: number | null, fed: FrontEndDrawn | null): string {
+  if (fed) {
+    // Fed from the mains: the stage stands where the supply would, and the voltage is the link's.
+    const split = fed.id === "vienna";
+    const y = split ? MID - 80 : MID + 5;
+    const link =
+      vdc === null ? "" : `<text x="${LEFT - 20}" y="${y}" text-anchor="end" class="reading">${sig(vdc)} V</text>`;
+    return `${frontEnd(fed)}<g class="source">${link}${split ? CAPACITOR_SPLIT : CAPACITOR}</g>`;
+  }
   // A battery is drawn as cells; a supply that only delivers, as a source circle.
   const symbol = battery ? CELLS : SOURCE_CIRCLE;
   const volts =
@@ -137,19 +156,21 @@ function legOf(input: SchematicInput, drawn: Drawn, k: number): string {
 }
 
 /** The plate's title: what the stage is and how it is built, and the device under it. */
-function captionOf(label: string, built: string, deviceName: string | null): string {
+function captionOf(label: string, built: string, deviceName: string | null, x: number): string {
   const part = deviceName
     ? escape(deviceName.length > 64 ? `${deviceName.slice(0, 63)}…` : deviceName)
     : "no device chosen yet";
-  const title = `<text class="plate-title" x="34" y="32">${label} · ${built}</text>`;
-  return `${title}<text class="plate-title part" x="34" y="52">${part}</text>`;
+  const title = `<text class="plate-title" x="${x}" y="32">${label} · ${built}</text>`;
+  return `${title}<text class="plate-title part" x="${x}" y="52">${part}</text>`;
 }
 
 /** The plate's notes: the modulation scheme at the left, the motor and its peak current at the right. */
 function notesOf(input: SchematicInput): string {
   const { stage } = input;
   const what = motorName(input.rotor);
-  const scheme = `<text class="plate-note" x="34" y="${H - 44}">${stage ? escape(stage.scheme) : ""}</text>`;
+  // Clear of the stage's name where a front end is drawn, at the left edge otherwise.
+  const [x, y] = input.frontEnd ? [LEFT + 40, H - 28] : [34, H - 44];
+  const scheme = `<text class="plate-note" x="${x}" y="${y}">${stage ? escape(stage.scheme) : ""}</text>`;
   const said = `${input.motorKnown ? `Motor: ${what}` : ""}${stage ? ` · ${sig(stage.i_peak)} A peak` : ""}`;
   return `${scheme}<text class="plate-note" x="${W - 34}" y="${H - 28}" text-anchor="end">${said}</text>`;
 }
@@ -169,8 +190,11 @@ function openingTag(input: SchematicInput, label: string, built: string): string
   const { stage, result, blocked } = input;
   const state = `${blocked ? " is-blocked" : ""}${stage ? " is-live" : ""}`;
   const outcome = result ? `, total loss ${sig(result.loss)} watts, hottest junction ${degrees(result.tj_peak)}` : "";
-  const spoken = `${label}, ${built}${outcome}`;
-  return `<svg class="schematic${state}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${spoken}">`;
+  const fed = input.frontEnd ?? null;
+  const spoken = `${label}, ${built}${fed ? escape(frontEndSpoken(fed)) : ""}${outcome}`;
+  const x0 = fed ? -FRONT_END_ROOM : 0;
+  const mains = fed ? " has-front-end" : "";
+  return `<svg class="schematic${state}${mains}" viewBox="${x0} 0 ${W - x0} ${H}" role="img" aria-label="${spoken}">`;
 }
 
 export function schematic(input: SchematicInput): string {
@@ -178,15 +202,18 @@ export function schematic(input: SchematicInput): string {
   const drawn = layout(kind);
   const { legs } = drawn;
   // The kind of stage follows from the motor; before that it is not named.
-  const label = input.motorKnown ? drawn.label : "Power stage";
+  const stage = input.motorKnown ? drawn.label : "Power stage";
+  // Fed from the mains, the plate is both stages: the front end is named first.
+  const label = input.frontEnd?.name ? `${input.frontEnd.name} and ${stage.toLowerCase()}` : stage;
   const right = legs[legs.length - 1];
   const rails = `<path class="wire" d="M${LEFT - 60} ${RAIL_TOP}H${right}M${LEFT - 60} ${RAIL_BOTTOM}H${right}"/>`;
-  const source = sourceOf(input.battery, input.vdc);
+  const source = sourceOf(input.battery, input.vdc, input.frontEnd ?? null);
   const switches = legs.map((_, k) => legOf(input, drawn, k)).join("");
   const outline = pack ? packages(legs, pack) : null;
   const beside = input.parallel > 1 ? `, ${input.parallel} in parallel at each switch` : "";
   const built = (outline ? packageName(pack!, outline.count) : `${legs.length * 2} switches`) + beside;
-  const caption = captionOf(label, built, input.deviceName);
+  // The title stands at the plate's left edge, which is further left where a front end is drawn.
+  const caption = captionOf(label, built, input.deviceName, 34 - (input.frontEnd ? FRONT_END_ROOM : 0));
   const machine = motor(input.rotor, blocked ? 0 : input.rpm, legs, input.motorKnown);
   const plate = caption + (outline?.drawing ?? "") + rails + source;
   const stop = blocked ? BLOCKED : "";

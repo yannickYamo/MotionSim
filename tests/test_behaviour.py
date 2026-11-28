@@ -494,7 +494,7 @@ def test_a_stage_may_switch_in_megahertz_and_its_switching_loss_goes_with_the_fr
     # Fifty times the events; the energy of each moves only as far as the junction warms.
     assert fast["switching"] / slow["switching"] == pytest.approx(50, rel=0.1)
     assert proposal_at(workspace, f_sw=5e6, t_dead=20e-9, v_drive=10, rg_on=5, rg_off=3)["result"] is not None
-    with pytest.raises(page.Refused, match="switching frequency cannot be above 10,000,000"):
+    with pytest.raises(page.Refused, match="switching frequency cannot be above 10 000 000"):
         proposal_at(workspace, f_sw=2e7)
 
 
@@ -548,7 +548,7 @@ def test_each_kind_of_motor_is_offered_only_the_loads_it_is_used_for() -> None:
     assert [k for k, loads in offered.items() if "vehicle" in loads] == ["pmsm", "bldc", "dc"]
     # A series motor is offered only loads whose own torque stops them: it cannot brake.
     assert offered["dc_series"] == ["tool", "conveyor"]
-    assert set(offered["bldc"]) == {"fan", "vacuum", "ceiling_fan", "vehicle", "tool", "conveyor"}
+    assert set(offered["bldc"]) == {"fan", "vacuum", "drone", "ceiling_fan", "vehicle", "tool", "conveyor"}
     assert offered["stepper"] == ["axis", "conveyor"]
     # A ceiling fan and a vacuum run brushless motors; a compressor, a permanent-magnet one or an induction motor.
     assert [k for k, loads in offered.items() if "ceiling_fan" in loads] == ["pmsm", "bldc"]

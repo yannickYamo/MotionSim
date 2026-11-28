@@ -1,0 +1,421 @@
+/* The lab's graphs full screen, the way to open each, and the scheme full screen. The dialog
+   is the switching event's own (eventplot/event.css); this adds what the lab's graphs need:
+   a key over the drawing, words held at the drawing's size however far it is scaled, the
+   cursor of the run, and the 44px way into each graph. */
+
+/* ---------- The ways in ---------- */
+
+/* Beside the image button on a chart's corner: the same quiet 32px mark, pressed over 44px. */
+.chart-box .chart-full {
+  position: absolute;
+  top: var(--s2);
+  right: 44px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+.chart-box .chart-full .icon {
+  width: 18px;
+  height: 18px;
+}
+.chart-box .chart-full:hover,
+.chart-box .chart-full:focus-visible {
+  color: var(--ink);
+  border-color: var(--edge);
+  background: var(--raised);
+}
+.chart-box .chart-full:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.chart-box .chart-full:active {
+  transform: scale(0.96);
+}
+.chart-box .chart-full::after,
+.chart-box .chart-save::after,
+.lab-face-open::after,
+.scope-full::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+/* A press on the drawing opens it too: it says so to the pointer. */
+.chart-box.can-open > [data-chart-host] {
+  cursor: zoom-in;
+}
+
+/* A strip's own way in, beside the way to take it out. */
+.scope-full {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.scope-full .icon {
+  width: 16px;
+  height: 16px;
+}
+.scope-full:hover,
+.scope-full:focus-visible {
+  color: var(--ink);
+  border-color: var(--edge);
+  background: var(--raised);
+}
+.scope-full:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The block's drawing in the inspector: opened by a press on it, or by its corner button. */
+.lab-face-open {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--ground);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.lab-face-open .icon {
+  width: 16px;
+  height: 16px;
+}
+.lab-face-open:hover,
+.lab-face-open:focus-visible {
+  color: var(--ink);
+  border-color: var(--edge);
+}
+.lab-face-open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The face is not pressed anywhere else: its drawing and its button are. */
+.lab-face-svg.can-open,
+.lab-face-open {
+  pointer-events: auto;
+}
+.lab-face-svg.can-open {
+  cursor: zoom-in;
+}
+
+/* ---------- The graph full screen ---------- */
+
+/* Its words at the size of the full-screen plot's, whatever the drawing is scaled by; its
+   lines at their own width. */
+dialog.lab-full .lab-full-in text {
+  font-size: calc(12.5px / var(--k, 1));
+}
+dialog.lab-full .lab-full-in :is(path, line, circle, rect, polyline) {
+  vector-effect: non-scaling-stroke;
+}
+.lab-full-svg .lab-full-key text,
+.lab-full-svg .lab-full-strip {
+  font-size: 12.5px;
+}
+.lab-full-key text {
+  fill: var(--ink-2);
+}
+.lab-full-key path,
+.lab-full-key circle {
+  fill: none;
+  stroke-width: 2;
+}
+.lab-full-key .lab-pole,
+.lab-full-key .lab-zero,
+.lab-full-key .lab-unit {
+  stroke-width: 1.6;
+}
+.lab-full-sym {
+  font-family: KaTeX_Math, "Times New Roman", serif;
+  fill: var(--ink);
+}
+.lab-full-sym.is-word {
+  font-family: inherit;
+}
+.lab-full-sub {
+  font-size: 0.75em;
+}
+.lab-full-strip {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.lab-full-follow {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+/* The crosshair's dot on each trace, in the trace's own ink. */
+.chart.ev-svg .ev-dot:is(.s1, .pr-0) {
+  fill: var(--ink);
+}
+.chart.ev-svg .ev-dot:is(.s3, .s4) {
+  fill: var(--ink-2);
+}
+.chart.ev-svg .ev-dot:is(.s5, .s6, .pr-3) {
+  fill: var(--ink-3);
+}
+.chart.ev-svg .ev-dot:is(.s0, .s2) {
+  fill: var(--orange);
+}
+.chart.ev-svg .ev-dot.pr-1 {
+  fill: var(--trace-current);
+}
+.chart.ev-svg .ev-dot.pr-2 {
+  fill: var(--trace-gate);
+}
+/* A drawing that is not through time is not dragged or zoomed: it is looked at and saved. */
+dialog.lab-full.is-still .ev-full-plot {
+  cursor: default;
+  touch-action: auto;
+}
+/* Its actions at the size a finger presses. */
+dialog.lab-full .ev-full-actions button,
+dialog.lab-full .ev-full-head button.close {
+  min-height: 44px;
+}
+dialog.lab-full .ev-full-head button.close {
+  min-width: 44px;
+}
+
+/* ---------- Drawn for print ---------- */
+
+/* Off the screen while a drawing is copied for a PDF: its words at the size of a printed page. */
+.lab-paper-hold.is-print .lab-full-in text,
+.lab-paper-hold.is-print .lab-full-svg > text,
+.lab-paper-hold.is-print .lab-full-key text {
+  font-size: calc(8.5px / var(--k, 1));
+}
+.lab-paper-hold.is-print .lab-full-key text,
+.lab-paper-hold.is-print .lab-full-svg > text {
+  font-size: 8.5px;
+}
+
+/* ---------- The scheme full screen ---------- */
+
+/* Marked on the lab's window, which the lab's own drawing never sets: the diagram takes the whole of the lab's window, its head over it; the inspector of a block
+   pressed stands beside it, or over it where the window is narrower. */
+.is-scheme-full .lab .lab-diagram {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s3);
+  padding: var(--s3) var(--s5) var(--s5);
+  background: var(--ground);
+}
+.is-scheme-full .lab .lab-canvas {
+  height: 100%;
+}
+.is-scheme-full .lab .lab-inspector {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  width: clamp(340px, 28vw, 420px);
+}
+@media (min-width: 1101px) {
+  .is-scheme-full .lab.has-inspector .lab-diagram {
+    right: clamp(340px, 28vw, 420px);
+  }
+}
+@media (max-width: 1100px) {
+  .is-scheme-full .lab .lab-inspector {
+    width: min(420px, 100vw);
+  }
+}
+@media (max-width: 700px) {
+  .is-scheme-full .lab .lab-diagram {
+    padding: var(--s3) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+  }
+  .is-scheme-full .lab .lab-inspector {
+    top: auto;
+    left: 0;
+    width: 100vw;
+  }
+}
+.lab-scheme-head {
+  display: none;
+}
+.is-scheme-full .lab .lab-scheme-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s4);
+}
+.lab-scheme-title {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.lab-scheme-title h2 {
+  margin: 0;
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.35;
+}
+.lab-scheme-title p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-scheme-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.lab-scheme-actions button {
+  min-height: 44px;
+}
+.lab-scheme-actions button[aria-busy] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lab-scheme-head .close {
+  min-width: 44px;
+  min-height: 44px;
+  margin: 0;
+}
+.lab-scheme-status {
+  flex-basis: 100%;
+  margin: 0;
+}
+.lab-scheme-status:empty {
+  display: none;
+}
+@media (max-width: 700px) {
+  .lab-scheme-title {
+    flex-basis: calc(100% - 60px);
+  }
+  .lab-scheme-actions {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .lab-scheme-actions button {
+    flex: 1 1 auto;
+    padding: 0 var(--s3);
+  }
+}
+/* The way into the scheme full screen from the phone's list of its blocks. */
+.lab-chain-full {
+  min-height: 44px;
+  margin: var(--s2) 0 var(--s3);
+}
+/* The report, under the verdict. */
+.lab-report {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin-top: var(--s3);
+}
+.lab-report button {
+  min-height: 44px;
+}
+.lab-report button[aria-busy] {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lab-report p {
+  margin: 0;
+}
+/* What leaves the lab, under the verdict: the report, and beside it the scheme as C / C++
+   code with its one line of what it gives and, on demand, what the zip holds. */
+.lab-exports {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--s3) var(--s5);
+  margin-top: var(--s4);
+}
+.lab-exports .lab-report {
+  margin-top: 0;
+}
+.lab-export-c {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: var(--s2);
+}
+.lab-export-c-said {
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+.lab-export-c .lab-more {
+  margin-top: 0;
+}
+.lab-export-c-what ul {
+  max-width: 72ch;
+  margin: var(--s1) 0 var(--s2);
+  padding-left: var(--s4);
+  color: var(--ink-2);
+}
+.lab-export-c-what li + li {
+  margin-top: var(--s1);
+}
+.lab-export-c > [role="status"]:empty {
+  display: none;
+}
+@media (max-width: 700px) {
+  .lab-exports {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.lab-scheme-c {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.lab-scheme-c button {
+  min-height: 44px;
+}
+.lab-export-c-result {
+  flex-basis: 100%;
+}
+.lab-export-c-result ul {
+  margin: var(--s1) 0 var(--s2);
+  padding-left: var(--s3);
+}
+.lab-export-c-result[data-passed="no"] strong {
+  color: var(--fail);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .is-scheme-full .lab .lab-diagram {
+    animation: lab-scheme-in var(--dur-2) var(--ease-out);
+  }
+}
+@keyframes lab-scheme-in {
+  from {
+    opacity: 0;
+  }
+}

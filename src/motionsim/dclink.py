@@ -70,13 +70,23 @@ NEGLIGIBLE_F = 1e-6
 
 
 def check(r: Returned, v_dc: float, v_rated: float, *, supply: str) -> list[guard.Check]:
-    """Plain-language verdict. supply: "battery" takes energy back, "one-way" does not."""
+    """Plain-language verdict. supply: "battery" takes energy back, as "front-end" does (a mains
+    stage that returns it); "one-way" does not."""
     if r.energy <= 0:
         return []
     came_back = (
         f"braking returns {written(r.energy, 3)} J to the DC link, {written(r.burst_energy, 3)} J of it in one "
         f"stretch of {written(r.burst_time, 2)} s, at up to {written(r.peak_power, 3)} W"
     )
+    if supply == "front-end":
+        return [
+            guard.Check(
+                guard.Level.ok,
+                "braking",
+                f"{came_back}; the front end gives it back to the mains, at up to {written(r.peak_power, 3)} W, "
+                "which it has to be sized for",
+            )
+        ]
     if supply == "battery":
         return [
             guard.Check(

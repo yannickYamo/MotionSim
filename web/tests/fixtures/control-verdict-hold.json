@@ -1,0 +1,150 @@
+{
+  "verdict": {
+    "findings": [
+      {
+        "id": "current_margin",
+        "topic": "current loop",
+        "tag": "good",
+        "severity": 0,
+        "said": "current loop: phase margin 68.5°, gain margin 12 dB, crossover 1.28 kHz (fs/25)",
+        "head": "the current loop keeps 68.5° of phase margin, crossing over at fs/25",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "thd",
+        "topic": "ripple",
+        "tag": "good",
+        "severity": 0,
+        "said": "current THD 1.5%, ripple 0.107 A peak to peak (6.8% of the 1.59 A peak)",
+        "head": "the current is close to a sine (1.5% THD)",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "loss_split",
+        "topic": "losses",
+        "tag": "good",
+        "severity": 0,
+        "said": "device loss 5.31 W: 52.5% conduction, 47.5% switching (0.16 W per kHz of switching frequency)",
+        "head": "the devices lose 5.31 W, 47.5% of it in switching",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "junction",
+        "topic": "thermal",
+        "tag": "good",
+        "severity": 0,
+        "said": "junction peaks at 62.6 °C (up to 64.7 °C across the thermal assumptions), 85.3 K below its 150 °C rating, swinging 0.2 K",
+        "head": "the junction stays 85.3 K below its rating",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "carrier",
+        "topic": "timing",
+        "tag": "good",
+        "severity": 0,
+        "said": "carrier ratio 28.6 switching periods a turn, at the 560 Hz output the run reached, sampled twice a period",
+        "head": "the carrier switches 28.6 times a turn",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "angle",
+        "topic": "sensing",
+        "tag": "good",
+        "severity": 0,
+        "said": "observer angle error 0.095° rms once it has the rotor",
+        "head": "the observer's angle is 0.095° rms off the rotor's",
+        "lever": null,
+        "expect": null,
+        "change": null
+      },
+      {
+        "id": "check_data",
+        "topic": "data",
+        "tag": "note",
+        "severity": 0,
+        "said": "the operating point is outside the datasheet's data: turn-on energy: scaled linearly from 300 V test voltage to 325 V; above the test voltage real devices rise faster, by up to 3% more here (and 2 more, under data support)",
+        "head": null,
+        "lever": null,
+        "expect": null,
+        "change": null
+      }
+    ],
+    "edits": [],
+    "edited": false,
+    "against": null,
+    "summary": "Good: the current loop keeps 68.5° of phase margin, crossing over at fs/25. Nothing here asks for a change.",
+    "by": "template",
+    "key": "3b58377fa5caa0d645d95150282ef639a1d5e82e"
+  },
+  "quality": {
+    "test": "hold",
+    "scheme": {
+      "id": "sensorless_emf"
+    },
+    "fidelity": "switched",
+    "loops": {
+      "current": {
+        "phase_deg": 68.4549806149056,
+        "gain_db": 12.040003291023817,
+        "crossover_hz": 1276.5805079880945,
+        "bandwidth_hz": 2337.85691247336,
+        "stable": true
+      },
+      "speed": {
+        "phase_deg": null,
+        "gain_db": 67.23924858899623,
+        "crossover_hz": null,
+        "bandwidth_hz": 11.334108416636521,
+        "stable": true
+      }
+    },
+    "tuned": null,
+    "tj": {
+      "peak": 62.62520778034569,
+      "high": 64.7497836930354,
+      "max": 150.0,
+      "swing": 0.1967706636870048
+    },
+    "ripple": {
+      "thd": 0.014538216094476124,
+      "pp": 0.10722449235501741,
+      "fundamental": 1.5871183036026606,
+      "torque_pp": 0.20761684938120872,
+      "torque_mean": 2.7769312984049384
+    },
+    "step": null,
+    "limited": []
+  },
+  "ripple": {
+    "from": 0.007468749999999988,
+    "to": 0.014624999999999996,
+    "i_fundamental": 1.5871183036026606,
+    "i_d": -1.2047454873640167,
+    "i_q": 1.0332147987261047,
+    "thd": 0.014538216094476124,
+    "pp": 0.10722449235501741,
+    "pp_mean": 0.052021672926338136,
+    "rms": 0.016314808213821707,
+    "torque_mean": 2.7769312984049384,
+    "torque_pp": 0.20761684938120872,
+    "torque_rms": 0.04017898249438727
+  },
+  "sensing": {
+    "observer": "observer",
+    "from": 0.007468749999999988,
+    "angle_error_mean": -0.09449679273059575,
+    "angle_error_rms": 0.09469250546463681,
+    "angle_error_peak": 0.10240056823252322,
+    "speed_error_rms": 0.002678386833464098
+  }
+}

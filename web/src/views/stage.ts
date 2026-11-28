@@ -1,11 +1,14 @@
 // The drawing and the figures beside it: what is being tested and, once there is an answer,
 // what it loses and how hot it runs.
 
+import { keepDrawing } from "./thumb";
+import { emptyArt } from "../emptyart";
+import { deltaTag } from "../pin";
 import { notRefused } from "../api";
 import type { Candidate, DeviceSummary, Result } from "../api";
 import { pwmChart } from "../charts";
 import { saveButton } from "../charts/frame";
-import { degrees, escape, percent, sentence, sig, watts } from "../format";
+import { degrees, escape, num, percent, sentence, watts } from "../format";
 import { icon } from "../icons";
 import { schematic } from "../schematic";
 import { MOTOR, RESULTS, STEPS, SUPPLY, ZOOMS } from "../steps";
@@ -24,9 +27,12 @@ import {
 } from "../store";
 import { ev, eventBoxes, eventSlot, focusOnce } from "../eventask";
 import { renderCompareArea } from "./comparebar";
+import { frontEndDrawn } from "./frontend";
 import { renderBarStatus } from "./rail";
 import { put } from "./morph";
-import { $, packaging, readout, reduced, verdict } from "./html";
+import { $, packaging, readout, reduced } from "./html";
+import { verdictMarkup } from "../verdictwords";
+import { whereOf, wordsOf } from "./verdictline";
 
 /** The engine refused the inputs and the user has been far enough to be told. */
 const refusedNow = (): boolean => !!res.blocked && app.state.reached >= SUPPLY;
@@ -57,12 +63,24 @@ function drawPlate(c: Candidate | null, shown: DeviceSummary | undefined, wait: 
     $("#plate").classList.add("is-first");
     setTimeout(() => $("#plate").classList.remove("is-first"), 1200);
   }
+  // The first drawing of the visit draws its wires in, once: the bench switching on.
+  const first = !wiresDrawn && !reduced();
+  wiresDrawn = true;
+  const drawing = schematic({ ...deviceDrawn(c, shown, wait), ...supplyDrawn(), rotor: rotorDrawn() });
+  keepDrawing(drawing);
   put(
     $("#plate"),
-    schematic({ ...deviceDrawn(c, shown, wait), ...supplyDrawn(), rotor: rotorDrawn() }) +
+    (first ? drawing.replace(/<path class="wire"/g, '<path class="wire" pathLength="1"') : drawing) +
       saveButton("The power stage", c?.name ?? ""),
   );
+  if (first) {
+    $("#plate").classList.add("draws-in");
+    setTimeout(() => $("#plate").classList.remove("draws-in"), 900);
+  }
 }
+
+/** Whether the drawing has been drawn in yet on this visit. */
+let wiresDrawn = false;
 
 /** The device on the drawing, and what of its answer is drawn: nothing while the answer is on
  *  its way, since what it had was for other inputs. */
@@ -90,6 +108,7 @@ function supplyDrawn() {
     motorKnown: state.reached >= MOTOR,
     parallel: state.reached >= SUPPLY ? Math.max(1, Math.round(Number(k.parallel) || 1)) : 1,
     battery: state.supply === "battery",
+    frontEnd: state.reached >= SUPPLY ? frontEndDrawn() : null,
     // The rotor turns only while the user is at or past the point where they set the
     // speed. Going back to the motor or the device stops it.
     // It stands still while the page says the design cannot be worked out.
@@ -118,22 +137,52 @@ const stillDecides = (c: Candidate, r: Result): boolean =>
 
 const stillNote = (c: Candidate, r: Result): string => {
   const over = Math.round(c.stall_tj! - r.tj_max);
-  const against = over > 0 ? `${over} °C above the rating` : `${-over} °C under the rating`;
+  const against = over > 0 ? `${over} K above the rating` : `${-over} K under the rating`;
   return `holding this torque still, ${against}; ${degrees(r.tj_peak)} while turning`;
 };
 
 /** The figures of a result: the loss, its two kinds, the junction the verdict turns on, the
  *  efficiency. */
 function resultCells(c: Candidate, r: Result, many: boolean): string {
-  const each = `${sig(r.loss / (res.stage?.positions ?? 6))} W a switch on average`;
+  const each = `${num(r.loss / (res.stage?.positions ?? 6))} W a switch`;
   const share = (w: number) => percent(w / Math.max(r.loss, 1e-9), 0);
   return (
-    readout("Power-stage loss", watts(r.loss), `${many ? "" : `${c.name}, `}${each}`) +
-    readout("Conduction", watts(r.conduction), share(r.conduction)) +
+    readout(
+      "Power-stage loss",
+      watts(r.loss),
+      each,
+      "",
+      `${many ? "" : `${c.name}: `}every switch and diode together; under it, a switch on average.`,
+      deltaTag("loss", r.loss),
+    ) +
+    readout(
+      "Conduction",
+      watts(r.conduction),
+      share(r.conduction),
+      "",
+      "Loss while a switch or diode conducts.",
+      deltaTag("conduction", r.conduction),
+    ) +
     // Orange is switching loss wherever loss is split on the page; the readout says so once.
-    readout("Switching", watts(r.switching), `${share(r.switching)}, orange in the loss bars`, "accent") +
+    readout(
+      "Switching",
+      watts(r.switching),
+      share(r.switching),
+      "accent",
+      "Loss at the edges, over the turn: orange in the loss bars.",
+      deltaTag("switching", r.switching),
+    ) +
     junctionCell(c, r) +
-    (c.efficiency != null ? readout("DC-to-shaft efficiency", percent(c.efficiency), "motor windings included") : "")
+    (c.efficiency != null
+      ? readout(
+          "η DC to shaft",
+          percent(c.efficiency),
+          "",
+          "",
+          "Motor windings included.",
+          deltaTag("efficiency", c.efficiency),
+        )
+      : "")
   );
 }
 
@@ -143,7 +192,7 @@ function junctionNote(r: Result): string {
   const spread = r.tj_range && Math.round(r.tj_range[0]) !== Math.round(r.tj_range[1]);
   const range = spread
     ? `${Math.round(r.tj_range![0])} to ${Math.round(r.tj_range![1])} °C across the thermal assumptions`
-    : `${Math.round(r.tj_max - r.tj_peak)} °C under the rating`;
+    : `${Math.round(r.tj_max) - Math.round(r.tj_peak)} K under the rating`;
   const settled =
     app.state.conditions.cooling === "heatsink" && r.t_sink != null ? `heatsink at ${Math.round(r.t_sink)} °C, ` : "";
   return settled + range;
@@ -152,11 +201,22 @@ function junctionNote(r: Result): string {
 /** The junction the verdict turns on: at standstill where holding still decides it, else the
  *  hottest, with the motion's where it differs. */
 function junctionCell(c: Candidate, r: Result): string {
-  if (stillDecides(c, r)) return readout("Junction at standstill", degrees(c.stall_tj), stillNote(c, r), "fail");
+  if (stillDecides(c, r))
+    return readout(
+      "Junction at standstill",
+      degrees(c.stall_tj),
+      stillNote(c, r),
+      "fail",
+      "",
+      deltaTag("still", c.stall_tj),
+    );
   const hot = r.tj_peak > r.tj_max ? "fail" : r.tj_max - (r.tj_range?.[1] ?? r.tj_peak) < 25 ? "caution" : "";
   const through = motionThrough(c, r);
-  const label = through ? "Hottest junction, design point" : "Hottest junction";
-  return readout(label, degrees(r.tj_peak), junctionNote(r) + through, hot);
+  const label = through ? "Tj peak, design point" : "Tj peak";
+  const left = Math.round(r.tj_max) - Math.round(r.tj_peak);
+  const short = `${left >= 0 ? `${left} K under` : `${-left} K over`} ${Math.round(r.tj_max)} °C`;
+  const why = `The hottest junction: ${junctionNote(r)}${through}.`;
+  return readout(label, degrees(r.tj_peak), short, hot, why, deltaTag("tj", r.tj_peak));
 }
 
 /** The motion's hottest junction, said beside the design point's where the two differ by a
@@ -182,13 +242,13 @@ function partCells(d: DeviceSummary, others: number): string {
   const more = others > 0 ? `, and ${others} more to compare` : "";
   let cells =
     readout("Device under test", d.name, `${d.technology}. ${packaging(d)}${more}`) +
-    readout("Rated", `${sig(d.v_max)} V`, `${sig(d.i_nominal)} A, ${Math.round(d.tj_max)} °C junction`);
+    readout("Rated", `${num(d.v_max)} V`, `${num(d.i_nominal)} A, ${Math.round(d.tj_max)} °C junction`);
   if (state.reached >= SUPPLY && res.stage) {
     const over = res.stage.i_peak > d.i_nominal;
-    const note = over ? `peak, above this part's ${sig(d.i_nominal)} A rating` : "peak in the windings";
+    const note = over ? `peak, above this part's ${num(d.i_nominal)} A rating` : "peak in the windings";
     cells +=
-      readout("The motor asks for", `${sig(res.stage.i_peak)} A`, note, over ? "caution" : "") +
-      readout("Shaft power", watts(res.stage.p_shaft), `from ${sig(state.conditions.v_dc)} V`);
+      readout("The motor asks for", `${num(res.stage.i_peak)} A`, note, over ? "caution" : "") +
+      readout("Shaft power", watts(res.stage.p_shaft), `from ${num(state.conditions.v_dc)} V`);
   } else {
     const next = state.reached < MOTOR ? "The motor" : "Supply and point";
     cells += readout("Next", next, "Losses appear once the conditions are set.");
@@ -228,10 +288,11 @@ function cellsBeforeParts(chosen: DeviceSummary[]): string | null {
     return readout("Starting the engine", ui.starting, STARTING_KEPT);
   }
   if (!chosen.length) {
-    return readout(
-      "Start here",
-      "Choose the device to test",
-      "Step 1. Nothing is worked out until you have brought a part.",
+    // The empty place drawn: a datasheet handed to a transistor, beside what to do.
+    return (
+      `<div class="readout start-empty"><dt>Start here</dt><dd>${emptyArt("part")}` +
+      `<span class="figure words">Choose the device to test</span>` +
+      `<span class="note">Step 1. Nothing is worked out until you have brought a part.</span></dd></div>`
     );
   }
   return null;
@@ -285,7 +346,8 @@ function pwmBlock(c: Candidate): string {
     `<button type="button" class="ghost" data-zoom="${way}" aria-label="${label}" ${off ? "disabled" : ""}>` +
     `${icon(`zoom-${way}`)}</button>`;
   const head =
-    `<div class="pwm-head"><h3>${n === 1 ? "One switching period" : `${n} switching periods`}</h3>` +
+    // An h2: the drawing's column comes before the panel's, under the page's h1 (heading order).
+    `<div class="pwm-head"><h2>${n === 1 ? "One switching period" : `${n} switching periods`}</h2>` +
     `<div class="zoom" role="group" aria-label="How many periods are shown">` +
     zoom("in", "Zoom in: fewer periods", n <= ZOOMS[0]) +
     zoom("out", "Zoom out: more periods", n >= ZOOMS[ZOOMS.length - 1]) +
@@ -315,7 +377,8 @@ function switcher(c: Candidate | null): string {
 function verdictStrip(c: Candidate | null, wait: boolean): string {
   if (app.state.step !== RESULTS || !c?.level || res.blocked || res.fault) return "";
   if (wait) return `<span class="verdict waiting-word">Working out…</span>`;
-  return `${verdict(verdictOf(c).level)}<a class="link" href="#panel" tabindex="-1">Why${icon("chevron-down")}</a>`;
+  const why = `<a class="link" href="#panel" tabindex="-1">Why${icon("chevron-down")}</a>`;
+  return `${verdictMarkup(wordsOf(c), whereOf(c))}${why}`;
 }
 
 /** The loss chart with the switching event under it. While the answer for a figure just typed
@@ -347,29 +410,17 @@ export function renderStage(): void {
   if (app.state.step === RESULTS) renderCompareArea();
   drawPwm(c, r, wait);
   focusOnce();
-  roll(before);
+  marked(before);
   renderBarStatus();
 }
 
-/** Figures count to their new value in place, like a counter, instead of jumping. */
-function roll(before: string[]): void {
-  if (reduced()) return;
+/** A figure that changed comes up from a little dimmer in 120 ms, the changed one only: never
+ *  counted from its old value, so that every figure on the screen is readable at every
+ *  moment (the deltas say how far it moved). */
+function marked(before: string[]): void {
   document.querySelectorAll<HTMLElement>("#readouts [data-roll]").forEach((el, k) => {
-    const to = el.textContent ?? "";
-    const was = before[k] ?? "";
-    const a = parseFloat(was);
-    const b = parseFloat(to);
-    const sameShape = to.replace(/[\d.]/g, "") === was.replace(/[\d.]/g, "");
-    if (!Number.isFinite(a) || !Number.isFinite(b) || a === b || !sameShape) return;
-    const decimals = to.match(/\.(\d+)/)?.[1].length ?? 0;
-    const tail = to.replace(/^[-\d.]+/, "");
-    const t0 = performance.now();
-    const tick = (now: number) => {
-      const p = Math.min((now - t0) / 380, 1);
-      const eased = 1 - (1 - p) ** 4;
-      el.textContent = (a + (b - a) * eased).toFixed(decimals) + tail;
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
+    const was = before[k];
+    if (!was || was === el.textContent || typeof el.animate !== "function") return;
+    el.animate([{ opacity: 0.6 }, { opacity: 1 }], { duration: 120, easing: "ease-out" });
   });
 }

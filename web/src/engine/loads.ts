@@ -8,6 +8,7 @@ import type { LoadItem, State } from "../state";
 import { LOAD, RESULTS } from "../steps";
 import { app, draw, invalidate, res, underTest } from "../store";
 import { deep } from "./deep";
+import { propose, startingLoad } from "./proposed";
 
 /** The gearbox, inertia and friction of a preset, with what it leaves out at its plain value. */
 const driveOf = (l: LoadFigures) => ({
@@ -127,7 +128,8 @@ const presetKey = (): string => {
 function sizeLoads(fresh: LoadPreset[]): void {
   const { state } = app;
   const mine = loadFor(fresh, state.loadPicked, suggestedLoad());
-  if (!state.loadTouched && mine) applyPreset(mine);
+  // The load the part can carry, where it has come for this design; the usual one until then.
+  if (!state.loadTouched && mine) applyPreset(startingLoad(mine));
   state.loadSet = state.loadSet.flatMap((item) => {
     if (item.id.startsWith("own-")) return [item];
     if (!state.loadTouched && item.id === state.loadKind) return []; // it is the load of step 4 now
@@ -136,6 +138,20 @@ function sizeLoads(fresh: LoadPreset[]): void {
   });
   invalidate("motion"); // the motion followed so far was of the load as it stood before it was sized
   save(state);
+}
+
+/** Ask for the load the part can carry, for the design as it stands, once its loads are known:
+ *  the application's own load made as heavy as the part can carry. It is put in when it comes,
+ *  unless the load is the user's own by then. Asked again whenever the design moves; the same
+ *  design is asked once. */
+export function proposeAgain(): void {
+  const { state } = app;
+  const list = res.presets?.list;
+  // The kinds of load offered are what is needed here, not their figures: those of a design
+  // point since moved still name the application the proposal is asked for.
+  if (!list?.length) return;
+  const usual = list.find((p) => p.id === state.loadKind) ?? loadFor(list, state.loadPicked, suggestedLoad());
+  if (usual) void propose(usual.id, applyPreset);
 }
 
 /** Fetch the loads usual for this motor at this design point. Until the user has picked or
@@ -149,7 +165,7 @@ export async function presetsFor(): Promise<void> {
   await applicationKnown();
   if (!asked()) return; // asked again since, for the page as it is now
   const key = presetKey();
-  if (res.presets?.key === key) return;
+  if (res.presets?.key === key) return proposeAgain();
   const current = latest("presets");
   let list: LoadPreset[];
   try {
@@ -166,6 +182,7 @@ export async function presetsFor(): Promise<void> {
   if (key !== presetKey()) return presetsFor();
   res.presets = { key, list };
   sizeLoads(list);
+  proposeAgain();
   if (state.step === LOAD) {
     draw.panel(true);
     draw.preview();

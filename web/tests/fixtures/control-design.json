@@ -1,0 +1,16 @@
+{
+  "motor": { "type": "pmsm", "magnets": "surface", "pole_pairs": 7, "kv": 100, "l": 0.00012, "rs": 0.045, "i_max": 40 },
+  "conditions": {
+    "v_dc": 48,
+    "rpm": 2000,
+    "torque": 1.0,
+    "f_sw": 20000,
+    "t_sink": 60,
+    "pwm": null,
+    "cooling": "held",
+    "t_ambient": 25,
+    "parallel": 1
+  },
+  "device": "example-mosfet",
+  "supply": "dc"
+}

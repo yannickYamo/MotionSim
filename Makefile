@@ -8,7 +8,7 @@ VENV ?= .venv
 BIN := $(abspath $(VENV))/bin
 
 .DEFAULT_GOAL := help
-.PHONY: help setup format lint typecheck test test-fast package audit page page-check check clean
+.PHONY: help setup format lint typecheck test test-fast package audit page page-check check clean firmware-token
 
 help: ## what each target does
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  %-11s %s\n", $$1, $$2}'
@@ -63,6 +63,9 @@ page-check: ## the page's lint, types, tests and build; the built page is the co
 	cd web && npm run journey
 
 check: lint typecheck test package audit page-check ## the checks to pass before a change is sent
+
+firmware-token: ## the token the page and the firmware service share, made once and kept in .env for compose
+	python3 src/motionsim/control/codegen/firmware.py --token-env .env
 
 clean: ## remove the caches the targets above leave behind
 	$(BIN)/python -c "import shutil; [shutil.rmtree(d, ignore_errors=True) for d in ('dist', 'build', 'htmlcov', '.pytest_cache', '.mypy_cache', '.ruff_cache')]"

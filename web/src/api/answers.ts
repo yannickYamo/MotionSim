@@ -73,8 +73,10 @@ const HOLDS: [RegExp, string[]][] = [
   [/^\/api\/fit$/, ["level", "lines"]],
   [/^\/api\/capability$/, ["rpm", "edge", "design"]],
   [/^\/api\/largest$/, ["scale"]],
+  [/^\/api\/load-proposal$/, ["scale", "preset", "binding", "figures"]],
   [/^\/api\/report$/, ["markdown"]],
   [/^\/api\/cooling$/, ["figure", "value"]],
+  [/^\/api\/board$/, ["bridges", "candidates", "figures", "layout", "warnings"]],
   [/^\/api\/(device|typed|measure|read)$/, ["device"]],
   [/^\/api\/device\/./, ["summary"]],
 ];

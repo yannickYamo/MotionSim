@@ -172,7 +172,7 @@ def _from_anthropic(reader: provider.Reader, client, ask, max_tokens: int, what:
     its cause, in the words the other services' failures are named in."""
     sdk = provider.needs("anthropic", ANTHROPIC)
     try:
-        client = client or sdk.Anthropic()
+        client = client or sdk.Anthropic(**provider.anthropic_arguments())
     except sdk.AnthropicError as unusable:
         raise provider.ReaderFailed(f"Anthropic's library could not be set up: {provider.plain(unusable)}") from None
     tries = int(getattr(client, "max_retries", 0) or 0) + 1

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // A part added to compare is compared on the design the user is looking at. Where that
-// design rules it out, its row says so, and offers to start the design from it instead.
+// design rules it out, its row says so, and never offers to start the design from it: that
+// would be a verdict on a drive sized to a part already ruled out.
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -41,7 +42,7 @@ beforeEach(() => {
 });
 
 describe("a part compared on a design started from another", () => {
-  it("says in its row that the design rules it out, and offers to start from it", () => {
+  it("says in its row that the design rules it out, and offers nothing to start from it", () => {
     app.state.step = 0;
     renderPanel();
     const rows = [...document.querySelectorAll("li.device")];
@@ -49,15 +50,14 @@ describe("a part compared on a design started from another", () => {
     const mosfet = rows.find((r) => r.querySelector('[data-device="example-mosfet"]'))!;
     expect(igbt.textContent).toContain("Ruled out by the design");
     expect(igbt.textContent).toContain("above its 600 V rating");
-    expect(igbt.querySelector('[data-lead="example"]')?.textContent).toContain("Start the design from this part");
+    expect(igbt.querySelector("[data-lead]")).toBeNull();
     expect(mosfet.querySelector("[data-lead]")).toBeNull();
   });
-  it("offers the same in its row of the results", () => {
-    app.state.step = 4;
-    app.state.tab = "proposal";
+  it("offers nothing to start from it in its row of the results, nor in its column's menu", () => {
+    Object.assign(app.state, { step: 4, tab: "proposal", compare: "devices" });
     renderPanel();
-    expect(document.querySelectorAll("#tab-body [data-lead]")).toHaveLength(1);
-    expect(document.querySelector("#tab-body [data-lead]")?.getAttribute("data-lead")).toBe("example");
+    expect(document.querySelectorAll("#tab-body [data-lead]")).toHaveLength(0);
+    expect(document.querySelector('#compare-area [data-lead="example"]')).toBeNull();
   });
   it("says nothing of a part that passes on the design", () => {
     const igbt = res.proposal!.candidates.find((c) => c.id === "example")!;
@@ -72,6 +72,10 @@ describe("another part made the design from the keyboard", () => {
   const press = (el: Element) => onClick({ target: el } as unknown as Event);
   beforeEach(() => {
     vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => undefined, removeItem: () => undefined });
+    // A part that passes on the design: one that could be made the design.
+    const igbt = res.proposal!.candidates.find((c) => c.id === "example")!;
+    igbt.level = "caution";
+    igbt.checks = [{ level: "caution", topic: "standstill", message: "holding this torque at standstill is close" }];
     Object.assign(app.state, { step: 4, tab: "proposal", compare: "devices" });
     renderPanel();
   });

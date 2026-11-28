@@ -34,6 +34,7 @@ from motionsim.design.setup_file import (
 from motionsim.design.table import COLUMNS, WORD, csv_text, rows
 from motionsim.errors import Refusal
 from motionsim.service.answers import refusal_of
+from motionsim.service.front_end import front_end as front_end_of
 
 # The steps a report is made of answer from what the page has just asked for the same
 # design, where it has: see service/remembered.py.
@@ -70,6 +71,7 @@ __all__ = [
     "setup_marks",
     "starting_setup",
     "validate_setup",
+    "with_front_end",
 ]
 
 log = logging.getLogger("motionsim")
@@ -102,7 +104,36 @@ def _step(work, name: str = "") -> dict:
 
 
 def _base(setup: dict) -> dict:
-    return {"motor": setup["motor"], "conditions": setup["conditions"], "supply": setup.get("supply") or "one-way"}
+    base = {"motor": setup["motor"], "conditions": setup["conditions"], "supply": setup.get("supply") or "one-way"}
+    # Fed from the mains: the mains and the stage in front of the link go with every step.
+    return base | {k: setup[k] for k in ("mains", "front_end") if setup.get(k) is not None}
+
+
+def with_front_end(setup: dict, workspace: Workspace) -> tuple[dict, dict | None]:
+    """A design fed from the mains with its front end worked out: the stage (the one named, or
+    the one recommended) and the link voltage it holds, written into the design every other
+    step is run on; and the front end's own answer. A link voltage given in the conditions is
+    the stage's set point. Any other design comes back as it is, with None."""
+    if setup.get("supply") != "mains":
+        return setup, None
+    c = dict(setup["conditions"])
+    given = dict(setup.get("front_end") or {})
+    if given.get("v_dc") in (None, "") and c.get("v_dc") not in (None, ""):
+        given["v_dc"] = c["v_dc"]
+    request = {
+        "motor": setup["motor"],
+        "conditions": c | {"v_dc": None},
+        "device": setup["devices"][0],
+        "mains": setup.get("mains"),
+        "front_end": given,
+        "c_link": setup.get("c_link"),
+    }
+    answer = _step(lambda: front_end_of(request, workspace), "front end")
+    if "refused" in answer:
+        return setup, answer
+    c["v_dc"] = answer["v_dc"]
+    stage = {k: v for k, v in given.items() if k != "v_dc"} | {"topology": answer["chosen"]}
+    return {**setup, "conditions": c, "front_end": stage}, answer
 
 
 def run_fit(setup: dict, workspace: Workspace) -> dict:
@@ -197,7 +228,7 @@ def run(
     sheet and the capability; the others stand beside it in the verdict."""
     validate_setup(setup, strict)
     motors = setup.get("motors")
-    setup = normalise_setup(setup)
+    setup, front = with_front_end(normalise_setup(setup), workspace)
     devices = setup["devices"]
     moving = bool(setup.get("load") and setup.get("profile"))
     out: dict = {
@@ -211,6 +242,11 @@ def run(
         "devices": {key: workspace.summary(key, workspace.device(key)) for key in devices},
     }
     out["marks"] = setup_marks(setup, workspace)
+    if front is not None:
+        out["front_end"] = front
+        if "refused" in front:
+            out["outcome"] = "refused"
+            return _refusals(out)
     if "fit" in steps:
         out["fit"] = run_fit(setup, workspace)
     out["stage"], verdict = run_verdict(setup, workspace)
@@ -256,7 +292,7 @@ def _refusals(out: dict) -> dict:
     return out
 
 
-STEP_NAMES = ("fit", "stage", "verdict", "motion", "build", "drive")
+STEP_NAMES = ("front_end", "fit", "stage", "verdict", "motion", "build", "drive")
 
 
 def _one_motor(motor: dict, index: int, device: str, setup: dict, workspace: Workspace) -> dict:

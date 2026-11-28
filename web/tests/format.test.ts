@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { degrees, eng, escape, fig, percent, sig, watts, whole } from "../src/format";
+import { atLeast, degrees, eng, escape, fig, num, percent, ratio, sig, watts, whole } from "../src/format";
 
 describe("numbers", () => {
   it("keeps three significant figures", () => {
@@ -75,5 +75,39 @@ describe("a whole number in the thousands", () => {
     expect(whole(1234567)).toBe("1\u202f234\u202f567");
     expect(whole(999)).toBe("999");
     expect(whole(-2000)).toBe("-2\u202f000");
+  });
+});
+
+describe("a figure said on the page", () => {
+  it("is to three figures as sig writes it, its thousands set apart as whole sets them", () => {
+    expect(num(1500)).toBe("1\u202f500");
+    expect(num(100000)).toBe("100\u202f000");
+    expect(num(4498)).toBe("4\u202f498");
+    expect(num(-2000)).toBe("-2\u202f000");
+    expect(num(999.6)).toBe("1\u202f000");
+    expect(num(10.12)).toBe("10.1");
+    expect(num(0.0405)).toBe("0.0405");
+    expect(num(1234.4, 2)).toBe("1\u202f234"); // sig keeps the whole part
+    expect(num(null)).toBe("–");
+  });
+
+  it("leaves a figure written with a power of ten as it is", () => {
+    expect(num(1.5e-9)).toBe(sig(1.5e-9));
+  });
+
+  it("writes a ratio as it was given, to three figures at most", () => {
+    expect(ratio(75)).toBe("75");
+    expect(ratio(5.1)).toBe("5.1");
+    expect(ratio(1.4800000001)).toBe("1.48");
+    expect(ratio(1500)).toBe("1\u202f500");
+  });
+});
+
+describe("a least value to keep to", () => {
+  it("is rounded up, as the engine takes it, never to a figure under the least", () => {
+    expect(eng(atLeast(323e-9), "s", 2)).toBe("330 ns");
+    expect(eng(atLeast(320e-9), "s", 2)).toBe("320 ns");
+    expect(eng(atLeast(1.01e-6), "s", 2)).toBe("1.1 µs");
+    expect(atLeast(0)).toBe(0);
   });
 });

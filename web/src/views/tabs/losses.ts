@@ -3,7 +3,7 @@ import type { Candidate, Result } from "../../api";
 import { compareBars, lossBar } from "../../charts";
 import { resultOf, series } from "../../compare";
 import type { Series } from "../../compare";
-import { degrees, escape, sentence, sig, whole } from "../../format";
+import { degrees, escape, num, sentence, whole } from "../../format";
 import { icon } from "../../icons";
 import { shown } from "../../shown";
 import { app, focused, res } from "../../store";
@@ -19,7 +19,7 @@ function positionsTable(r: Result): string {
   const rows = r.positions
     .map(
       (p) =>
-        `<tr><td>${p.count} × ${escape(p.name)}</td><td class="num">${sig(p.total)} W</td>` +
+        `<tr><td>${p.count} × ${escape(p.name)}</td><td class="num">${num(p.total)} W</td>` +
         `<td class="num">${degrees(p.tj)}</td></tr>`,
     )
     .join("");

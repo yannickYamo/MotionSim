@@ -1,9 +1,13 @@
 // The event's own fold: the figures it rests on that the user can give. The loop inductance,
 // the gate resistors and the drive level are the design's own, shared with step 3 and the
 // losses; the common-source and gate-loop inductances and the driver's low level are the
-// event's alone. A layout file gives the board's figures at once, and a first figure for the
-// loop can be worked out from the board's geometry.
+// event's alone. A layout file gives the board's figures at once, the board's own design file
+// is read for them where the engine is on this machine, and a first figure for the loop can
+// be worked out from the board's geometry.
 
+import { api } from "../api";
+import { boardPanel, ELSEWHERE } from "../board/panel";
+import { board } from "../board/reading";
 import { app } from "../store";
 import { escape, sig } from "../format";
 import { icon } from "../icons";
@@ -67,16 +71,34 @@ function estimator(): string {
   );
 }
 
+/** A board's own file, by its name: a layout file is the one kind that ends otherwise. */
+const ofBoard = (name: string) => /\.(kicad_pcb|xml|cvg)$/i.test(name);
+
+/** Where the board's figures are given: a layout file, or the board's own design file where
+ *  the engine on this machine reads it. One control takes either. */
 function layoutFile(): string {
   const { event } = app.state;
+  const local = api.mode() === "browser";
+  const name = `<b>${escape(event.layout_name || "layout.yaml")}</b>`;
+  const wins = "A box above that is filled wins over the file.";
+  const yaml =
+    `A YAML file of the board's loop figures; <code>motionsim template layout</code> writes one to fill. ` + wins;
+  const hint = local
+    ? `<p class="quiet small">${yaml}${board.elsewhere ? "" : ` ${ELSEWHERE}`}</p>`
+    : `<p class="quiet small">The board's own file (KiCad <code>.kicad_pcb</code>, or IPC-2581 <code>.xml</code> ` +
+      `or <code>.cvg</code>) is read for its loop figures. Or give them in a YAML file; ` +
+      `<code>motionsim template layout</code> writes one to fill. ${wins}</p>`;
   const held = event.layout
-    ? `<p>Layout file <b>${escape(event.layout_name || "layout.yaml")}</b> in use, under the boxes above. ` +
-      `<button type="button" class="link" data-event-layout-drop>Stop using it</button></p>`
-    : `<p class="quiet small">A YAML file of the board's loop figures; <code>motionsim template layout</code> ` +
-      `writes one to fill. A box above that is filled wins over the file.</p>`;
+    ? `<p>${ofBoard(event.layout_name) ? `The figures read from ${name} are` : `Layout file ${name}`} in use, ` +
+      `under the boxes above. <button type="button" class="link" data-event-layout-drop>Stop using it</button></p>`
+    : hint;
+  const accept = local ? ".yaml,.yml,.txt" : ".kicad_pcb,.xml,.cvg,.yaml,.yml,.txt";
+  // While a board is being read the control waits: one file at a time.
+  const busy = board.since ? " disabled" : "";
   return (
-    `<div class="ev-layout">${held}<label class="ghost">${icon("upload")}Open a layout file` +
-    `<input type="file" class="sr" accept=".yaml,.yml,.txt" data-event-layout/></label></div>`
+    `<div class="ev-layout">${held}<label class="ghost">${icon("upload")}` +
+    `${local ? "Open a layout file" : "Open a board or layout file"}` +
+    `<input type="file" class="sr" accept="${accept}" data-event-layout${busy}/></label></div>${boardPanel()}`
   );
 }
 

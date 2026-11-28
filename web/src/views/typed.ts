@@ -17,7 +17,7 @@ const isMain = (f: TypedField): boolean => f.required || !!f.main;
 
 /** What is wrong with the figure in this box, said at the box: what the page found itself,
  *  else the engine's refusal of it. */
-function wrongWords(key: string): string | null {
+export function wrongWords(key: string): string | null {
   const own = ui.typedWrong[key];
   if (own) return own;
   const refused = ui.typedRefused;
@@ -123,7 +123,7 @@ function typedAdd(): string {
 }
 
 /** The switch between the kinds of part: one press, checked all at once like the figures. */
-function kindSwitch(kind: TypedKind): string {
+export function kindSwitch(kind: TypedKind): string {
   const option = ([k, label]: [TypedKind, string]) =>
     `<label><input type="radio" name="typed-kind" value="${k}" data-typed-kind${k === kind ? " checked" : ""}/>` +
     `<span>${label}</span></label>`;

@@ -5,7 +5,7 @@ import { SWEEPS, sweepOf, sweepValues } from "../compare";
 import type { Field } from "../api";
 import { escape, sig } from "../format";
 import { icon } from "../icons";
-import { shownAs, shownText } from "../motorentry";
+import { fieldsOf, shownAs, shownText } from "../motorentry";
 import { shown } from "../shown";
 import { request } from "../state";
 import { app } from "../store";
@@ -89,7 +89,7 @@ function motorBody(id: string | null): string {
   const { state, setup } = app;
   const kind = setup.motors[state.kind];
   const { motor, point } = motorOf(id);
-  const fields = kind.fields.map((f: Field) =>
+  const fields = fieldsOf(state.kind, kind.fields, motor).map((f: Field) =>
     f.options
       ? choice(
           `motor.${f.key}`,

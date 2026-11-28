@@ -78,6 +78,12 @@ MAX_JSON = 1024 * 1024  # bytes; the largest request of names and values, which 
 # Requests that carry a file's text inside their JSON: held to the size of such a file.
 MAX_FILE_JSON = MOST_BYTES + MAX_JSON
 CARRY_FILES = ("/api/device", "/api/measure")
+# A board's design file, sent as its text or in base64: 30 MB of file (the board reader's own
+# limit, motionsim.board.model.MOST_BYTES, which a test holds this to), a third more in
+# base64, and the request's names around it.
+MOST_BOARD = 30 * 1024 * 1024
+MAX_BOARD_JSON = MOST_BOARD * 4 // 3 + MAX_JSON
+BOARD = "/api/board"
 # A search answered a step at a time is asked for at its own address with this after it.
 STREAMED = "/stream"
 IDLE = 30.0  # seconds a connection may say nothing before it is dropped
@@ -104,6 +110,22 @@ POLICY = (
     "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; object-src 'none'; "
     "base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
 )
+# A file of the built page named by what it holds (name-hash.ext, under assets/): a new build
+# is new names, so the browser may keep one a year. Everything else, the page itself first,
+# is never kept, or a new build would not be seen.
+HASHED = re.compile(r"[\w.-]+-[\w-]{8}\.[a-z0-9]{1,8}")
+KEPT = "public, max-age=31536000, immutable"
+
+
+def cache_of(target: Path) -> str:
+    """How long a browser may keep a file of the built page."""
+    try:
+        hashed = target.parent.resolve() == (WEB_ROOT / "assets").resolve() and HASHED.fullmatch(target.name)
+    except (OSError, ValueError):
+        hashed = None
+    return KEPT if hashed else "no-store"
+
+
 # A page on this machine is nobody's to index.
 ROBOTS = b"User-agent: *\nDisallow: /\n"
 ONLY_LOCAL = {"error": "this address answers only its own page"}
@@ -117,6 +139,18 @@ TOO_LARGE_JSON = {
     "fix": "a request of figures is a few kilobytes: send the figures, not a file, or bring a file through its own box",
     "field": "",
 }
+TOO_LARGE_BOARD = {
+    "refused": f"the board file is larger than {MOST_BOARD // (1024 * 1024)} MB, which is more than is read",
+    "fix": "give the board of the power stage alone",
+    "field": "board",
+}
+
+
+def most(path: str) -> tuple[int, dict]:
+    """How large a request to an address may be, and what one larger is refused with."""
+    if path == BOARD:
+        return MAX_BOARD_JSON, TOO_LARGE_BOARD
+    return (MAX_FILE_JSON if path in CARRY_FILES else MAX_JSON), TOO_LARGE_JSON
 
 
 def _what_was_read(obs) -> dict:
@@ -136,8 +170,14 @@ def _what_was_read(obs) -> dict:
     }
 
 
-def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
-    """Read a datasheet PDF and build its device model. A paid language-model call."""
+NO_KEY = "set it in the shell that runs `motionsim serve`, then start it again"
+# The app's page has Settings, where a key is set and read with at once.
+NO_KEY_SETTINGS = "set the key under Settings, at the top of the page; or " + NO_KEY
+
+
+def read_datasheet(name: str, body: bytes, workspace: Workspace, no_key: str = NO_KEY) -> dict:
+    """Read a datasheet PDF and build its device model. A paid language-model call. no_key
+    is what a refusal for want of a key says to do, which depends on where the key is set."""
     import warnings
 
     from motionsim.observe import provider, run
@@ -146,7 +186,7 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
         run.ready()
         provider.chosen()
     except provider.NoReader as none:
-        raise Refusal(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
+        raise Refusal(str(none), no_key) from None
     if not body.startswith(b"%PDF"):
         raise Refusal("that file is not a PDF", "drop the datasheet's PDF file")
     from motionsim.fit import MissingData, build_device
@@ -168,7 +208,7 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
                 warnings.simplefilter("ignore", provider.KeyInTheClear)  # said above, once
                 reading = run.read_datasheet(pdf, say=lambda line: log.info("%s", line))
         except provider.NoReader as none:
-            raise Refusal(str(none), "set it in the shell that runs `motionsim serve`, then start it again") from None
+            raise Refusal(str(none), no_key) from None
         except provider.ReaderRefused as exc:
             raise Refusal(str(exc), "try another datasheet") from None
         except provider.ReaderFailed as exc:
@@ -191,6 +231,14 @@ def read_datasheet(name: str, body: bytes, workspace: Workspace) -> dict:
         ) from None
     save_device(device, workspace.folder / f"{key}.device.yaml")
     return {"device": workspace.summary(key, device), "read": read}
+
+
+def written(payload: object) -> bytes:
+    """An answer as it leaves: JSON, with every key this process holds taken out of it, as a
+    service's error repeated in a refusal or a fault might hold one."""
+    from motionsim.observe.provider import scrub
+
+    return scrub(json.dumps(finite(payload))).encode()
 
 
 def takes_gzip(accepted: str) -> bool:
@@ -243,7 +291,8 @@ class Handler(BaseHTTPRequestHandler):
         """The body as it goes: text of more than a kilobyte is sent gzipped to a browser that
         takes it, as any host of the built page sends it, so the page opens as quickly here."""
         textual = kind.startswith(("text/", "application/json", "image/svg"))
-        takes = takes_gzip(self.headers.get("Accept-Encoding") or "")
+        headers = getattr(self, "headers", None)  # none where the request's first line is not one
+        takes = takes_gzip((headers.get("Accept-Encoding") if headers else "") or "")
         if not (textual and len(body) > 1024):
             return body, {}
         if not takes:
@@ -256,7 +305,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", kind)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", extra.pop("Cache-Control", "no-store"))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Content-Security-Policy", POLICY)
         for name, value in (extra or {}).items():
@@ -265,8 +314,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _json(self, payload, status: int = 200) -> None:
-        self._send(status, json.dumps(finite(payload)).encode(), "application/json")
+    def _json(self, payload, status: int = 200, extra: dict[str, str] | None = None) -> None:
+        self._send(status, written(payload), "application/json", extra)
 
     def _local(self) -> bool:
         """Only this machine's own page may talk to the engine.
@@ -277,7 +326,7 @@ class Handler(BaseHTTPRequestHandler):
         from must have come from this page.
         """
         port = self.port
-        allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
+        allowed = {f"127.0.0.1:{port}", f"localhost:{port}", f"[::1]:{port}"}
         origin = self.headers.get("Origin")
         if self.headers.get("Host") not in allowed:
             return False
@@ -290,12 +339,17 @@ class Handler(BaseHTTPRequestHandler):
         shows the step the address names."""
         if path == "/robots.txt":
             return self._send(200, ROBOTS, MIME[".txt"])
-        target = (WEB_ROOT / path.lstrip("/")).resolve()
-        if path in ("/", "") or not target.is_file() or WEB_ROOT.resolve() not in target.parents:
+        try:
+            target = (WEB_ROOT / path.lstrip("/")).resolve()
+            found = target.is_file()
+        except (OSError, ValueError):  # a name the file system does not take is no file here
+            found = False
+        if path in ("/", "") or not found or WEB_ROOT.resolve() not in target.parents:
             target = WEB_ROOT / "index.html"
         if not target.is_file():
             return self._send(HTTPStatus.NOT_FOUND, b"the page has not been built", MIME[".txt"])
-        self._send(200, target.read_bytes(), MIME.get(target.suffix, "application/octet-stream"))
+        kind = MIME.get(target.suffix, "application/octet-stream")
+        self._send(200, target.read_bytes(), kind, {"Cache-Control": cache_of(target)})
 
     def do_GET(self) -> None:
         if not self._local():
@@ -317,6 +371,31 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(ONLY_LOCAL, 403)
         self._send(204, b"", MIME[".txt"], {"Allow": "GET, HEAD, POST, OPTIONS"})
 
+    def _not_taken(self) -> None:
+        """A method no address of this server takes, said as the app says it, with the body
+        left unread and so the connection ended."""
+        if not self._local():
+            return self._json(ONLY_LOCAL, 403)
+        self.close_connection = True
+        self._json(
+            {"error": f"{self.command} is not answered at this address"},
+            405,
+            {"Allow": "GET, HEAD, POST, OPTIONS", "Connection": "close"},
+        )
+
+    do_PUT = do_DELETE = do_PATCH = _not_taken
+
+    def send_error(self, code: int, message: str | None = None, explain: str | None = None) -> None:
+        """A request the standard library itself turns away (a method it has no handler for,
+        a line it cannot read) answered as every answer of the page is: in JSON, with the
+        headers that keep a browser strict."""
+        self.close_connection = True
+        try:
+            phrase = HTTPStatus(code).phrase
+        except ValueError:
+            phrase = "the request cannot be answered"
+        self._json({"error": message or phrase}, code, {"Connection": "close"})
+
     def _body(self, most: int, too_large: dict) -> bytes | None:
         """What was posted, or None once the reason it cannot be taken has been sent. A body
         longer than its kind of request has is refused before a byte of it is read."""
@@ -329,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
             return None
         if length > most:
             self.close_connection = True  # the body is not read, so the connection cannot be kept
-            self._json(too_large, 422)
+            self._json(too_large, 422, {"Connection": "close"})
             return None
         return self.rfile.read(length)
 
@@ -353,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
         if not known(path):
             self.close_connection = True
             return self._json({"error": "no such address"}, 404)
-        body = self._body(MAX_FILE_JSON if path in CARRY_FILES else MAX_JSON, TOO_LARGE_JSON)
+        body = self._body(*most(path))
         if body is None:
             return None
         try:
@@ -395,7 +474,7 @@ class Handler(BaseHTTPRequestHandler):
             for line in lines:
                 if self._gone():
                     break
-                self.wfile.write(json.dumps(finite(line)).encode() + b"\n")
+                self.wfile.write(written(line) + b"\n")
                 self.wfile.flush()
         except (ConnectionError, TimeoutError):
             pass  # the page went away mid-line: nothing is left to say to it
@@ -410,6 +489,8 @@ class Server(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], workspace: Workspace, handler: type = Handler) -> None:
         self.workspace = workspace
+        if ":" in address[0]:
+            self.address_family = socket.AF_INET6
         super().__init__(address, handler)
 
     def handle_error(self, request, client_address) -> None:

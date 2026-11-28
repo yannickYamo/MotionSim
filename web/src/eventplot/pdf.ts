@@ -10,6 +10,7 @@ import { sentence, sig } from "../format";
 import { names } from "./plot";
 import { partSlug, partSvg, partTitle, TRACES } from "./part";
 import { pointSaid } from "./point";
+import { ringingSaid } from "./readouts";
 import type { Part } from "./part";
 import { edgeOf } from "./spans";
 import { CLASS } from "./svg";
@@ -95,7 +96,7 @@ export function readoutsFor(e: EventEdge, which: Which, part: Part, v_dc: number
         ["Overshoot", `${sig(e.v_peak - v_dc)} V over the supply`],
         ["Current fall, tf", ns(e.t_fall)],
       );
-    rows.push(["Ringing", e.ring ? `${sig(e.ring / 1e6)} MHz` : "–"]);
+    rows.push(["Ringing", ringingSaid(e)]);
     return rows;
   }
   const peak = e.p.reduce((m, x) => Math.max(m, x), 0);
@@ -114,10 +115,20 @@ const hueOf = (el: Element): TraceClass | null => HUES.find((c) => el.classList.
 
 /** How each mark of the drawing is printed, by its class: the first that it carries. */
 const MARKS: [string, (hue: TraceClass | null) => Record<string, string>][] = [
+  // The shared graph language (charts/plot.css): the marked window's shade, a label's leader
+  // and the square that names a series by its colour.
+  ["plot-window", () => ({ fill: PRINT.line, stroke: "none", "fill-opacity": "0.35" })],
+  ["plot-leader", () => ({ fill: "none", stroke: PRINT.ink3, "stroke-width": "0.5" })],
+  ["plot-sw", (hue) => ({ fill: hue ? PRINT[hue] : PRINT.ink, stroke: "none" })],
   ["plot", () => ({ fill: "none", stroke: PRINT.lineStrong, "stroke-width": "0.8" })],
   ["grid", () => ({ fill: "none", stroke: PRINT.line, "stroke-width": "0.5" })],
   ["ev-window", () => ({ fill: "none", stroke: PRINT.lineStrong, "stroke-width": "0.6" })],
   ["limit", () => ({ fill: "none", stroke: PRINT.fail, "stroke-width": "0.8", "stroke-dasharray": "4 3" })],
+  // A dense series' band (charts/dense.ts): soft inside, its edges in the trace's own colour.
+  [
+    "series-env",
+    (hue) => ({ fill: hue ? PRINT[hue] : PRINT.ink, "fill-opacity": "0.16", stroke: hue ? PRINT[hue] : PRINT.ink }),
+  ],
   [
     "series",
     (hue) => ({

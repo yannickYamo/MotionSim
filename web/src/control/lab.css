@@ -1,0 +1,3510 @@
+/* The control lab. Everything here is drawn with the page's own tokens: warm black, bone
+   ink, hairlines, and orange for the next action and for heat alone. */
+
+/* ---------- 1. The frame ---------- */
+
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100dvh;
+  font-variant-numeric: tabular-nums;
+}
+.lab-top {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s3) var(--s5);
+  border-bottom: 1px solid var(--line);
+}
+.lab-title h2 {
+  margin: 0;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+.lab-title p {
+  margin: 0;
+  white-space: nowrap;
+}
+.lab-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 1 1 auto;
+  min-width: 0;
+  /* Its room is what the run's controls leave: a run's progress is wider than Run the test. */
+  container: switcher / inline-size;
+}
+/* Where the room runs short, Choose for me and Ask keep their icons (and their names, for the
+   screen reader and on hover), never laid over the run's controls. */
+@container switcher (max-width: 520px) {
+  .lab-switcher .lab-choose-words {
+    display: none;
+  }
+}
+/* Shorter still, the scheme's name is cut before the buttons are. */
+@container switcher (max-width: 380px) {
+  .lab-switcher .lab-picker {
+    min-width: 120px;
+  }
+}
+/* The scheme's list names itself: its label is for the screen reader. */
+.lab-switcher .field {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex: 0 1 460px;
+  min-width: 0;
+}
+.lab-switcher .control {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+}
+/* The scheme picker: a press that names the scheme in the lab whole enough to read (its short
+   name, the full label on hover and to a screen reader), and a panel under it with a search box
+   and the schemes in families, the recommended one first with its reason. */
+.lab-picker {
+  position: relative;
+  flex: 0 1 400px;
+  min-width: 200px;
+}
+.lab-picker-open {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  height: 42px;
+  padding: 0 var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.lab-picker-open:hover,
+.lab-picker-open[aria-expanded="true"] {
+  border-color: var(--ink-2);
+}
+.lab-picker-open:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The scheme's name on two lines where one is too short for it: read whole, never cut to
+   "Speed control with no encoder, st…". */
+.lab-picker-shown {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--t-body);
+  line-height: 1.2;
+  text-wrap: balance;
+}
+.lab-picker-open .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-2);
+}
+.lab-picker-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 9;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(70dvh, 560px);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-float);
+  transform-origin: top left;
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+@starting-style {
+  .lab-picker-panel {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.lab-picker-panel[hidden] {
+  display: none;
+}
+.lab-picker-search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s3);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.lab-picker-search input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  background: none;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  font: inherit;
+}
+.lab-picker-search input::placeholder {
+  color: var(--ink-3);
+}
+.lab-picker-search:focus-within {
+  box-shadow: inset 0 -2px 0 var(--focus);
+}
+.lab-picker-list {
+  overflow-y: auto;
+  padding: var(--s1) 0 var(--s2);
+  overscroll-behavior: contain;
+}
+.lab-picker-group {
+  margin: 0;
+  padding: var(--s3) var(--s4) var(--s1);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.lab-picker-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s2);
+  align-items: center;
+  min-height: 36px;
+  padding: var(--s2) var(--s4);
+  color: var(--ink);
+  line-height: 1.35;
+  cursor: pointer;
+}
+.lab-picker-option.is-active {
+  background: var(--line);
+}
+.lab-picker-option > .lab-icon {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--ink-2);
+}
+.lab-picker-option .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-picker-label {
+  text-wrap: pretty;
+}
+.lab-picker-note {
+  grid-column: 1;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lab-picker-none {
+  margin: 0;
+  padding: var(--s3) var(--s4);
+  color: var(--ink-2);
+}
+.lab-edited {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 32px;
+  padding: 0 var(--s2);
+  background: none;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.lab-edited:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.lab-edited:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lab-edited .icon {
+  width: 16px;
+  height: 16px;
+}
+.lab-close {
+  flex: none;
+}
+.lab-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+}
+.lab.has-inspector .lab-body {
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 420px);
+}
+.lab-main {
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 var(--s5) var(--s7);
+  overscroll-behavior: contain;
+}
+/* Why this scheme for this design: an info press beside the scheme's name, its account in a
+   panel under it. */
+.lab-why {
+  position: relative;
+  flex: none;
+}
+.lab-why-panel {
+  position: absolute;
+  top: calc(100% + var(--s2));
+  left: 0;
+  z-index: 20;
+  width: min(34rem, 80vw);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--raised);
+  box-shadow: var(--shadow-float);
+  transform-origin: top left;
+  animation: lab-pop var(--dur-2) var(--ease-out);
+}
+.lab-why-panel[hidden] {
+  display: none;
+}
+@keyframes lab-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-2px);
+  }
+}
+.lab-about {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.lab-said {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.lab-icon {
+  display: inline-flex;
+}
+.lab h3 {
+  margin: var(--s6) 0 var(--s2);
+}
+.lab h4 {
+  margin: var(--s5) 0 var(--s2);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.lab-section-head {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: var(--s4);
+  flex-wrap: wrap;
+}
+.lab-section-head .segmented {
+  margin: 0;
+}
+.lab-live {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lab-scroll {
+  overflow-x: auto;
+}
+.lab-scroll:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+#lab-tab-body {
+  padding-top: var(--s4);
+}
+#lab-tab-body:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+}
+
+/* ---------- 2. The diagram ---------- */
+
+/* The diagram is the lab's main drawing: it takes the room its own shape asks for, and the
+   scope sits straight under it, so that a wire pressed is drawn where the eye already is. */
+.lab-diagram {
+  display: grid;
+  background: var(--ground);
+  container-type: inline-size;
+}
+/* As tall as the drawing's own shape asks at the room's width; never so short that its words
+   would be read under 12 px, then read along by panning; never past most of the window. */
+.lab-canvas {
+  position: relative;
+  width: 100%;
+  height: clamp(var(--lab-least, 280px), calc(100cqw * var(--lab-ratio, 0.33)), min(62dvh, var(--lab-most, 62dvh)));
+  background: radial-gradient(
+    120% 140% at 50% 0%,
+    var(--surface) 0%,
+    color-mix(in oklab, var(--surface) 55%, var(--ground)) 100%
+  );
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+/* A drawing wider than its canvas is read by panning and runs under the Learn switch: the canvas
+   is taller by the switch's row, and the drawing is set under it (diagram.tsx, LEARN_ROW). */
+.lab-canvas.is-panned {
+  height: calc(
+    clamp(var(--lab-least, 280px), calc(100cqw * var(--lab-ratio, 0.33)), min(62dvh, var(--lab-most, 62dvh))) + 44px
+  );
+}
+/* The drawing's keys, in its corner while the keyboard is in it: the drawing is one stop of the
+   tab order, and these are how to move inside it. Read out with the drawing at any time. */
+.lab-diagram-keys {
+  position: absolute;
+  right: var(--s3);
+  bottom: var(--s2);
+  z-index: 5;
+  margin: 0;
+  padding: 2px var(--s2);
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--ground) 80%, transparent);
+  color: var(--ink-3);
+  font-size: 13px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-canvas:has(.lab-node-head:focus-visible, .lab-hit:focus-visible) .lab-diagram-keys {
+  opacity: 1;
+}
+/* Drawing paper: a dot every 20 units of the drawing, in a whisper of bone. */
+.lab-diagram .react-flow__background-pattern.dots {
+  fill: color-mix(in oklab, var(--ink) 11%, transparent);
+}
+.lab-diagram .react-flow {
+  --xy-background-color: transparent;
+  --xy-node-border-radius: var(--r);
+  --xy-attribution-background-color: transparent;
+  font: inherit;
+}
+.lab-diagram .react-flow__node {
+  cursor: default;
+}
+/* A block is pressed though it is neither dragged nor selected on the canvas. */
+.lab-diagram .lab-node {
+  pointer-events: auto;
+}
+.lab-diagram .react-flow__node-frame {
+  visibility: hidden;
+  pointer-events: none !important;
+}
+.lab-diagram .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+.lab-diagram .react-flow__attribution {
+  padding: 0 var(--s2);
+  font-size: 10px;
+}
+.lab-diagram .react-flow__attribution a {
+  color: var(--ink-3);
+}
+.lab-diagram .react-flow__controls {
+  display: flex;
+  gap: var(--s1);
+  margin: var(--s2);
+  box-shadow: none;
+}
+.lab-diagram .react-flow__controls-button {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.lab-diagram .react-flow__controls-button:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.lab-diagram .react-flow__controls-button svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+/* A loop, as Mermaid draws a subgraph: a soft region one tone up from the canvas, round the
+   stretch of the forward path it takes in, its name at its head. */
+.lab-band {
+  width: 100%;
+  height: 100%;
+  background: color-mix(in oklab, var(--ink) 3.5%, var(--surface));
+  border: 1px dashed color-mix(in oklab, var(--ink) 22%, var(--surface));
+  border-radius: 12px;
+}
+.lab-band span {
+  position: absolute;
+  top: 5px;
+  left: var(--s3);
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* The wires. Bone, as on the plate; thick where several signals travel as one bus; a dot
+   where a trunk branches. */
+.lab-wiring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.lab-seg {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-seg.is-bus {
+  stroke-width: 2.2;
+}
+.lab-dot {
+  fill: var(--ink-2);
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-arrow {
+  fill: var(--ink-2);
+}
+/* Where two wires cross without joining, the level one is broken round the upright one. */
+.lab-cross-gap {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 6;
+}
+.lab-wire .lab-arrow,
+.lab-tick,
+.lab-name {
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-tick path {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.lab-tick text {
+  fill: var(--ink-3);
+  font-size: 12px;
+  font-weight: 500;
+}
+/* A name stands on a ground of its own, the tone of what is under it, so that no line runs
+   through its letters. */
+.lab-name rect {
+  fill: var(--surface);
+}
+.lab-name.is-on-band rect {
+  fill: color-mix(in oklab, var(--ink) 3%, var(--surface));
+}
+/* A wire's name in the italic of mathematics, small, as Simulink writes a signal's name. */
+.lab-name text {
+  fill: var(--ink-2);
+  font-family: KaTeX_Math, "Times New Roman", serif;
+  font-size: 16px;
+  font-style: italic;
+}
+.lab-name .lab-sub {
+  font-size: 0.72em;
+}
+/* A wire drawn through time has its name in full ink. */
+.lab-wire.is-pinned .lab-name text {
+  fill: var(--ink);
+}
+/* Every wire is a probe: a broad band along it takes the press, and the keyboard. */
+.lab-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+  outline: none;
+}
+.lab-hit:focus-visible {
+  stroke: color-mix(in oklab, var(--focus) 40%, transparent);
+}
+/* A probed wire's dot, in the ink of its trace in the scope, as Simulink marks a logged
+   signal. It comes in small and grows to its size once, as it is pressed. */
+.lab-probe circle {
+  stroke: var(--surface);
+  stroke-width: 2;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    opacity var(--dur-2) var(--ease-out);
+}
+@starting-style {
+  .lab-probe circle {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+.lab-probe .pr-0 {
+  fill: var(--ink);
+}
+.lab-probe .pr-1 {
+  fill: var(--trace-current);
+}
+.lab-probe .pr-2 {
+  fill: var(--trace-gate);
+}
+.lab-probe .pr-3 {
+  fill: var(--ink-3);
+}
+.lab-probe .pr-none {
+  fill: var(--surface);
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+/* The note over a wire pointed at: its lines, their values at the cursor, what a press does. */
+.lab-probe-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  display: grid;
+  gap: var(--s1);
+  max-width: 340px;
+  padding: var(--s2) var(--s3);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  font-size: var(--t-small);
+  line-height: 1.35;
+  pointer-events: none;
+}
+.lab-probe-tip[hidden] {
+  display: none;
+}
+.lab-tip-row {
+  display: grid;
+  grid-template-columns: minmax(28px, auto) minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.lab-tip-row .lab-live {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lab-tip-about {
+  color: var(--ink-3);
+}
+.lab-tip-hint {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+/* The lit path: its wires in full ink at full weight, with a quiet mark running along them
+   the way the signal goes; the rest of the drawing steps back. */
+.lab-lit,
+.lab-flow {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-lit {
+  stroke: var(--ink);
+  stroke-linecap: round;
+}
+.lab-flow {
+  stroke: var(--surface);
+  stroke-dasharray: 3 21;
+}
+.lab-wire.is-bus .lab-lit,
+.lab-wire.is-bus .lab-flow {
+  stroke-width: 3.8;
+}
+.lab-wire[data-path] .lab-lit,
+.lab-wire.is-on .lab-lit {
+  opacity: 1;
+}
+.lab-wire[data-path] .lab-flow {
+  opacity: 0.75;
+  animation: lab-flow 1.2s linear infinite;
+}
+.lab-wire[data-path] .lab-arrow,
+.lab-wire.is-on .lab-arrow {
+  fill: var(--ink);
+}
+.lab-wire[data-path] .lab-name text {
+  fill: var(--ink);
+}
+@keyframes lab-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+/* The drawing opens with the signal travelling it once: a short bright stretch runs along each
+   wire, from the commands to the motor in the first 560 ms, then back along the feedback, and
+   each block brightens as it is reached. Nothing waits on it: every block can be pressed at once. */
+.lab-pulse {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-dasharray: 9 100;
+  stroke-dashoffset: 9;
+  opacity: 0;
+  pointer-events: none;
+}
+.lab-wire.is-bus .lab-pulse {
+  stroke-width: 4;
+}
+.lab-diagram.is-intro .lab-pulse {
+  animation: lab-pulse 620ms linear both;
+}
+@keyframes lab-pulse {
+  0% {
+    stroke-dashoffset: 9;
+    opacity: 0;
+  }
+  8%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: -100;
+    opacity: 0;
+  }
+}
+.lab-diagram.is-intro .lab-node .lab-sym-box {
+  animation: lab-reached var(--dur-4) var(--ease-out) both;
+  animation-delay: var(--intro, 0ms);
+}
+@keyframes lab-reached {
+  0% {
+    stroke: color-mix(in oklab, var(--edge) 70%, var(--raised));
+  }
+  35% {
+    stroke: var(--ink);
+    fill: color-mix(in oklab, var(--ink) 8%, var(--raised));
+  }
+}
+/* What a probed wire carries at the cursor, under its name: quiet at rest, in full ink while
+   the run is played, on a halo of the canvas so no line runs through its figures. */
+.lab-value {
+  fill: var(--ink-3);
+  font-size: 11.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  transition: fill var(--dur-2) var(--ease-out);
+}
+.lab-diagram.is-playing .lab-value {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.lab-diagram[data-lit] .lab-node:not([data-path]) {
+  opacity: 0.4;
+}
+.lab-diagram[data-lit] .lab-seg:not([data-path]),
+.lab-diagram[data-lit] .lab-dot:not([data-path]),
+.lab-diagram[data-lit] .lab-wire:not([data-path]) .lab-arrow,
+.lab-diagram[data-lit] .lab-wire:not([data-path]) .lab-tick,
+.lab-diagram[data-lit] .lab-wire:not([data-path]) .lab-name {
+  opacity: 0.28;
+}
+
+/* The summing junction, as it is drawn: a circle, a sign beside each wire that comes in. */
+.lab-sum circle {
+  fill: var(--surface);
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.lab-sum-out {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.lab-sum text {
+  fill: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+
+/* A block, as Simulink and PSIM draw one, with Mermaid's calm: a hairline rectangle on the
+   raised tone, the symbol in it in bone, its short name under the symbol. Nothing on it moves. */
+.lab-node {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  color: var(--ink);
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-node-head {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.lab-node-head:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 6px;
+}
+.lab-sym {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.lab-sym-box {
+  fill: var(--raised);
+  stroke: color-mix(in oklab, var(--edge) 70%, var(--raised));
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  transition:
+    stroke var(--dur-1) var(--ease-out),
+    fill var(--dur-1) var(--ease-out);
+}
+.lab-node.is-reference .lab-sym-box,
+.lab-node.is-inverter .lab-sym-box {
+  stroke: var(--edge);
+}
+.lab-node.is-motor .lab-sym-box {
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.lab-node-head:hover .lab-sym-box {
+  fill: color-mix(in oklab, var(--ink) 6%, var(--raised));
+  stroke: var(--ink-2);
+}
+.lab-node-head {
+  transition: transform var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-canvas .lab-node-head:hover {
+    transform: translateY(-1px);
+  }
+}
+.lab-canvas .lab-node-head:active {
+  transform: scale(0.98);
+}
+.lab-sym-ring {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.lab-node.is-on .lab-sym-ring {
+  opacity: 1;
+}
+.lab-node.is-on .lab-sym-box {
+  stroke: var(--ink);
+}
+.lab-sym-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.lab-sym-line.is-strong {
+  stroke-width: 1.8;
+}
+.lab-sym-faint {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.lab-sym-faint.is-dashed {
+  stroke-dasharray: 2 3;
+}
+.lab-sym-dot {
+  fill: var(--ink);
+}
+/* The mathematics of a symbol in KaTeX's own italic, as the inspector sets it. */
+.lab-sym-math {
+  fill: var(--ink);
+  font-family: KaTeX_Math, "Times New Roman", serif;
+  font-style: italic;
+}
+.lab-sym-math .is-upright {
+  font-family: KaTeX_Main, "Times New Roman", serif;
+  font-style: normal;
+}
+.lab-sym-small {
+  font-size: 0.7em;
+}
+.lab-sym-word {
+  fill: var(--ink);
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.lab-sym-tiny {
+  fill: var(--ink-3);
+  font-size: 11px;
+}
+.lab-sym-title {
+  fill: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+}
+.lab-sym-caption {
+  fill: var(--ink-2);
+  font-size: var(--t-body);
+  font-weight: 500;
+}
+.lab-node.is-on .lab-sym-caption {
+  fill: var(--ink);
+}
+/* Its figures changed: a small ink dot at its corner, and the words for one who cannot see it. */
+.lab-sym-changed {
+  display: none;
+  fill: var(--ink);
+}
+.lab-node.is-changed .lab-sym-changed {
+  display: inline;
+}
+.lab-canvas .lab-changed {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* At its limit after a run, a block says so twice in place of its name: an icon and the words,
+   in the caution's colour, its rectangle edged in it. */
+.lab-sym-held {
+  display: none;
+}
+.lab-sym-held path {
+  fill: none;
+  stroke: var(--caution);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lab-sym-held text {
+  fill: var(--caution);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.lab-node[data-held] .lab-sym-held {
+  display: inline;
+}
+.lab-node[data-held] .lab-sym-caption {
+  display: none;
+}
+.lab-node[data-held] .lab-sym-box {
+  stroke: var(--caution);
+}
+/* Pointed at, after a run: one line over the block, what it puts out at the cursor. */
+.lab-tip {
+  position: absolute;
+  bottom: calc(100% + var(--s2));
+  left: 50%;
+  z-index: 2;
+  display: none;
+  padding: var(--s1) var(--s2);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink);
+  font-size: var(--t-small);
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+.lab-node.has-run:hover .lab-tip {
+  display: block;
+}
+.lab-diagram .react-flow__node:hover {
+  z-index: 10 !important;
+}
+.lab-node.is-new .lab-sym-title {
+  font-style: italic;
+}
+
+/* The face. Bone for what is live, the quieter inks for the frame it is read against. */
+.lab-face {
+  position: relative;
+  height: 100%;
+  pointer-events: none;
+}
+.lab-face-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.lab-animation.is-resting .lab-face-svg {
+  opacity: 0.5;
+}
+.lab-face-svg * {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.f-rule {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.f-quiet {
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+}
+.f-mid {
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.f-live {
+  stroke: var(--ink);
+  stroke-width: 2;
+}
+.f-hot {
+  stroke: var(--orange);
+  stroke-width: 2;
+}
+.f-dash {
+  stroke-dasharray: 3 3;
+}
+.f-part {
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.f-part.is-strong {
+  stroke-width: 3.4;
+  stroke-linecap: butt;
+}
+.f-arrow.f-live line {
+  stroke-width: 2.4;
+}
+.lab-face-svg .f-arrow .f-head {
+  fill: var(--ink);
+  stroke: none;
+}
+.lab-face-svg .f-arrow.f-quiet .f-head {
+  fill: var(--ink-3);
+}
+.lab-face-svg .f-fill {
+  fill: var(--ink);
+  stroke: none;
+}
+.lab-face-svg .f-fill-hot {
+  fill: var(--orange);
+  stroke: none;
+}
+.lab-face-svg .f-hub {
+  fill: var(--ground);
+  stroke: var(--ink-2);
+  stroke-width: 1.2;
+}
+.lab-face-svg .f-word {
+  fill: var(--ink-3);
+  stroke: none;
+  font-size: 9px;
+  font-weight: 500;
+}
+.lab-face-svg .f-word.is-big {
+  fill: var(--ink-2);
+  font-size: 11px;
+}
+/* The words on a face, in sheet units (about 1.6 px each at the inspector's width): a
+   symbol in the math face, its value in tabular figures, and quiet notes of the scale. */
+.lab-face-svg .f-sym {
+  fill: var(--ink-2);
+  stroke: none;
+  font-family: KaTeX_Math, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 10.5px;
+}
+.lab-face-svg .f-sym.is-quiet {
+  fill: var(--ink-3);
+}
+.lab-face-svg text tspan {
+  fill: inherit;
+  stroke: inherit;
+}
+.lab-face-svg .f-sub {
+  font-size: 7.5px;
+}
+.lab-face-svg .f-val {
+  fill: var(--ink);
+  stroke: none;
+  font-size: 9.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.lab-face-svg .f-val.is-quiet {
+  fill: var(--ink-2);
+  font-weight: 400;
+}
+.lab-face-svg .f-tag {
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+}
+.lab-face-svg .f-note {
+  fill: var(--ink-3);
+  stroke: none;
+  font-size: 7.6px;
+  font-variant-numeric: tabular-nums;
+}
+.lab-face-svg .f-head-word {
+  fill: var(--ink-2);
+  stroke: none;
+  font-size: 8.6px;
+  font-weight: 600;
+}
+.lab-face-svg .f-bar-o {
+  fill: var(--ink);
+}
+.f-state.is-on .f-code {
+  fill: var(--ink);
+  font-weight: 600;
+}
+.lab-face-svg .f-bar {
+  fill: var(--ink);
+  stroke: none;
+}
+.lab-face-svg .f-bar-e {
+  fill: var(--ink-3);
+}
+.lab-face-svg .f-bar-i {
+  fill: var(--ink-2);
+}
+.lab-face-svg .f-bar-f {
+  fill: var(--edge);
+}
+.lab-face-svg .f-pulse {
+  fill: var(--ink-2);
+}
+.f-out {
+  stroke: var(--ink);
+  stroke-width: 1.2;
+}
+.f-limit {
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+}
+[data-held] .f-limit {
+  stroke: var(--caution);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+[data-held] .lab-face-svg .f-held-dot {
+  fill: var(--caution);
+}
+.f-duty-1 {
+  stroke-dasharray: 5 3;
+}
+.f-duty-2 {
+  stroke-dasharray: 1.5 3;
+}
+.f-state line {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.lab-face-svg .f-cost {
+  fill: var(--ink);
+  fill-opacity: 0.4;
+  stroke: none;
+}
+.f-state.is-on line {
+  stroke: var(--ink);
+  stroke-width: 2.4;
+}
+.f-state.is-on .f-ringed {
+  stroke: var(--ink);
+  stroke-width: 1.6;
+}
+.lab-face-svg .f-pin {
+  fill: var(--ink-2);
+  stroke: none;
+}
+.f-open {
+  stroke: var(--ink-3);
+  stroke-width: 1.4;
+}
+.f-shut {
+  display: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+}
+.f-switch.is-shut .f-open {
+  display: none;
+}
+.f-switch.is-shut .f-shut {
+  display: inline;
+}
+.lab-face-svg .f-south {
+  fill: var(--raised);
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.lab-face-svg .f-north {
+  fill: var(--ink-2);
+  stroke: none;
+}
+.f-error {
+  stroke: var(--ink);
+  stroke-width: 3.4;
+  stroke-linecap: butt;
+}
+
+/* The animation at its limit says so twice: an icon and the words, in the caution's colour. */
+.lab-held {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s1) var(--s2);
+  background: color-mix(in oklab, var(--caution) 9%, var(--ground));
+  border: 1px solid var(--caution);
+  border-radius: var(--r);
+  color: var(--caution);
+  font-size: var(--t-small);
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.lab-held .icon {
+  width: 1.1em;
+  height: 1.1em;
+}
+[data-held] .lab-held {
+  display: flex;
+}
+
+/* The gains in the inspector: each is dragged sideways or stepped with the arrows. */
+.lab-tune .quiet {
+  margin: 0 0 var(--s2);
+  font-size: var(--t-small);
+}
+.lab-gains {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.lab-gain-cell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.lab-gain-cell:nth-child(odd) {
+  border-right: 1px solid var(--line);
+}
+.lab-gain-cell:nth-child(n + 3) {
+  border-top: 1px solid var(--line);
+}
+.lab-gain {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s1);
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--s2) 0 var(--s3);
+  font-size: var(--t-body);
+  line-height: 1.3;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+.lab-gain:hover,
+.lab-gain.is-dragged {
+  background: var(--surface);
+}
+.lab-gain:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.lab-gain-name {
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.lab-gain-name sub {
+  font-size: 0.8em;
+  line-height: 0;
+}
+.lab-gain-scrub {
+  display: inline-flex;
+  flex: 1;
+  justify-content: flex-end;
+  color: var(--ink-3);
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out);
+}
+.lab-gain-scrub path {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.lab-gain:hover .lab-gain-scrub,
+.lab-gain:focus-visible .lab-gain-scrub,
+.lab-gain.is-dragged .lab-gain-scrub {
+  opacity: 1;
+}
+.lab-gain-value {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-decoration: underline dotted var(--ink-3);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.lab-gain-cell.is-changed .lab-gain {
+  padding-right: var(--s5);
+}
+.lab-gain-cell.is-changed .lab-gain-value {
+  text-decoration-style: solid;
+  text-decoration-color: var(--ink);
+}
+/* The dot that puts a changed gain back as it was tuned. */
+.lab-gain-reset {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.lab-gain-reset::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  background: var(--ink);
+  border-radius: 50%;
+}
+.lab-gain-reset:hover::before {
+  outline: 2px solid var(--ink-3);
+  outline-offset: 2px;
+}
+
+/* On a phone: the same symbols, down the signal chain, each with its title beside it. */
+.lab-diagram.is-chain {
+  position: static;
+}
+/* Down the chain nothing steps back: there are no wires to follow. */
+.lab-diagram.is-chain[data-lit] .lab-node:not([data-path]) {
+  opacity: 1;
+}
+.lab-chain {
+  display: grid;
+  gap: var(--s5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-chain li {
+  position: relative;
+}
+/* An arrow from each block down to the next. */
+.lab-chain li + li::before {
+  content: "";
+  position: absolute;
+  top: calc(-1 * var(--s5));
+  left: 60px;
+  width: 1px;
+  height: var(--s5);
+  background: var(--ink-3);
+}
+/* A block in the list is as tall as its own drawing: its probes then sit under it, inside its row. */
+.lab-chain .lab-node {
+  height: auto;
+}
+.lab-chain .lab-node-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  min-height: 48px;
+  text-align: left;
+}
+.lab-chain .lab-sym {
+  flex: none;
+  width: 120px;
+  height: 108px;
+}
+.lab-node-words {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.lab-chain .lab-node-title {
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  line-height: 1.35;
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+.lab-chain .lab-changed {
+  justify-self: start;
+  padding: 0 var(--s1);
+  color: var(--ink);
+  border: 1px solid var(--ink-2);
+  border-radius: var(--r);
+  font-size: var(--t-small);
+}
+.lab-chain-fold > summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+/* ---------- 3. The inspector ---------- */
+
+.lab-inspector {
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--s4) var(--s5) var(--s7);
+  border-left: 1px solid var(--line);
+  background: var(--ground);
+  overscroll-behavior: contain;
+}
+.lab-inspector header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+.lab-inspector h3 {
+  margin: 0;
+  outline-offset: 4px;
+}
+.lab-kicker {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.lab-inspector .icon-button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+}
+.lab-definition {
+  margin: var(--s3) 0 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+/* The block's drawing, alive with the run: today's face, drawn large. */
+.lab-animation {
+  position: relative;
+  margin: var(--s4) 0 0;
+}
+.lab-animation .lab-face {
+  height: auto;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: var(--s3) var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.lab-animation .lab-held {
+  position: static;
+  width: fit-content;
+  margin: 0 0 var(--s2);
+}
+.lab-face-title {
+  margin: 0 0 var(--s3);
+  color: var(--ink);
+  font-weight: 500;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.lab-animation .lab-face-svg {
+  height: auto;
+}
+.lab-animation .caption {
+  margin: var(--s2) 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.lab-maths {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border-radius: var(--r);
+  overflow-x: auto;
+}
+.lab-math {
+  display: block;
+  color: var(--ink);
+}
+.lab-math .katex {
+  font-size: 1.02em;
+}
+.lab-math .katex-display {
+  margin: 0;
+  text-align: left;
+}
+.lab-math .katex-display > .katex {
+  text-align: left;
+}
+.lab-io,
+.lab-cost,
+.lab-split {
+  width: 100%;
+  margin-top: var(--s4);
+  border-collapse: collapse;
+  font-size: var(--t-body);
+}
+.lab-io caption,
+.lab-cost caption,
+.lab-split caption {
+  padding-bottom: var(--s1);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  text-align: left;
+}
+.lab-io th,
+.lab-io td,
+.lab-cost th,
+.lab-cost td,
+.lab-split th,
+.lab-split td {
+  padding: var(--s1) var(--s2) var(--s1) 0;
+  border-top: 1px solid var(--line);
+  font-weight: 400;
+  text-align: left;
+  vertical-align: baseline;
+}
+.lab-io th {
+  color: var(--ink-2);
+}
+.lab-io td:last-child,
+.lab-cost td,
+.lab-split td {
+  text-align: right;
+  white-space: nowrap;
+}
+.lab-io td:last-child {
+  width: 104px;
+  padding-right: 0;
+}
+.lab-from {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  overflow-wrap: anywhere;
+}
+.lab-cost thead th,
+.lab-split thead th {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  text-align: right;
+  border-top: 0;
+}
+.lab-cost thead th:first-child,
+.lab-split thead th:first-child,
+.lab-split thead th:nth-child(2) {
+  text-align: left;
+}
+.lab-cost tbody th,
+.lab-split tbody th {
+  color: var(--ink-2);
+}
+/* Switching loss is heat, so it is told in orange (the two inks rule), at the
+   weight of the figures beside it, never bolder: the one orange press stays the loudest. */
+.lab .is-hot {
+  color: var(--orange);
+  font-weight: 400;
+}
+.lab-plotted {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  border: 0;
+}
+.lab-plotted legend {
+  padding: 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.lab-plotted label {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 32px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.lab-plotted input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--ink);
+}
+.lab-params {
+  display: grid;
+  gap: var(--s4);
+}
+.lab-param .help {
+  overflow-wrap: anywhere;
+}
+.lab-reset {
+  min-height: 32px;
+}
+.lab-replace .field {
+  margin-bottom: var(--s2);
+}
+
+/* ---------- 4. The test and its run ---------- */
+
+.lab-run-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s4);
+}
+.lab-run-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  margin-top: var(--s4);
+}
+.lab-run-said {
+  margin: 0;
+}
+.lab-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.lab-progress progress {
+  width: 200px;
+  height: 6px;
+  appearance: none;
+  background: var(--line);
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.lab-progress progress::-webkit-progress-bar {
+  background: var(--line);
+}
+.lab-progress progress::-webkit-progress-value {
+  background: var(--ink);
+}
+.lab-progress progress::-moz-progress-bar {
+  background: var(--ink);
+}
+.lab-progress .lab-live {
+  min-width: 5ch;
+  color: var(--ink-2);
+}
+.lab-stale {
+  display: flex;
+  gap: var(--s2);
+  margin: var(--s4) 0 0;
+  padding: var(--s3) var(--s4);
+  background: color-mix(in oklab, var(--caution) 9%, var(--ground));
+  border: 1px solid color-mix(in oklab, var(--caution) 45%, var(--ground));
+  border-radius: var(--r);
+  color: var(--ink);
+}
+.lab-stale .icon {
+  flex: none;
+  color: var(--caution);
+}
+.lab-results.is-running {
+  opacity: 0.85;
+}
+.lab-headline {
+  margin-top: var(--s3);
+}
+.lab-plot {
+  min-width: 0;
+  max-width: 720px;
+  margin: var(--s4) 0 0;
+}
+.lab-plot.is-small {
+  max-width: 356px;
+}
+.lab-plot-title {
+  font-weight: 600;
+}
+/* Every chart of the lab in the scope's frame: a thin panel, its title and the key to its
+   traces on one line at its head, a faint grid, traces of one weight. */
+.lab-plot {
+  padding: var(--s3) var(--s4) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.lab-plot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s1) var(--s4);
+  margin-bottom: var(--s2);
+}
+.lab-plot-head .series-legend {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+.control-lab .chart .grid {
+  stroke: color-mix(in oklab, var(--line) 75%, var(--surface));
+}
+.control-lab .chart .plot {
+  stroke: var(--line);
+}
+.control-lab .chart .series {
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+.key.line.lab-closed,
+.chart .series.lab-closed {
+  border-color: var(--trace-current);
+  stroke: var(--trace-current);
+}
+.lab-plot .caption,
+.lab-plot .plain {
+  text-wrap: pretty;
+}
+.lab-plot .series-legend {
+  margin: var(--s2) 0 0;
+}
+.lab-timed svg {
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.chart .lab-cursor {
+  stroke: var(--ink);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.chart .lab-mark {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  fill: none;
+}
+.chart .lab-bar {
+  stroke: var(--ink);
+  stroke-width: 2.2;
+}
+.chart .lab-dot {
+  fill: var(--ink);
+}
+.chart .lab-dot.s0 {
+  fill: var(--orange);
+}
+.chart .lab-note {
+  fill: var(--ink);
+}
+/* The short line from a margin's mark to its figure, which is written clear of the curves. */
+.chart .lab-leader {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+}
+.chart .lab-unit {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.4;
+}
+.chart .lab-pole {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+.chart .lab-pole.out {
+  stroke: var(--fail);
+}
+.chart .lab-zero {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+.chart .series.lab-thin {
+  stroke-width: 1.4;
+}
+.key.line.lab-s5,
+.chart .series.s5 {
+  border-color: var(--ink-3);
+  stroke: var(--ink-3);
+}
+.key.line.lab-s6 {
+  border-top-style: dashed;
+  border-color: var(--ink-3);
+}
+.chart .series.s6 {
+  stroke: var(--ink-3);
+  stroke-dasharray: 3 3;
+}
+.lab-step {
+  margin-top: var(--s3);
+}
+.lab-split .lab-bar {
+  display: flex;
+  width: 100%;
+  min-width: 120px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.lab-split .lab-bar i {
+  display: block;
+  height: 100%;
+}
+.lab-split .lab-bar .cond {
+  background: var(--ink);
+  border-radius: 2px 0 0 2px;
+}
+.lab-split .lab-bar .sw {
+  background: var(--orange);
+  border-radius: 0 2px 2px 0;
+}
+.lab-split td:nth-child(2) {
+  width: 34%;
+}
+.lab-diff {
+  white-space: nowrap;
+}
+
+/* ---------- 4a. The test and the press that runs it, in the lab's head ---------- */
+
+.lab-run {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-left: auto;
+}
+.lab-test {
+  position: relative;
+  min-width: 0;
+}
+.lab-test-open {
+  min-width: 0;
+  max-width: 360px;
+}
+/* One width for the test's line whatever the test is called: the scheme's list beside it, and
+   everything after, hold still as the test changes (D226). */
+@media (min-width: 701px) {
+  .lab-test-open {
+    width: 248px;
+  }
+  .lab-test-open .lab-test-words {
+    flex: 1;
+  }
+}
+/* On a wide page the line has room for the test's whole name ("Hold the design point"). */
+@media (min-width: 1280px) {
+  .lab-test-open {
+    width: 324px;
+  }
+}
+.lab-test-words {
+  display: flex;
+  gap: var(--s2);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.lab-test-words span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lab-test-open[aria-expanded="true"] {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+/* The test's settings, under its line: the one floating panel of the lab, in the raised tone
+   with the popover's shadow. It opens from its line, quickly, and shuts at once. */
+.lab-test-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 8;
+  width: min(560px, calc(100vw - 32px));
+  /* Never taller than the screen under the lab's head: it scrolls within itself. */
+  max-height: calc(100dvh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s4) var(--s5) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  transform-origin: top right;
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+@starting-style {
+  .lab-test-panel {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+}
+.lab-test-panel[hidden] {
+  display: none;
+}
+/* How the inverter is simulated: a named choice under the figures, apart from them by a rule.
+   On the raised panel the chosen segment takes the hairline's tone, one step up again. */
+.lab-fidelity {
+  margin-top: var(--s4);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+}
+.lab-fidelity-label {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+}
+.lab-test-panel .segmented {
+  margin-top: var(--s2);
+}
+.lab-test-panel .segmented button.is-on {
+  background: var(--line);
+}
+.lab-test-foot {
+  display: flex;
+  justify-content: end;
+  margin-top: var(--s4);
+}
+.lab-go {
+  min-width: 150px;
+  justify-content: center;
+}
+/* Just ended: a tick in place of the arrow for a moment, the arrow's nudge kept for hover. */
+.lab-go.is-ended .icon {
+  animation: lab-ended var(--dur-3) var(--ease-out);
+}
+@keyframes lab-ended {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+}
+/* A run going: Run the test's place and size, filled from the left as far as the run has come. */
+.lab-cancel {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-width: 150px;
+  height: 42px;
+  justify-content: center;
+}
+.lab-cancel-fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in oklab, var(--ink) 12%, transparent);
+  transform: scaleX(var(--done, 0));
+  transform-origin: left;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.lab-cancel-done {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: right;
+}
+
+/* ---------- 4b. The scope ---------- */
+
+.scope {
+  margin-top: var(--s5);
+}
+.scope-head {
+  min-height: 28px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  flex-wrap: wrap;
+}
+.lab .scope-head h3 {
+  margin: 0;
+}
+.lab-run-said {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+}
+.lab-run-said .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-run-said.is-ok .icon {
+  color: var(--ok);
+}
+/* The ways to take the scheme away, after the run is read. */
+.scope > .lab-exports {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--s2) var(--s4);
+  margin-top: var(--s5);
+}
+.lab-run-said.is-done {
+  animation: lab-said var(--dur-4) var(--ease-out);
+}
+@keyframes lab-said {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.lab-rest {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3) var(--s5);
+  flex-wrap: wrap;
+  margin-top: var(--s3);
+  padding: var(--s5) 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.lab-rest .lab-art {
+  flex: none;
+  display: block;
+  width: 168px;
+}
+.lab-rest .lab-art .empty-art {
+  width: 100%;
+}
+.lab-rest:has(.lab-art) {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
+@media (max-width: 520px) {
+  .lab-rest:has(.lab-art) {
+    flex-wrap: wrap;
+  }
+}
+.lab-rest p {
+  flex: 1 1 360px;
+  margin: 0;
+  max-width: 72ch;
+  text-wrap: pretty;
+}
+/* The transport: Play, the pace, the instant, the scrubber, on one line over the strips. */
+.lab-pace-label {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  white-space: nowrap;
+}
+@media (max-width: 700px) {
+  .lab-pace-label {
+    display: none;
+  }
+}
+.scope-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--s2) var(--s4);
+  flex-wrap: wrap;
+  margin-top: var(--s2);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.lab-player {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.lab-player .segmented {
+  margin: 0;
+}
+.lab-player .segmented button {
+  min-width: 36px;
+}
+/* Play is the scope's own press: framed in bone, never orange, which is kept for the run. */
+.lab-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s2);
+  min-width: 108px;
+  height: 40px;
+  padding: 0 var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.lab-play:hover {
+  border-color: var(--ink-2);
+}
+.lab-play:active {
+  transform: scale(0.97);
+}
+.lab-play[aria-pressed="true"] {
+  border-color: var(--ink);
+}
+.lab-instant {
+  min-width: 15ch;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.lab-instant output {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* The scrubber is the cursor for the keyboard and the hand: a hairline track, and a thumb
+   drawn as the cursor itself, an upright bone bar, rather than the system's round knob. */
+.scope-scrub {
+  flex: 1 1 220px;
+  min-width: 160px;
+  height: 44px;
+  margin: 0;
+  appearance: none;
+  background: none;
+  cursor: pointer;
+}
+.scope-scrub:focus-visible {
+  outline: none;
+}
+.scope-scrub::-webkit-slider-runnable-track {
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 1px;
+}
+.scope-scrub::-moz-range-track {
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 1px;
+}
+.scope-scrub::-moz-range-progress {
+  height: 2px;
+  background: var(--ink-2);
+}
+.scope-scrub::-webkit-slider-thumb {
+  appearance: none;
+  width: 4px;
+  height: 22px;
+  margin-top: -10px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px var(--ground);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.scope-scrub::-moz-range-thumb {
+  width: 4px;
+  height: 22px;
+  background: var(--ink);
+  border: 0;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px var(--ground);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .scope-scrub:hover::-webkit-slider-thumb {
+    transform: scaleY(1.15);
+  }
+  .scope-scrub:hover::-moz-range-thumb {
+    transform: scaleY(1.15);
+  }
+}
+.scope-scrub:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.scope-scrub:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.scope-tools {
+  display: flex;
+  gap: var(--s2);
+}
+.scope-tool {
+  height: 44px;
+}
+.scope-tool[aria-expanded="true"] {
+  border-color: var(--ink-2);
+  color: var(--ink);
+}
+.scope-detail {
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.scope-detail .lab-ripple h3 {
+  margin-top: var(--s4);
+}
+/* The strips: one quantity each, parted by a hairline; the legend left, the plot right, all
+   on one time axis written under the last. */
+/* The strips are one instrument: a panel of the drawing's own tone, its legend a column of its
+   own behind a hairline, each strip a row that lifts a step as it is pointed at. */
+.scope-strips {
+  position: relative;
+  display: grid;
+  margin-top: var(--s3);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  touch-action: pan-y;
+  user-select: none;
+}
+.scope-strip {
+  display: grid;
+  /* Wide enough that a strip's name stands on one line and a symbol with its sub- and
+     superscript (ω*cmd) never meets its reading. */
+  grid-template-columns: 244px minmax(0, 1fr);
+  gap: var(--s4);
+  padding: var(--s2) var(--s4) var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.scope-strip > .scope-legend {
+  padding: var(--s1) var(--s3) var(--s1) var(--s4);
+  border-right: 1px solid var(--line);
+}
+@media (hover: hover) and (pointer: fine) {
+  .scope-strips:not(.is-skeleton) .scope-strip:hover {
+    background: color-mix(in oklab, var(--ink) 2.5%, var(--surface));
+  }
+}
+.scope-strip:last-of-type {
+  border-bottom: 0;
+}
+.scope-legend {
+  min-width: 0;
+}
+.scope-strip-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s2);
+  min-height: 28px;
+}
+.lab .scope-strip-head h4 {
+  display: block;
+  margin: 0;
+  padding-top: 4px;
+  line-height: 20px;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.scope-legend ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.scope-legend li {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) auto 28px;
+  align-items: center;
+  column-gap: var(--s2);
+  min-height: 26px;
+}
+.scope-name {
+  color: var(--ink);
+  font-family: KaTeX_Math, "Times New Roman", serif;
+  font-size: var(--t-body);
+  font-style: italic;
+  line-height: 1;
+  white-space: nowrap;
+}
+.scope-name.is-word {
+  font-family: inherit;
+  font-size: var(--t-small);
+  font-style: normal;
+}
+.scope-name sub,
+.scope-name sup {
+  font-size: 0.7em;
+  line-height: 0;
+}
+.scope-value {
+  color: var(--ink);
+  font-size: var(--t-small);
+  font-weight: 600;
+  text-align: right;
+}
+.scope-remove {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--r);
+  color: var(--ink-3);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+.scope-remove .icon {
+  width: 16px;
+  height: 16px;
+}
+.scope-strip:hover .scope-remove,
+.scope-remove:focus-visible {
+  opacity: 1;
+}
+.scope-remove:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+@media (hover: none) {
+  .scope-remove {
+    opacity: 1;
+  }
+}
+.scope-swatch {
+  display: block;
+  overflow: visible;
+}
+.scope-plot {
+  min-width: 0;
+  cursor: crosshair;
+}
+.scope-plot .chart.scope-svg {
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+.scope-svg .grid {
+  stroke: color-mix(in oklab, var(--line) 75%, var(--surface));
+  stroke-width: 1;
+}
+.scope-svg .grid.zero {
+  stroke: var(--line-strong);
+}
+.scope-svg .tick {
+  font-size: 12px;
+}
+.scope-trace {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.scope-swatch .scope-trace {
+  stroke-width: 2;
+}
+.scope-trace.pr-0 {
+  stroke: var(--ink);
+}
+.scope-trace.pr-1 {
+  stroke: var(--trace-current);
+}
+.scope-trace.pr-2 {
+  stroke: var(--trace-gate);
+}
+.scope-trace.pr-3 {
+  stroke: var(--ink-3);
+}
+.scope-trace.da-1 {
+  stroke-dasharray: 6 4;
+}
+.scope-trace.da-2 {
+  stroke-dasharray: 1.5 3.5;
+  stroke-linecap: round;
+}
+/* A trace swinging faster than a line can be read, drawn as its envelope: soft inside, its
+   edges in the trace's own ink. */
+.scope-env {
+  /* Light enough that three phases laid over one another read as three edges, not one slab. */
+  fill-opacity: 0.14;
+  stroke-width: 1;
+  stroke-linejoin: round;
+}
+.scope-env.pr-0 {
+  fill: var(--ink);
+  stroke: var(--ink);
+}
+.scope-env.pr-1 {
+  fill: var(--trace-current);
+  stroke: var(--trace-current);
+}
+.scope-env.pr-2 {
+  fill: var(--trace-gate);
+  stroke: var(--trace-gate);
+}
+.scope-env.pr-3 {
+  fill: var(--ink-3);
+  stroke: var(--ink-3);
+}
+.scope-ghost-env {
+  fill: var(--ink-3);
+  fill-opacity: 0.12;
+  stroke: none;
+}
+.scope-ghost {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.2;
+  stroke-dasharray: 2 3;
+  opacity: 0.7;
+}
+/* Played: the traces are drawn up to the cursor, what is to come set back. */
+.scope-svg .scope-traces {
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+.scope-past {
+  display: none;
+}
+.scope-strips.is-playing .scope-traces {
+  opacity: 0.2;
+}
+.scope-strips.is-playing .scope-past {
+  display: inline;
+}
+.scope-cursor {
+  stroke: var(--ink);
+  stroke-width: 1;
+  pointer-events: none;
+}
+.scope-dot {
+  stroke: var(--ground);
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.scope-dot.pr-0 {
+  fill: var(--ink);
+}
+.scope-dot.pr-1 {
+  fill: var(--trace-current);
+}
+.scope-dot.pr-2 {
+  fill: var(--trace-gate);
+}
+.scope-dot.pr-3 {
+  fill: var(--ink-3);
+}
+/* The time at the cursor, on the axis under it: a raised chip over the tick labels. */
+.scope-when-bg {
+  fill: var(--raised);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.scope-when-text {
+  fill: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.scope-when {
+  pointer-events: none;
+}
+/* The stretch being dragged across, over every strip at once. */
+.scope-band {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  background: color-mix(in oklab, var(--ink) 8%, transparent);
+  border-inline: 1px solid var(--ink-3);
+  pointer-events: none;
+}
+.scope.is-running .scope-strips {
+  opacity: 0.92;
+}
+.scope-none {
+  margin: var(--s3) 0 0;
+}
+.lab-rest .scope-none {
+  margin: 0;
+}
+/* Adding a signal is an action, not a field: it reads as the lab's other quiet buttons, a plus
+   before its words, the native list it opens kept for the keyboard and the screen reader. */
+.scope-add {
+  width: 200px;
+  height: 40px;
+  margin-top: var(--s3);
+  background: transparent;
+}
+.scope-add select {
+  padding: 0 var(--s6) 0 38px;
+  font-weight: 500;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14'%3E\
+%3Cpath d='M7 1v12M1 7h12' fill='none' stroke='%23ece8dc' stroke-width='1.6'/%3E%3C/svg%3E")
+      left 14px center no-repeat,
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E\
+%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%23c2bcac' stroke-width='1.6'/%3E%3C/svg%3E")
+      right 12px center no-repeat;
+  background-color: transparent;
+}
+.scope-add:hover {
+  background: var(--surface);
+}
+/* What the run cost, in four figures; every figure on demand. */
+.lab-more {
+  margin-top: var(--s4);
+}
+.lab-more > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 36px;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.lab-more > summary:hover {
+  color: var(--ink);
+}
+.lab-more[open] > summary {
+  color: var(--ink);
+}
+.lab-more > summary .icon {
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.lab-more[open] > summary .icon {
+  transform: rotate(180deg);
+}
+
+/* ---------- 5. The linear view, the library, what is kept ---------- */
+
+/* The Laplace lens: the headline figures in one strip, then the loop's plots in a grid that
+   reads left to right: gain over phase as one linked pair, the step and the poles beside. */
+.lab-laplace {
+  container-type: inline-size;
+}
+.lab-laplace .lab-margins {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-top: var(--s4);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.lab-laplace .lab-margins .readout {
+  grid-column: auto;
+  padding: var(--s3) var(--s4);
+}
+.lab-margins .readout + .readout {
+  border-left: 1px solid var(--line);
+}
+.lab-margins .readout:first-child {
+  padding-left: 0;
+}
+/* How the loop's three frequencies stand to one another, said once under the strip. */
+.lab-relation {
+  margin: var(--s2) 0 0;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+}
+.lab-plots {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0 var(--s6);
+  align-items: start;
+}
+.lab-plots .lab-plot {
+  max-width: none;
+}
+.lab-plots-side {
+  display: grid;
+  min-width: 0;
+}
+.lab-poles .chart-box {
+  max-width: 320px;
+}
+@container (min-width: 860px) {
+  .lab-plots {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+/* The map's key reads under the map, at its width, never pushed to the panel's far side. */
+.lab-poles .caption {
+  max-width: 320px;
+  margin-top: var(--s2);
+}
+@container (max-width: 560px) {
+  .lab-laplace .lab-margins {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lab-margins .readout:nth-child(3) {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .lab-margins .readout:nth-child(n + 3) {
+    border-top: 1px solid var(--line);
+  }
+}
+.lab-assumes {
+  margin-top: var(--s5);
+  color: var(--ink-2);
+}
+.lab-assumes summary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  cursor: pointer;
+  list-style: none;
+}
+.lab-assumes summary::-webkit-details-marker {
+  display: none;
+}
+.lab-assumes summary:hover,
+.lab-assumes[open] summary {
+  color: var(--ink);
+}
+.lab-assumes summary .icon {
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.lab-assumes[open] summary .icon {
+  transform: rotate(180deg);
+}
+/* The explorations: one grid of bordered cards, each led by its group's icon in that
+   group's ink and a tag, then the problem it answers and what running it gives back. A
+   card opens in place, across the grid, on its method and sources. */
+.lab-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--s4);
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-card {
+  --accent: var(--ink-2);
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  align-content: start;
+  gap: var(--s2);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--ground);
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+.lab-card.is-dynamics {
+  --accent: var(--trace-current);
+}
+.lab-card.is-sensing {
+  --accent: var(--trace-gate);
+}
+.lab-card.is-losses,
+.lab-card.is-thermal {
+  --accent: var(--orange-pale);
+}
+.lab-card.is-off {
+  --accent: var(--ink-3);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-card:hover {
+    border-color: var(--edge);
+    background: var(--surface);
+  }
+}
+.lab-card:has(.lab-card-open:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lab-card.is-open {
+  grid-column: 1 / -1;
+  border-color: var(--edge);
+  background: var(--surface);
+}
+.lab-card h4,
+.lab-card p {
+  margin: 0;
+}
+.lab-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+.lab-card-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--ground));
+  border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--ground));
+  border-radius: var(--r);
+}
+.lab-card-icon .lab-icon {
+  display: inline-flex;
+}
+.lab-tag {
+  padding: 1px 7px;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.lab-card-caret {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--ink-3);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.lab-card.is-open .lab-card-caret {
+  transform: rotate(180deg);
+}
+.lab-card-title {
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.lab-card-open {
+  all: unset;
+  display: block;
+  min-height: 24px;
+  color: var(--ink);
+  text-wrap: balance;
+  cursor: pointer;
+}
+/* The whole card opens it: the title's press is stretched over the card, under its actions. */
+.lab-card-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--r);
+}
+.lab-outcome {
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.lab-outcome.is-found {
+  display: flex;
+  gap: var(--s2);
+  color: var(--ink);
+}
+.lab-outcome.is-found .icon {
+  flex: none;
+  color: var(--ink-3);
+}
+/* The mark follows the finding's tag: a tick for good, a warning for a shortfall. */
+.lab-outcome.is-good .icon {
+  color: var(--ok);
+}
+.lab-outcome.is-short .icon {
+  color: var(--caution);
+}
+.lab-card-act {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+}
+.lab-card-run {
+  min-height: 44px;
+}
+.lab-card-act .lab-not {
+  color: var(--ink-3);
+}
+.lab-card-more {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: var(--s2);
+  max-width: 72ch;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line);
+}
+.lab-card-more[hidden] {
+  display: none;
+}
+.lab-card-method {
+  color: var(--ink);
+  font-weight: 500;
+}
+.lab-why-not {
+  color: var(--ink-2);
+}
+.lab-card-facts {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+}
+.lab-card-facts div {
+  display: flex;
+  gap: var(--s2);
+}
+.lab-card-facts dt {
+  flex: none;
+  width: 4.5em;
+  color: var(--ink-3);
+}
+.lab-card-facts dd {
+  margin: 0;
+  color: var(--ink-2);
+}
+.lab-question {
+  color: var(--ink);
+  font-size: var(--t-body);
+  text-wrap: pretty;
+}
+.lab-card.is-off .lab-card-title .lab-card-open {
+  color: var(--ink-2);
+}
+.lab-not {
+  display: flex;
+  gap: var(--s2);
+  color: var(--ink-2);
+}
+.lab-not .icon {
+  flex: none;
+  color: var(--ink-3);
+}
+.lab-multiples {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 356px));
+  gap: var(--s5);
+}
+.lab-variants {
+  display: grid;
+  gap: 0;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.lab-variants li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4);
+  min-height: 44px;
+  border-bottom: 1px solid var(--line);
+}
+.lab-not-run {
+  color: var(--ink-2);
+}
+.lab-said-list {
+  font-size: var(--t-body);
+}
+.lab-keep-row + .quiet {
+  margin-top: var(--s2);
+}
+.lab-keep-row {
+  display: flex;
+  align-items: end;
+  gap: var(--s3);
+  flex-wrap: wrap;
+}
+.lab-keep-row .field {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+.lab-kept-lists {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--s5);
+}
+.lab-kept-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.lab-kept-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+}
+.lab-kept-list li > .lab-kept-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lab-kept-ask {
+  display: flex;
+  gap: var(--s2);
+}
+.lab-kept-list .icon-button {
+  width: 44px;
+  height: 44px;
+}
+
+/* ---------- 6. Narrower screens ---------- */
+
+@media (max-width: 1100px) {
+  .lab.has-inspector .lab-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lab-inspector {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 5;
+    width: min(420px, 100vw);
+    border-left: 1px solid var(--line);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  }
+  .lab-title p {
+    display: none;
+  }
+}
+
+/* Too narrow for the head on one row, yet wider than a phone: the scheme's row goes under. */
+@media (max-width: 960px) and (min-width: 701px) {
+  .lab-top {
+    flex-wrap: wrap;
+    row-gap: var(--s3);
+  }
+  .lab-switcher {
+    order: 3;
+    flex-basis: 100%;
+  }
+}
+
+@media (max-width: 700px) {
+  /* The lab scrolls as one; of its head, the run's row stays at the top (--lab-hide, set by
+     the head, is how far the rows above it go up). */
+  .lab {
+    display: block;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scroll-padding-top: var(--s8);
+  }
+  .lab-main {
+    overflow: visible;
+  }
+  .lab-top {
+    position: sticky;
+    top: calc(-1 * var(--lab-hide, 0px));
+    z-index: 6;
+    background: var(--ground);
+    flex-wrap: wrap;
+    gap: var(--s3);
+    padding: var(--s3) var(--s4);
+  }
+  .lab-switcher {
+    order: 3;
+    flex-basis: 100%;
+    flex-wrap: wrap;
+  }
+  .lab-switcher .field,
+  .lab-picker {
+    flex: 1 1 0;
+    min-width: 60%;
+  }
+  .lab-why-panel {
+    right: 0;
+    left: auto;
+    transform-origin: top right;
+  }
+  .lab-title {
+    flex: 1;
+  }
+  .lab-main {
+    padding: 0 var(--s4) var(--s7);
+  }
+  .lab-run {
+    order: 4;
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+  .lab-test {
+    flex: 1;
+  }
+  .lab-test-open {
+    width: 100%;
+    max-width: none;
+  }
+  .lab-test-words .quiet {
+    display: none;
+  }
+  /* One width for the press whatever it says and while it runs: nothing beside it moves. */
+  .lab-go,
+  .lab-run {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .lab-test {
+    flex: 1 1 0;
+  }
+  .lab-test,
+  .lab-test-open {
+    min-width: 0;
+  }
+  .lab-test-words span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Brought into view after a run, the scope's head stands clear of the lab's head. */
+  #lab-scope-h {
+    scroll-margin-top: 184px;
+  }
+  .lab-test-panel {
+    right: auto;
+    left: 0;
+    width: calc(100vw - 32px);
+    padding: var(--s4);
+  }
+  .scope-strip {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s1);
+  }
+  .scope-legend ul {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s4);
+  }
+  .scope-legend li {
+    grid-template-columns: 18px auto auto;
+  }
+  .scope-legend li .scope-remove {
+    display: none;
+  }
+  .lab-instant {
+    min-width: 0;
+  }
+  .scope-scrub {
+    flex-basis: 100%;
+  }
+  .lab-inspector {
+    top: auto;
+    left: 0;
+    width: 100vw;
+    max-height: 78dvh;
+    padding: var(--s4) var(--s4) var(--s6);
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .lab-progress progress {
+    width: 120px;
+  }
+}
+
+/* ---------- 4c. What the run found, on its traces ---------- */
+
+/* A finding is drawn where it was read: a band of values or a stretch of time, faintly
+   shaded in its state's colour with its words beside it; a limit as a dashed line; the instant
+   the drive settled as one quiet tick. Words wear the inks of text, never the series'. */
+.scope-note rect {
+  stroke: none;
+}
+.scope-note.is-band rect,
+.scope-note.is-span rect {
+  fill: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+.scope-note.is-span path {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.scope-note.tone-good.is-band rect,
+.scope-note.tone-good.is-span rect {
+  fill: color-mix(in oklab, var(--ok) 9%, transparent);
+}
+.scope-note.tone-improve rect {
+  fill: color-mix(in oklab, var(--caution) 14%, transparent);
+}
+.scope-note.tone-fail rect {
+  fill: color-mix(in oklab, var(--fail) 16%, transparent);
+}
+.scope-note.is-level path {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  fill: none;
+}
+/* An instant the run marks (a trip): neutral, in its finding's colour where the finding has one. */
+.scope-note.is-tick path {
+  stroke: var(--ink-3);
+  stroke-width: 1;
+}
+.scope-note.is-tick circle {
+  fill: var(--ink-2);
+}
+.scope-note.is-tick.tone-improve path,
+.scope-note.is-tick.tone-improve circle {
+  stroke: var(--caution);
+  fill: var(--caution);
+}
+.scope-note.is-tick.tone-fail path,
+.scope-note.is-tick.tone-fail circle {
+  stroke: var(--fail);
+  fill: var(--fail);
+}
+.scope-note.is-tick.tone-improve path,
+.scope-note.is-tick.tone-fail path {
+  fill: none;
+  opacity: 0.7;
+}
+.scope-note-label {
+  fill: var(--ink-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  paint-order: stroke;
+  /* A halo of the plot's own ground, so words laid over a trace stay readable. */
+  stroke: var(--surface);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.scope-note-label.tone-fail {
+  fill: var(--fail);
+}
+.scope-note-label.tone-improve {
+  fill: var(--caution);
+}
+.scope-note.is-pointed rect {
+  fill: color-mix(in oklab, var(--ink) 16%, transparent);
+  transition: fill var(--dur-2) var(--ease-out);
+}
+.scope-note.is-pointed .scope-note-label {
+  fill: var(--ink);
+}
+.scope-strip.is-pointed,
+.lab-thermal.is-pointed {
+  outline: 1px solid var(--ink-3);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+/* A fresh run: its marks arrive after its traces, once. */
+.scope-strips[data-landing] .scope-note {
+  animation: lab-note-in var(--dur-3) var(--ease-out) both;
+  animation-delay: 300ms;
+}
+@keyframes lab-note-in {
+  from {
+    opacity: 0;
+  }
+}
+/* Drawing in: the traces revealed from the left through the clip that playing uses. */
+.scope-strip.is-drawing .scope-traces {
+  opacity: 0;
+  transition: none;
+}
+.scope-strip.is-drawing .scope-past {
+  display: inline;
+}
+/* Before the first of a run has come: each strip's frame, a quiet sheen across it. */
+.scope-strips.is-skeleton .scope-plot {
+  position: relative;
+  height: 96px;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  background: color-mix(in oklab, var(--ink) 3%, transparent);
+}
+.scope-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in oklab, var(--ink) 6%, transparent), transparent);
+  transform: translateX(-100%);
+  animation: lab-shimmer 1.1s linear infinite;
+}
+@keyframes lab-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+/* The same marks on the lab's charts: the Laplace lens and the junction through the run. */
+.chart .lab-region rect {
+  fill: color-mix(in oklab, var(--ink) 7%, transparent);
+  stroke: none;
+}
+.chart .lab-region.tone-good rect {
+  fill: color-mix(in oklab, var(--ok) 9%, transparent);
+}
+.chart .lab-region path {
+  stroke: var(--ok);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.chart .lab-region-label {
+  fill: var(--ink-2);
+}
+.chart .lab-region.tone-fail .lab-region-label {
+  fill: var(--fail);
+}
+.chart .lab-region-band {
+  fill: color-mix(in oklab, var(--ink) 10%, transparent);
+  stroke: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-picker-panel,
+  .lab-diagram-keys {
+    transition: none;
+  }
+  /* The lit path stays lit; nothing runs along it. */
+  .lab-wire[data-path] .lab-flow {
+    opacity: 0;
+    animation: none;
+  }
+  .lab *,
+  .lab *::before,
+  .lab *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+@media (forced-colors: active) {
+  /* The system draws the scrubber, so its thumb is never lost to forced colours. */
+  .scope-scrub {
+    appearance: auto;
+  }
+  .lab-sym-box,
+  .lab-sym-line {
+    stroke: CanvasText;
+  }
+  .lab-sym-math,
+  .lab-sym-word,
+  .lab-sym-caption,
+  .lab-sym-title,
+  .lab-sym-dot,
+  .lab-sym-changed {
+    fill: CanvasText;
+  }
+  .lab-node.is-on .lab-sym-ring {
+    stroke: Highlight;
+  }
+  .lab-seg,
+  .lab-lit,
+  .f-live,
+  .chart .lab-cursor {
+    stroke: CanvasText;
+  }
+  .lab-flow {
+    display: none;
+  }
+  .lab-cross-gap {
+    stroke: Canvas;
+  }
+}
+
+.lab-settled {
+  margin: var(--s3) 0 0;
+}
+
+/* What an exploration is expected to show, and where it comes from. */
+.lab-expects {
+  margin: var(--s2) 0 0;
+  color: var(--ink-2);
+}
+.lab-sources {
+  display: grid;
+  gap: var(--s1);
+  margin: var(--s2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-sources a {
+  display: inline-block;
+  padding: var(--s1) 0;
+  color: var(--ink);
+}
+/* The block's full account, folded under its short one. */
+.lab-indetail {
+  margin-top: var(--s2);
+}
+.lab-indetail p {
+  margin: 0 0 var(--s3);
+  text-wrap: pretty;
+}
+
+/* The press's words take the room of the longest it says, so it never changes width. */
+.lab-go-words {
+  display: inline-grid;
+}
+.lab-go-words > span {
+  grid-area: 1 / 1;
+  text-align: center;
+}
+.lab-go-words > span[aria-hidden="true"] {
+  visibility: hidden;
+}
+.lab-go.is-refused .icon {
+  color: var(--on-orange);
+}
+
+/* A list's options and its groups on one ground, as the menus are. */
+.lab select option,
+.lab select optgroup {
+  background-color: var(--raised);
+  color: var(--ink);
+}
+
+/* The figures of a Bode plot are said clear of its curves: a halo of the ground round them. */
+.lab .chart text[data-margin] {
+  paint-order: stroke;
+  stroke: var(--surface, var(--ground));
+  stroke-width: 5px;
+  stroke-linejoin: round;
+}
+
+/* The pace of the player, named for how long one sweep takes. */
+.lab-pace-words {
+  margin-left: var(--s2);
+  font-size: var(--t-small);
+}
+
+/* Every press is at least 44 px each way (Fitts): the small ones by a larger hit area round
+   them, which reaches no other press. */
+.lab-diagram .react-flow__controls-button {
+  width: 44px;
+  height: 44px;
+}
+.lab-player .segmented button {
+  min-width: 48px;
+  min-height: 44px;
+}
+.lab-play {
+  height: 44px;
+}
+.scope-remove,
+.lab-about button.link,
+.scope-strip-head .scope-remove::before,
+.lab-about button.link::before,
+.lab .chart-save::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+/* In a legend the rows stand 30 px apart: a trace's own way out takes all of its row's
+   height and 44 px of its width, and never its neighbour's. */
+.scope-legend li {
+  min-height: 30px;
+}
+.scope-legend li .scope-remove::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+}
+
+/* A block's signals in the phone's list, each a probe to draw in the scope. */
+.lab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  margin: var(--s1) 0 var(--s2) 52px;
+  padding: 0;
+  list-style: none;
+}
+.lab-chain .lab-chips li::before {
+  content: none;
+}
+.lab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 44px;
+  padding: 0 var(--s3);
+  background: none;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.lab-chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ground);
+}
+.lab-chip[aria-pressed="true"] .scope-name {
+  color: var(--ground);
+}
+
+@media (max-width: 700px) {
+  /* The tabs wrap on a phone: none is ever cut off out of sight. */
+  .lab .tabs {
+    flex-wrap: wrap;
+    overflow: visible;
+    background: none;
+  }
+  /* A chart keeps its words at 11 px at least: it is read along by scrolling, never shrunk. */
+  .lab .chart-box:not(.small) > div {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .lab .chart-box:not(.small) > div > svg.chart {
+    min-width: 476px;
+  }
+  .lab-pace-words {
+    display: none;
+  }
+}
+
+/* ---------- 6. The phone: what the run found first ---------- */
+
+/* At a phone's width the lab reads down in the order it is used after a run: the verdict, its
+   chips and the scope first, then the scheme as a compact list along the signal chain, then the
+   tabs. Before any run, the scheme comes first, since there is nothing yet to read. */
+@media (max-width: 700px) {
+  .lab-main {
+    display: flex;
+    flex-direction: column;
+  }
+  .lab-main > * {
+    flex: none;
+    min-width: 0;
+  }
+  .lab-main > .lab-diagram,
+  .lab-main > .scope.is-empty {
+    order: 1;
+  }
+  .lab-main > .tabs {
+    order: 2;
+  }
+  .lab-main > #lab-tab-body {
+    order: 3;
+  }
+  .lab-main > .lab-diagram.has-run {
+    margin-top: var(--s6);
+  }
+  .lab-main > .scope:not(.is-empty) {
+    margin-top: var(--s3);
+  }
+  .lab-main > .tabs {
+    margin-top: var(--s6);
+  }
+  .scope-strips {
+    margin-right: 0;
+  }
+  .scope-strip {
+    padding: var(--s2) var(--s3);
+  }
+  .scope-strip > .scope-legend {
+    padding: 0;
+    border-right: 0;
+  }
+  /* The chain, compact: each block a row of its symbol small and its name, its probes under it. */
+  .lab-chain {
+    gap: var(--s3);
+  }
+  .lab-chain li + li::before {
+    top: calc(-1 * var(--s3));
+    left: 32px;
+    height: var(--s3);
+  }
+  .lab-chain .lab-sym {
+    width: 64px;
+    height: 56px;
+  }
+  .lab-chain .lab-node-head {
+    min-height: 56px;
+    gap: var(--s3);
+  }
+  .lab-chips {
+    margin: var(--s1) 0 0 76px;
+  }
+  .lab-chip {
+    min-height: 36px;
+  }
+}
+
+/* The explorations that do not apply to this design: folded away after those that do. */
+.lab-cards-off {
+  margin-top: var(--s6);
+}
+.lab-cards-off > .lab-cards {
+  margin-top: var(--s4);
+}
+
+/* The drawing read along by panning: an edge it goes on past fades, so more is seen to lie there. */
+.lab-canvas.goes-right .react-flow__renderer {
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+}
+.lab-canvas.goes-left .react-flow__renderer {
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+.lab-canvas.goes-left.goes-right .react-flow__renderer {
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+
+/* A variant that did not do what was asked: hollow and quiet, its figure not one to compare. */
+.chart .lab-dot.is-missed {
+  fill: var(--ground);
+  stroke: var(--ink-3);
+  stroke-width: 1.4;
+}

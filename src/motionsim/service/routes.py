@@ -10,9 +10,12 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Generator
 
+from motionsim.service import control
 from motionsim.service.answers import answer, finite
 from motionsim.service.motion import largest
 from motionsim.service.motion.heavier import search
+from motionsim.service.motion.proposed import load_proposal
+from motionsim.service.motion.proposed import search as propose_load
 from motionsim.service.presets import loads, setup, suggest
 from motionsim.service.remembered import capability, cycle, motor_fit, proposal, recommendations
 from motionsim.service.validate import asked
@@ -44,6 +47,13 @@ def _event(data: dict, workspace: Workspace) -> dict:
     return event(data, workspace)
 
 
+def _board(data: dict, workspace: Workspace) -> dict:
+    """A board file read for its switching loop, its code fetched only when one is first given."""
+    from motionsim.service.board import board
+
+    return board(data, workspace)
+
+
 Route = Callable[[dict, Workspace], dict]
 
 ROUTES: dict[str, Route] = {
@@ -51,6 +61,7 @@ ROUTES: dict[str, Route] = {
     "/api/proposal": proposal,
     "/api/capability": capability,
     "/api/largest": largest,
+    "/api/load-proposal": load_proposal,
     "/api/suggest": suggest,
     "/api/fit": motor_fit,
     "/api/report": _report,
@@ -65,6 +76,14 @@ ROUTES: dict[str, Route] = {
     "/api/trajectory": trajectory,
     "/api/cooling": cooling_offer,
     "/api/event": lambda data, ws: _event(data, ws),
+    "/api/front-end": lambda data, ws: _front_end(data, ws),
+    "/api/control/presets": control.presets,
+    "/api/control/loops": control.loops,
+    "/api/control/run": control.run,
+    "/api/control/explorations": control.explorations,
+    "/api/control/sweep": control.sweep,
+    "/api/control/verdict": control.verdict,
+    "/api/control/export_c": lambda data, ws: _export_c(data, ws),
 }
 
 # Requests that bring a device in: their figures are text and names, checked by what reads them.
@@ -74,7 +93,20 @@ ADDING: dict[str, Route] = {
     "/api/measure": lambda data, ws: add_measurement(
         data.get("device", ""), data.get("name", ""), data.get("text", ""), ws
     ),
+    "/api/board": lambda data, ws: _board(data, ws),
 }
+
+
+def _front_end(data: dict, ws: Workspace) -> dict:
+    from motionsim.service.front_end import front_end
+
+    return front_end(data, ws)
+
+
+def _export_c(data: dict, ws: Workspace) -> dict:
+    from motionsim.service.control.export_c import route
+
+    return route(data, ws)
 
 
 def known(route: str) -> bool:
@@ -124,7 +156,12 @@ def call(route: str, payload: str, workspace: Workspace) -> str:
 # Requests whose answer is a search that says each step as it finishes: the same answer as
 # the address gives, with the steps before it.
 Search = Callable[[dict, Workspace], Generator[dict, None, dict]]
-STREAMS: dict[str, Search] = {"/api/largest": search}
+STREAMS: dict[str, Search] = {
+    "/api/largest": search,
+    "/api/load-proposal": propose_load,
+    "/api/control/run": control.run_steps,
+    "/api/control/sweep": control.sweep_steps,
+}
 
 
 def _raise(exc: BaseException) -> dict:

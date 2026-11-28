@@ -16,7 +16,7 @@ import type { Cycle, Proposal, Setup, Suggest } from "../src/api";
 import { api } from "../src/api";
 import { addPart } from "../src/actions/parts";
 import { printReport, saveMarkdown } from "../src/actions/reports";
-import { applyState, openSetup, startOver } from "../src/actions/setup";
+import { applyState, clearEverything, openSetup } from "../src/actions/setup";
 import { compute } from "../src/engine";
 import { deep } from "../src/engine/deep";
 import { wire } from "../src/events";
@@ -214,8 +214,7 @@ describe("a question or an Undo of the comparison, pending when a fresh state is
   };
   const reset = async (how: string) => {
     if (how === "Reset") {
-      vi.stubGlobal("confirm", () => true);
-      startOver();
+      clearEverything();
     } else {
       mock.setup.mockResolvedValue(app.setup);
       await openSetup(asFile(atResults()));

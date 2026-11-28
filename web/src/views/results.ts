@@ -17,3 +17,5 @@ export const TAB_BODY = {
 export { compareArea };
 export * as eventPlots from "../eventplot/view";
 export { openMotion } from "../charts/motionfull";
+export { openLimit } from "../charts/limitfull";
+export { openPwm } from "../charts/pwmfull";

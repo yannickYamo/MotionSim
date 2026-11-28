@@ -2,7 +2,7 @@
 // sets one more thing beside the design: a device, a load, the motor with a change, or a
 // setting at several values. One kind is compared at a time.
 
-import { series } from "../compare";
+import { resultOf, series } from "../compare";
 import type { Series } from "../compare";
 import { escape } from "../format";
 import { icon } from "../icons";
@@ -45,7 +45,8 @@ export function columnsOf(list: Series[]): Column[] {
       name: x.name,
       design,
       edit: !design && (mode === "motors" || mode === "sweep"),
-      lead: !design && mode === "devices",
+      // Never offered on a part this design rules out.
+      lead: !design && mode === "devices" && resultOf(x)?.level !== "fail" && !!resultOf(x)?.result,
     };
   });
 }

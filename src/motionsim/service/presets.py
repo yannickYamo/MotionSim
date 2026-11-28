@@ -32,7 +32,7 @@ from motionsim.service.catalogue import (
 )
 from motionsim.service.validate import _motor, _number, point
 from motionsim.service.workspace import USES, Use, Workspace
-from motionsim.text import rounded, written
+from motionsim.text import rounded, whole, written
 
 
 def setup(workspace: Workspace) -> dict:
@@ -175,6 +175,7 @@ def _tried_on(use: Use, device: Device, start: Start, base: dict, out: dict) -> 
     have one, on the supply they run from where that is below the part's own, or the class of
     motor the use names, sized to the part as any other is."""
     motors, bus = out["motors"], out["v_supply"]
+    ruled = next((k for k, m in motors.items() if m["fit"] == "recommended"), None)
     if use.motor is not None:
         c = CLASSES[use.motor]
         values, rated = class_motor(use.motor)
@@ -191,14 +192,28 @@ def _tried_on(use: Use, device: Device, start: Start, base: dict, out: dict) -> 
             p for p in load_presets(c.kind, rated["rpm"], rated["torque"], supply) if p["id"] == use.application
         )
         usual = item["motor"]
-        point = {"v_dc": supply, **usual["point"], "f_sw": start.f_sw}
+        point = {"v_dc": supply, **usual["point"], "f_sw": use.f_sw or start.f_sw}
         _starts_on(motors, c.kind, usual["values"], point)
         for kind, other in motors.items():
             if kind != c.kind and supply != bus:
                 other["values"] = rewound(kind, other["values"], supply, bus)
             other["start"] = {**other["start"], "v_dc": supply}
         out["v_supply"] = supply
-    out["application"] = {"id": use.application, "label": app.label, "start": app.start, "supply": use.supply}
+    started = next((k for k, m in motors.items() if m["fit"] == "recommended"), None)
+    if started is not None and started != ruled:
+        # The application's motor took the place of the one the part's class would start on:
+        # the reason said is the application's, never the rule's for another kind of motor.
+        why = f"this made-up part is opened on its application ({use.said}), whose drives use this kind of motor"
+        motors[started] = {**motors[started], "why": why}
+        out["why"] = why
+    out["application"] = {
+        "id": use.application,
+        "label": app.label,
+        "start": app.start,
+        "supply": use.supply,
+        # Whether its load swings within a turn (a compressor's): known before the load is sized.
+        "swings": "pulsation_torque" in app.fields,
+    }
     return out
 
 
@@ -209,7 +224,7 @@ def _link(item: dict, n: float) -> str:
     via = "directly on the motor shaft" if g == 1 else f"through a {g:g}:1 gear"
 
     def say(v: float) -> str:
-        return f"{v:,.0f}" if abs(v) >= 100 else f"{written(v, 3)}"
+        return whole(v) if abs(v) >= 100 else f"{written(v, 3)}"
 
     link = (
         f"Driven {via}: the load's top speed of {say(top)} rpm is {say(top * g)} rpm at the motor, "
@@ -262,7 +277,7 @@ def _runs(given: dict, load: dict, profile: dict, v_dc: float) -> dict:
         torque = max((abs(t) for t in x.torques or ()), default=abs(x.motor_torque)) * (
             1 if x.motor_torque >= 0 else -1
         )
-        at = f"{x.motor_rpm:,.0f} rpm and {written(abs(torque), 3)} N·m"
+        at = f"{whole(x.motor_rpm)} rpm and {written(abs(torque), 3)} N·m"
         try:
             i_peak = motor.stage(x.motor_rpm, torque, v_dc, motor.default_pwm).i_peak
         except (Unreachable, ValueError):
@@ -340,10 +355,14 @@ def typed_form() -> dict:
     transistor's and an IGBT's. `main` marks the boxes shown with the required ones: those, and
     the optional ones a stated rule fills when they are left empty."""
     from motionsim.fit.taken import DEFAULTED
+    from motionsim.fit.typed import _BOUNDS as FET_BOUNDS
     from motionsim.fit.typed import FIGURES, OUTLINES, TECHNOLOGIES
+    from motionsim.fit.typed_igbt import _BOUNDS as IGBT_BOUNDS
     from motionsim.fit.typed_igbt import IGBT_FIGURES, MAIN, TECHNOLOGY, TOPOLOGIES
 
-    def fields(table, main) -> list[dict]:
+    def fields(table, main, bounds) -> list[dict]:
+        # The range each figure is held to goes with it, so the page says every box outside
+        # its range in one press, as the engine would one at a time.
         return [
             {
                 "key": key,
@@ -352,6 +371,7 @@ def typed_form() -> dict:
                 "required": required,
                 "help": text_,
                 "main": required or key in main,
+                **({"low": bounds[key][0], "high": bounds[key][1]} if key in bounds else {}),
             }
             for key, label, unit, _, required, text_ in table
         ]
@@ -359,6 +379,10 @@ def typed_form() -> dict:
     return {
         "technologies": list(TECHNOLOGIES),
         "outlines": list(OUTLINES),
-        "fields": fields(FIGURES, DEFAULTED),
-        "igbt": {"technology": TECHNOLOGY, "topologies": list(TOPOLOGIES), "fields": fields(IGBT_FIGURES, MAIN)},
+        "fields": fields(FIGURES, DEFAULTED, FET_BOUNDS),
+        "igbt": {
+            "technology": TECHNOLOGY,
+            "topologies": list(TOPOLOGIES),
+            "fields": fields(IGBT_FIGURES, MAIN, IGBT_BOUNDS),
+        },
     }

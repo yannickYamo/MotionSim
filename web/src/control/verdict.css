@@ -1,0 +1,304 @@
+/* The verdict under the scope's head: the sentences in bone at the size of a result's opening
+   line, then the findings as hairline rows. Good is said in the pass colour with its icon and
+   its word; to improve in Bone 2, a change needed in the caution colour, each with its word.
+   No orange: the one orange press is the run's. */
+
+.lab-verdict {
+  margin: var(--s2) 0 0;
+  min-height: var(--verdict-room);
+}
+/* The room the verdict takes (two lines of words and the row of chips), kept for it from the
+   first trace on: the player and the strips under it never move when it comes. */
+.lab-verdict-slot {
+  margin: var(--s2) 0 0;
+  height: var(--verdict-room);
+}
+.scope-bar-slot {
+  margin-top: var(--s2);
+  height: 61px;
+}
+.scope {
+  --verdict-room: 96px;
+}
+@media (max-width: 700px) {
+  .scope {
+    --verdict-room: 150px;
+  }
+}
+.lab-verdict.is-stale {
+  opacity: 0.6;
+}
+/* One line: what the run says, the way to every finding, and the ways to take the scheme away. */
+.lab-verdict-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2) var(--s4);
+  flex-wrap: wrap;
+}
+.lab-verdict-said {
+  flex: 1 1 32rem;
+  min-width: 0;
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--t-body);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.lab .lab-verdict-more {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 32px;
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.lab-verdict-more .icon {
+  width: 16px;
+  height: 16px;
+}
+/* The run's state in the page's one vocabulary, ahead of the engine's sentences: the word and its
+   icon in the state's colour, the counts after it each in their own (notes in the quiet ink). */
+.lab-vword {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lab-vword .icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+.lab-vword.tone-good,
+.lab-vword-tail.tone-good {
+  color: var(--ok);
+}
+.lab-vword.tone-improve,
+.lab-vword-tail.tone-improve {
+  color: var(--caution);
+}
+.lab-vword.tone-fail {
+  color: var(--fail);
+}
+.lab-vword-tail {
+  font-weight: 500;
+}
+.lab-vword-tail.tone-quiet {
+  color: var(--ink-2);
+}
+.lab-verdict-word {
+  margin-right: var(--s2);
+  vertical-align: -3px;
+}
+.lab-verdict-line .lab-exports {
+  display: flex;
+  gap: var(--s2);
+  margin: 0;
+}
+
+/* The chips: one symbol and one figure each, in one row under the line. Passing chips are
+   quiet; the worst chip alone is filled (the row's one emphasis). Each says its state by its
+   icon's shape as well as its colour. */
+.lab-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 var(--s3) 0 var(--s2);
+  border: 1px solid var(--edge);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.lab-chip:active {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-chip:hover {
+    border-color: var(--edge);
+    background: var(--surface);
+  }
+}
+.lab-chip[aria-expanded="true"] {
+  border-color: var(--ink-2);
+  background: var(--raised);
+}
+.lab-chip .icon {
+  width: 16px;
+  height: 16px;
+}
+.lab-chip-label {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.lab-chip-figure {
+  font-weight: 600;
+}
+.lab-chip.tone-good .icon {
+  color: var(--ok);
+}
+.lab-chip.tone-note .icon {
+  color: var(--ink-3);
+}
+.lab-chip.tone-improve {
+  border-color: color-mix(in oklab, var(--caution) 55%, var(--line));
+}
+.lab-chip.tone-improve .icon {
+  color: var(--caution);
+}
+.lab-chip.tone-fail {
+  border-color: var(--fail);
+}
+.lab-chip.tone-fail .icon {
+  color: var(--fail);
+}
+.lab-chip.is-lead.tone-improve {
+  background: color-mix(in oklab, var(--caution) 12%, var(--ground));
+}
+.lab-chip.is-lead.tone-fail {
+  background: color-mix(in oklab, var(--fail) 14%, var(--ground));
+}
+.lab-chip.is-lead .lab-chip-label {
+  color: var(--ink-2);
+}
+/* A new result fills the row in, chip by chip, once. */
+.lab-chips.is-filling li {
+  animation: lab-chip-in var(--dur-3) var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms + 60ms);
+}
+@keyframes lab-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.lab-chip-detail {
+  margin-top: var(--s2);
+}
+.lab-chip-detail .lab-findings {
+  margin-top: 0;
+}
+.lab .lab-finding-see {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 28px;
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+.lab-finding-see .icon {
+  width: 16px;
+  height: 16px;
+}
+.lab-verdict-by {
+  margin: var(--s1) 0 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.lab-findings {
+  margin: var(--s3) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.lab-finding {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr);
+  gap: var(--s1) var(--s3);
+  align-items: baseline;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-body);
+}
+.lab-finding-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  color: var(--ink-2);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.lab-finding-tag .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-finding-tag.is-good {
+  color: var(--ok);
+}
+.lab-finding-tag.is-severe {
+  color: var(--caution);
+}
+.lab-finding-tag.is-note {
+  color: var(--ink-3);
+}
+.lab-finding-body {
+  min-width: 0;
+}
+.lab-finding-said {
+  margin: 0;
+  color: var(--ink);
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
+}
+.lab-finding.is-good .lab-finding-said,
+.lab-finding.is-note .lab-finding-said {
+  color: var(--ink-2);
+}
+.lab-finding-change {
+  color: var(--ink-3);
+}
+.lab-finding-how {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin-top: var(--s1);
+}
+.lab .lab-finding-pull {
+  min-height: 32px;
+  height: auto;
+  padding: var(--s1) var(--s3);
+  font-size: var(--t-small);
+}
+.lab-finding-lever,
+.lab-finding-expect {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+
+@media (max-width: 520px) {
+  .lab-finding {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (forced-colors: active) {
+  .lab-chip,
+  .lab-chip .icon {
+    border-color: CanvasText;
+    color: CanvasText;
+  }
+  .lab-finding-tag.is-good,
+  .lab-finding-tag.is-note,
+  .lab-finding-tag.is-severe {
+    color: CanvasText;
+  }
+}

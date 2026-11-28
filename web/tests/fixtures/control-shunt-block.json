@@ -1,0 +1,227 @@
+{
+  "block": {
+    "kind": "shunt_sampling",
+    "role": "sensing",
+    "title": "Shunt sampling",
+    "summary": "Reads the phase currents through shunts in the stage, as a low-cost drive does: each reading needs its switch on long enough, and a phase that cannot be read is made from the others or held.",
+    "definition": "Reads the phase currents through resistors in the stage, where a cheap drive has no current sensor. Three or two shunts sit under the low switches: a phase is read at the carrier's peak while its low switch is on, which it is for (1 − d)·Ts, and needs that to be at least the window the amplifier and the converter take to settle and sample. Of three, the two with the longest windows are read and the third made from them; of two (phases a and b), each is read where it can be. One shunt in the DC link reads, in each of the period's two active vectors, the current of the leg alone in its state: two phases a period, the third made from them, each read where its vector stands for the window, in the period before the instant. A phase that cannot be read keeps its last reading, made to sum to nought with what was read; `held` says when. At a high modulation a low-side shunt's window closes; at a low one, and wherever two references meet, a DC-link shunt's does.",
+    "math": [
+      "\\text{low side: } (1 - d_x)\\,T_s \\ge t_w:\\quad \\hat i_x = \\mathrm{Q}[i_x + n]",
+      "\\text{DC link: } i_{dc} = \\sum_{x\\ \\text{high}} i_x,\\quad \\text{read where the vector stands} \\ge t_w",
+      "\\hat i_a + \\hat i_b + \\hat i_c = 0"
+    ],
+    "linear": false,
+    "loop": "",
+    "inputs": [
+      {
+        "name": "i_a",
+        "unit": "A",
+        "about": "phase a current, at the sampling instant",
+        "optional": false
+      },
+      {
+        "name": "i_b",
+        "unit": "A",
+        "about": "phase b current, at the sampling instant",
+        "optional": false
+      },
+      {
+        "name": "i_c",
+        "unit": "A",
+        "about": "phase c current, at the sampling instant",
+        "optional": false
+      },
+      {
+        "name": "window_a",
+        "unit": "s",
+        "about": "leg a's low switch on about the instant",
+        "optional": false
+      },
+      {
+        "name": "window_b",
+        "unit": "s",
+        "about": "leg b's low switch on about the instant",
+        "optional": false
+      },
+      {
+        "name": "window_c",
+        "unit": "s",
+        "about": "leg c's low switch on about the instant",
+        "optional": false
+      },
+      {
+        "name": "i_dc_1",
+        "unit": "A",
+        "about": "the DC link's current in the first active vector",
+        "optional": false
+      },
+      {
+        "name": "vector_1",
+        "unit": "",
+        "about": "the legs high in it",
+        "optional": false
+      },
+      {
+        "name": "span_1",
+        "unit": "s",
+        "about": "how long it stood",
+        "optional": false
+      },
+      {
+        "name": "i_dc_2",
+        "unit": "A",
+        "about": "the DC link's current in the second active vector",
+        "optional": false
+      },
+      {
+        "name": "vector_2",
+        "unit": "",
+        "about": "the legs high in it",
+        "optional": false
+      },
+      {
+        "name": "span_2",
+        "unit": "s",
+        "about": "how long it stood",
+        "optional": false
+      }
+    ],
+    "outputs": [
+      {
+        "name": "i_a",
+        "unit": "A",
+        "about": "phase a current as read"
+      },
+      {
+        "name": "i_b",
+        "unit": "A",
+        "about": "phase b current as read"
+      },
+      {
+        "name": "i_c",
+        "unit": "A",
+        "about": "phase c current as read"
+      },
+      {
+        "name": "held",
+        "unit": "",
+        "about": "1 where a phase could not be read and its last reading was kept"
+      }
+    ],
+    "params": [
+      {
+        "name": "shunts",
+        "unit": "",
+        "value": "three",
+        "default": "three",
+        "low": null,
+        "high": null,
+        "choices": ["three", "two", "single"],
+        "about": "three or two under the low switches, or one in the DC link",
+        "source": ""
+      },
+      {
+        "name": "window",
+        "unit": "s",
+        "value": 2e-6,
+        "default": 2e-6,
+        "low": 0.0,
+        "high": 0.001,
+        "choices": [],
+        "about": "the least time a shunt must carry its phase to be read",
+        "source": ""
+      },
+      {
+        "name": "fix",
+        "unit": "",
+        "value": "shift",
+        "default": "shift",
+        "low": null,
+        "high": null,
+        "choices": ["shift", "none"],
+        "about": "what the timer does where a window would be too short: shift the edges so it is not (the legs together under low-side shunts, the vectors apart under one in the DC link), or nothing",
+        "source": ""
+      },
+      {
+        "name": "noise",
+        "unit": "A",
+        "value": 0.0,
+        "default": 0.0,
+        "low": 0.0,
+        "high": 10000.0,
+        "choices": [],
+        "about": "gaussian noise on each reading, rms",
+        "source": ""
+      },
+      {
+        "name": "bits",
+        "unit": "bit",
+        "value": 0.0,
+        "default": 0.0,
+        "low": 0.0,
+        "high": 24.0,
+        "choices": [],
+        "about": "resolution of the converter; 0 for none",
+        "source": ""
+      },
+      {
+        "name": "full_scale",
+        "unit": "A",
+        "value": 100.0,
+        "default": 100.0,
+        "low": 0.001,
+        "high": 1000000.0,
+        "choices": [],
+        "about": "current at the converter's full scale, either way",
+        "source": ""
+      }
+    ]
+  },
+  "sources": [
+    {
+      "name": "inverter.window_a",
+      "unit": "s",
+      "about": "time leg a's low switch was on about this instant, the period before"
+    },
+    {
+      "name": "inverter.window_b",
+      "unit": "s",
+      "about": "time leg b's low switch was on about this instant, the period before"
+    },
+    {
+      "name": "inverter.window_c",
+      "unit": "s",
+      "about": "time leg c's low switch was on about this instant, the period before"
+    },
+    {
+      "name": "inverter.i_dc_1",
+      "unit": "A",
+      "about": "DC-link current at the end of the period's first active vector, the period before"
+    },
+    {
+      "name": "inverter.vector_1",
+      "unit": "",
+      "about": "the legs high in that vector, as a number: a 1, b 2, c 4 (0: no vector)"
+    },
+    {
+      "name": "inverter.span_1",
+      "unit": "s",
+      "about": "how long that vector stood"
+    },
+    {
+      "name": "inverter.i_dc_2",
+      "unit": "A",
+      "about": "DC-link current at the end of the period's second active vector, the period before"
+    },
+    {
+      "name": "inverter.vector_2",
+      "unit": "",
+      "about": "the legs high in that vector, as a number: a 1, b 2, c 4 (0: no vector)"
+    },
+    {
+      "name": "inverter.span_2",
+      "unit": "s",
+      "about": "how long that vector stood"
+    }
+  ]
+}

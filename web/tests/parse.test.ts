@@ -224,6 +224,19 @@ describe("the figures of a part typed in from its datasheet", () => {
     { key: "q_rr", label: "Recovery charge", required: false },
     { key: "tj_max", label: "Highest junction temperature", required: true },
   ];
+  it("says every box outside the range a power part has, in one go", () => {
+    const ranged = [
+      { key: "v_rated", label: "Voltage rating", unit: "V", required: true, low: 5, high: 20000 },
+      { key: "rds_on", label: "On-resistance", unit: "mΩ", required: true, low: 0.05, high: 20000 },
+      { key: "tj_max", label: "Highest junction temperature", required: true },
+    ];
+    const read = typedFigures({ v_rated: "100100", rds_on: "0.001", tj_max: "175" }, ranged);
+    expect(read.wrong.v_rated).toBe("Outside what a power transistor has (5 to 20000 V): check the unit.");
+    expect(read.wrong.rds_on).toBe("Outside what a power transistor has (0.05 to 20000 mΩ): check the unit.");
+    expect(Object.keys(read.wrong)).toHaveLength(2);
+    expect(typedFigures({ v_rated: "100", rds_on: "4.5", tj_max: "175" }, ranged).wrong).toEqual({});
+  });
+
   it("are read as every box on the page is, and sent as the engine reads them", () => {
     const read = typedFigures({ part_number: "X-1", v_rated: " 100 ", rds_on: "4,5", tj_max: "175" }, boxes);
     expect(read.wrong).toEqual({});

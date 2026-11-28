@@ -14,7 +14,7 @@ from motionsim.device.schema import ChipKind, Device
 from motionsim.engine.limits import ceiling, hottest
 from motionsim.engine.notes import TAKEN, Code, coded
 from motionsim.engine.solver import OperatingPoint, Result, Validity, hot_share
-from motionsim.text import written
+from motionsim.text import whole, written
 
 
 class Level(IntEnum):
@@ -159,7 +159,7 @@ def pulses_check(f_sw: float, period: float, stalled: bool, where: str = "") -> 
     return Check(
         Level.caution,
         "switching frequency",
-        f"{where}the output runs at {f_e:,.0f} Hz, and {f_sw / 1e3:g} kHz makes only {pulses:.0f} switching "
+        f"{where}the output runs at {whole(f_e)} Hz, and {f_sw / 1e3:g} kHz makes only {pulses:.0f} switching "
         f"periods in each of its periods: {FEWEST_PULSES} to {ENOUGH_PULSES} at least keep the current "
         f"sinusoidal and the losses as worked out here. Switch at {ENOUGH_PULSES * f_e / 1e3:.3g} kHz or more",
         "f_sw",
@@ -364,9 +364,9 @@ def temperature_check(device: Device, op: OperatingPoint, result: Result, juncti
         )
     if tj_max - high < junction_margin:
         return Check(
-            Level.caution, "temperature", f"{reads}, only {tj_max - high:.0f} °C below the {tj_max:g} °C rating"
+            Level.caution, "temperature", f"{reads}, only {tj_max - high:.0f} K below the {tj_max:g} °C rating"
         )
-    return Check(Level.ok, "temperature", f"{reads}, {tj_max - high:.0f} °C below its rating")
+    return Check(Level.ok, "temperature", f"{reads}, {tj_max - high:.0f} K below its {tj_max:g} °C rating")
 
 
 def current_checks(
@@ -376,6 +376,7 @@ def current_checks(
     overshoot: float,
     i_limit: float | None,
     ripple_pp: float | None = None,
+    overshoot_from: str | None = None,
 ) -> list[Check]:
     """The peak current of one device against its continuous and its pulsed rating.
 
@@ -407,18 +408,36 @@ def current_checks(
         ]
     else:
         out = [Check(Level.ok, "current", f"peak current {said} against a {r.i_nominal:g} A rating")]
-    pulsed = _pulsed_check(device, i_peak * share, half * share, shared, overshoot, i_limit)
+    pulsed = pulsed_check(device, i_peak * share, half * share, shared, overshoot, i_limit, overshoot_from)
     return out if pulsed is None else [*out, pulsed]
 
 
-def _pulsed_check(
-    device: Device, settled: float, half: float, shared: int, overshoot: float, i_limit: float | None
+def overshoot_words(overshoot: float, overshoot_from: str | None) -> str:
+    """Where the overshoot held against the pulsed rating comes from, as a clause: a
+    simulated run of the loop, or the fixed allowance where no run gives one."""
+    if overshoot_from:
+        return f"the {written(100.0 * overshoot, 2)}% the current overshot by in {overshoot_from}"
+    return (
+        f"the {overshoot:.0%} a current loop commonly overshoots by on a step in torque (a fixed allowance: no "
+        "simulated run of this drive's loop gives its own; the control lab's torque step does)"
+    )
+
+
+def pulsed_check(
+    device: Device,
+    settled: float,
+    half: float,
+    shared: int,
+    overshoot: float,
+    i_limit: float | None,
+    overshoot_from: str | None = None,
 ) -> Check | None:
     """The current one device carries against its pulsed rating, where it has one: the
     settled current, the most the drive's limit lets through, or, with no limit known, the
     settled current with what a current loop overshoots by. settled is the fundamental's peak
     in one device, and half is half the switching ripple that rides on it, peak to peak: nought
-    where none is known. None where nothing is to be said."""
+    where none is known. overshoot_from names the run the overshoot was read from, or is None
+    for the fixed allowance. None where nothing is to be said."""
     r = device.ratings
     if r.i_pulsed is None:
         return None
@@ -456,8 +475,8 @@ def _pulsed_check(
             Level.caution,
             "current",
             f"peak current {said} is within its pulsed rating of {r.i_pulsed:g} A once "
-            f"settled, with less room than the {overshoot:.0%} a current loop commonly overshoots by on a "
-            "step in torque, and no current limit is known for the drive. Hold the drive's limit under "
+            f"settled, with less room than {overshoot_words(overshoot, overshoot_from)}, and no current limit "
+            "is known for the drive. Hold the drive's limit under "
             f"{written((r.i_pulsed - half) / (1 + overshoot), 3)} A a device"
             + (", the ripple apart" if half > 0 else ""),
         )
@@ -560,6 +579,7 @@ def check(
     overshoot: float = OVERSHOOT,
     i_limit: float | None = None,
     ripple_pp: float | None = None,
+    overshoot_from: str | None = None,
 ) -> list[Check]:
     """Checks on one solved operating point.
 
@@ -567,6 +587,8 @@ def check(
     junction_margin: smallest comfortable gap to the junction temperature rating, in K.
     overshoot: how far a current loop is taken to pass its reference on a step, as a share.
         Used only where no limit is given.
+    overshoot_from: the simulated run the overshoot was read from, said in the check; None
+        where it is the fixed allowance, OVERSHOOT, which the check then says it is.
     i_limit: the most the drive lets a switch position carry, A peak, where it is known.
     ripple_pp: the ripple on the current at the switching frequency, A peak to peak, where it is
         known: half of it is added to the peak held against the current ratings.
@@ -575,7 +597,7 @@ def check(
         *voltage_checks(device, op, result, voltage_share),
         temperature_check(device, op, result, junction_margin),
         *speed_checks(device, op),
-        *current_checks(device, op, i_peak, overshoot, i_limit, ripple_pp),
+        *current_checks(device, op, i_peak, overshoot, i_limit, ripple_pp, overshoot_from),
         *protection_checks(device),
         data_check(result),
         *taken_checks(result),

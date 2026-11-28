@@ -294,7 +294,7 @@ def _lead(best: Candidate, level: list[Candidate]) -> list[str]:
         )
         lines.append(f"{name} has the lowest power-stage loss among {among}: {best.loss:.1f} W.")
     if best.level is guard.Level.caution:
-        lines.append(f"{name} passes with cautions, listed below; read them before relying on it.")
+        lines.append(f"{name} passes, with findings listed below; read them before relying on it.")
     if best.level is guard.Level.undecided:
         lines.append(
             f"{name} is not decided by this data: what the datasheet leaves out could change the "

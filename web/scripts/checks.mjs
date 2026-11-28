@@ -41,8 +41,10 @@ export async function measure(page, name) {
       );
     };
     // The bar that holds Back and Next stays put while the form scrolls under it, by design.
-    // So does the bar across the top once the page has scrolled.
-    const pinned = (node) => !!(node.nodeType === 1 ? node : node.parentElement).closest(".actions, .skip, header.top");
+    // So does the bar across the top once the page has scrolled, and a tooltip stands over
+    // what it is beside for as long as the pointer rests there.
+    const pinned = (node) =>
+      !!(node.nodeType === 1 ? node : node.parentElement).closest(".actions, .skip, header.top, .tt");
     const rgb = (text) => (text.match(/[\d.]+/g) ?? []).map(Number);
     const ground = (el) => {
       for (let n = el; n; n = n.parentElement) {

@@ -3,7 +3,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { Setup } from "../src/api";
-import { constantOf, freshEntry, hasConstant, hasWiring, shownAs, shownText } from "../src/motorentry";
+import {
+  constantOf,
+  fieldsOf,
+  freshEntry,
+  hasConstant,
+  hasWiring,
+  remagnetised,
+  shownAs,
+  shownText,
+} from "../src/motorentry";
 import type { MotorEntry } from "../src/motorentry";
 
 const setup = JSON.parse(readFileSync("tests/fixtures/setup.json", "utf8")) as Setup;
@@ -125,5 +134,39 @@ describe("the figure a box shows", () => {
     expect(shownText(shownAs("pmsm", "l", line), 0.00012)).toBe("0.24");
     expect(shownText(shownAs("bldc", "l", line), "")).toBe("");
     expect(shownText(null, 40)).toBe(40);
+  });
+});
+
+describe("magnets set in or buried", () => {
+  const pmsm = setup.motors.pmsm;
+  const keys = (magnets: string) => fieldsOf("pmsm", pmsm.fields, { magnets }).map((f) => f.key);
+
+  it("asks for the two axis inductances in place of one, and one on a surface motor", () => {
+    expect(keys("surface")).toContain("l");
+    expect(keys("surface")).not.toContain("lq");
+    for (const m of ["inset", "interior"]) {
+      const k = keys(m);
+      expect(k).not.toContain("l");
+      // Where the one inductance stood, d first.
+      expect(k.slice(k.indexOf("ld"), k.indexOf("ld") + 2)).toEqual(["ld", "lq"]);
+    }
+    // Another kind's list is its own.
+    expect(fieldsOf("synrm", setup.motors.synrm.fields, { magnets: "interior" })).toBe(setup.motors.synrm.fields);
+  });
+
+  it("takes them line to line as the one inductance is: 2 mH between terminals is 1 mH a phase", () => {
+    const ld = shownAs("pmsm", "ld", line)!;
+    expect(ld.label).toBe("Inductance Ld, line to line");
+    expect(ld.engine(2)).toBeCloseTo(1e-3, 12);
+    expect(shownAs("pmsm", "lq", phase)!.engine(2)).toBeCloseTo(2e-3, 12);
+  });
+
+  it("carries the figure across when the magnets change, and back as the d axis's", () => {
+    const buried = remagnetised({ magnets: "surface", l: 7e-5, rs: 0.02 }, "interior");
+    expect(buried).toEqual({ magnets: "interior", ld: 7e-5, lq: 7e-5, rs: 0.02 });
+    const faced = remagnetised({ ...buried, lq: 1.4e-4 }, "surface");
+    expect(faced).toEqual({ magnets: "surface", l: 7e-5, rs: 0.02 });
+    // Given already, the two axes are kept through a move between inset and interior.
+    expect(remagnetised({ magnets: "inset", ld: 1, lq: 2 }, "interior")).toEqual({ magnets: "interior", ld: 1, lq: 2 });
   });
 });

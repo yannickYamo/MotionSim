@@ -1,12 +1,14 @@
 // The supply step: the bus, the design point, how the stage switches, and the cooling.
 
+import { frontEndCard } from "./frontend";
 import type { MotorKind } from "../api";
-import { eng, escape, sentence, sig } from "../format";
+import { eng, escape, num, sentence, watts } from "../format";
+import { ONE_PHASE_MOST, shaftPower } from "../follow";
 import { icon } from "../icons";
 import { sizedEarlier } from "../state";
 import type { EdgeLimit, State } from "../state";
 import { SUPPLY } from "../steps";
-import { app, driversBuiltIn, focused, needsGate, res, ui } from "../store";
+import { app, driversBuiltIn, focused, needsGate, res, ui, underTest } from "../store";
 import { offerNow } from "../actions/cooling";
 import { Refused } from "../api";
 import { field, fold, select, spinner, waiting } from "./html";
@@ -22,7 +24,7 @@ function gateFace(): string {
       ? "left empty, the gate resistors with the lowest loss within the limits are chosen for you"
       : "optional for your device";
   }
-  const drive = used.v_drive ? `, ${sig(used.v_drive, 2)} V` : "";
+  const drive = used.v_drive ? `, ${num(used.v_drive, 2)} V` : "";
   const dead = used.t_dead ? `, ${eng(used.t_dead, "s", 2)} dead time` : "";
   const whose =
     used.kind === "given"
@@ -30,19 +32,96 @@ function gateFace(): string {
       : used.kind === "datasheet"
         ? "as the datasheet measured with"
         : "chosen for you, change them here";
-  return `${sig(used.rg_on, 2)} Ω on, ${sig(used.rg_off ?? 0, 2)} Ω off${drive}${dead}: ${whose}`;
+  return `${num(used.rg_on, 2)} Ω on, ${num(used.rg_off ?? 0, 2)} Ω off${drive}${dead}: ${whose}`;
 }
 
 /** What the supply fold says on its face. */
 const supplyFace = (): string => {
   const { state } = app;
-  const kind =
-    state.supply === "battery"
-      ? "a battery, which takes braking energy back"
-      : "a power supply, which does not take braking energy back";
   const motor = state.conditions.t_motor ? `at ${state.conditions.t_motor} °C` : "at 25 °C, as its figures are given";
-  return `${kind}; motor ${motor}`;
+  const mains = state.supply === "mains" ? `; mains at ${state.conditions.mains_f || 50} Hz` : "";
+  return `motor ${motor}${mains}`;
 };
+
+/** What each kind of supply does with braking energy, under its list. */
+const SUPPLY_HELP: Record<string, string> = {
+  "one-way": "It does not take braking energy back.",
+  battery: "It takes braking energy back.",
+  mains: "A wall socket or a three-phase line. A PFC stage turns it into the DC link: recommended below.",
+};
+
+/** The kinds of supply, each one press: the mains is not hidden in a list. */
+const SUPPLY_KINDS: [string, string][] = [
+  ["one-way", "Power supply"],
+  ["battery", "Battery"],
+  ["mains", "AC mains"],
+];
+
+/** What the stage runs from, as three choices side by side. */
+function supplyKind(): string {
+  const { supply } = app.state;
+  const option = ([value, label]: [string, string]) =>
+    `<label><input type="radio" name="supply-kind" value="${value}" data-bind="supply"` +
+    `${value === supply ? " checked" : ""}/><span>${escape(label)}</span></label>`;
+  return (
+    `<fieldset class="supply-kind" aria-describedby="supply-kind-h"><legend>Supply</legend>` +
+    `<div class="segmented radios">${SUPPLY_KINDS.map(option).join("")}</div>` +
+    `<p class="help" id="supply-kind-h">${escape(SUPPLY_HELP[supply] ?? "")}</p></fieldset>`
+  );
+}
+
+/** A supply above the part's rating: one press puts it where this part starts. */
+function suitPress(c: Conditions): string {
+  const part = app.setup.devices.find((d) => d.id === underTest());
+  const found = res.suggestion;
+  const suits = found && found.id === underTest() ? found.data.v_supply : null;
+  if (!part?.v_max || !suits || Number(c.v_dc) <= part.v_max) return "";
+  return (
+    `<div class="fe-lever supply-suit" role="status"><p>This part is rated ${escape(num(part.v_max))} V. ` +
+    `Drives of its class run from about ${escape(num(suits))} V.</p>` +
+    `<button type="button" class="ghost" data-suit-supply>${icon("check")}Use ${escape(num(suits))} V</button></div>`
+  );
+}
+
+/** What the stage runs from, and its voltage: a DC supply's own, or the mains' with the
+ *  link's voltage following from the stage in front of it. */
+function supplyFields(c: Conditions): string {
+  const { state } = app;
+  const kind = supplyKind();
+  if (state.supply !== "mains")
+    return `${kind}${field("conditions.v_dc", "Supply voltage", c.v_dc, "V")}${suitPress(c)}`;
+  const power = shaftPower(state);
+  // One phase chosen for a point over what one phase gives: said where it is chosen.
+  const over =
+    c.mains_phases === "1" && power > ONE_PHASE_MOST
+      ? `This point is ${watts(power)} at the shaft: one phase gives about ${watts(ONE_PHASE_MOST)}.`
+      : "";
+  const phases = select(
+    "conditions.mains_phases",
+    "Phases",
+    c.mains_phases,
+    [
+      ["1", "One phase"],
+      ["3", "Three phases"],
+    ],
+    over,
+  );
+  const volts = field(
+    "conditions.mains_v",
+    "Mains voltage",
+    c.mains_v,
+    "V",
+    c.mains_phases === "3" ? "Line to line." : "",
+  );
+  const link = field(
+    "conditions.v_dc",
+    "DC-link voltage",
+    c.v_dc,
+    "V",
+    c.link_own ? "As you typed it." : "What the front end holds. Type another to hold that.",
+  );
+  return `${kind}${volts}${phases}${link}`;
+}
 
 /** How the stage is modulated: the motor's own scheme where it has one, else the user's pick. */
 function schemeField(c: Conditions, m: MotorKind): string {
@@ -177,7 +256,7 @@ function coolingOffer(): string {
   if (answer.value === null) {
     return `<div class="cooling-offer"><p class="help">${escape(sentence(answer.why ?? ""))}.</p></div>`;
   }
-  const v = sig(answer.value, 2);
+  const v = num(answer.value, 2);
   const said =
     answer.figure === "rth_sink"
       ? `To hold the heatsink at ${answer.held ?? 60} °C at this design point, it needs ${v} K/W or less.`
@@ -271,16 +350,7 @@ function mountingFold(c: Conditions): string {
 
 /** What the supply does with braking energy, and how warm the winding is. */
 function settingsFold(c: Conditions): string {
-  const supply = select(
-    "supply",
-    "Supply",
-    app.state.supply,
-    [
-      ["one-way", "Power supply"],
-      ["battery", "Battery"],
-    ],
-    "A battery takes braking energy back. A power supply does not.",
-  );
+  const mains = app.state.supply === "mains" ? field("conditions.mains_f", "Mains frequency", c.mains_f, "Hz") : "";
   const motor = field(
     "conditions.t_motor",
     "Motor temperature",
@@ -289,8 +359,9 @@ function settingsFold(c: Conditions): string {
     "Empty: the motor's figures as given, at 25 °C. " +
       "A warm motor (80 to 120) needs more current for the same torque.",
   );
-  const body = `<div class="fields">${supply}${motor}</div>`;
-  return fold("more-settings", "adjustments", "Supply kind and motor temperature", supplyFace(), body, ["t_motor"]);
+  const body = `<div class="fields">${motor}${mains}</div>`;
+  const title = mains ? "Motor temperature and mains frequency" : "Motor temperature";
+  return fold("more-settings", "adjustments", title, supplyFace(), body, ["t_motor"]);
 }
 
 /** The dead time alone, for a module that drives its own gates. */
@@ -352,8 +423,9 @@ export function supplyPanel(): string {
   const point = field("conditions.rpm", "Speed", c.rpm, "rpm") + field("conditions.torque", "Torque", c.torque, "N·m");
   return (
     `<h2 tabindex="-1">Supply and design point</h2>${lead}\n` +
-    `<div class="fields">${field("conditions.v_dc", "Supply voltage", c.v_dc, "V")}<div></div>\n` +
-    `${point}</div>\n` +
+    `<div class="fields">${supplyFields(c)}</div>\n` +
+    `${frontEndCard()}\n` +
+    `<div class="fields">${point}</div>\n` +
     `<h3>Switching</h3><div class="fields">${switchingFields(c, m)}</div>\n` +
     `<h3>Cooling</h3><div class="fields">${coolingKind(c)}\n` +
     `${coolingFields(c)}\n` +

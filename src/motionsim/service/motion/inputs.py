@@ -18,7 +18,7 @@ from motionsim.service.answers import reason_of
 from motionsim.service.validate import MOST_SPEED, MOST_TORQUE, _conditions, _count, _motor, _number
 from motionsim.service.verdict import _gate
 from motionsim.service.workspace import Workspace
-from motionsim.text import rounded, written
+from motionsim.text import rounded, whole, written
 
 if TYPE_CHECKING:
     from motionsim.starting import Start
@@ -75,11 +75,11 @@ def _within_any_motor(instants, field: str, t0: float = 0.0) -> None:
     for t, rpm, torque in instants:
         if abs(rpm) > MOST_SPEED or abs(torque) > MOST_TORQUE:
             asked, most = (
-                (f"{rpm:.3g} rpm", f"{MOST_SPEED:,.0f} rpm")
+                (f"{rpm:.3g} rpm", f"{whole(MOST_SPEED)} rpm")
                 if abs(rpm) > MOST_SPEED
                 else (
                     f"{torque:.3g} N·m",
-                    f"{MOST_TORQUE:,.0f} N·m",
+                    f"{whole(MOST_TORQUE)} N·m",
                 )
             )
             raise Refusal(

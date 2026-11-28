@@ -328,7 +328,7 @@ def test_what_each_call_used_is_counted_and_a_budget_stops_the_next(chat) -> Non
     chat["says"] = "VDS 100 V"
     reader.transcribe(b"png", ledger=ledger)
     assert (ledger.calls, ledger.input_tokens, ledger.output_tokens) == (2, 2400, 600)
-    assert "2 model calls" in ledger.summary() and "2,400" in ledger.summary()
+    assert "2 model calls" in ledger.summary() and "2\u202f400" in ledger.summary()
     with pytest.raises(provider.ReaderFailed, match="budget of 2 model calls"):
         reader.transcribe(b"png", ledger=ledger)
     assert len(chat["asked"]) == 2  # the third was never sent

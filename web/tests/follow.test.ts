@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Setup, Suggest } from "../src/api";
-import { putBack, settle } from "../src/follow";
+import { leaveMains, offTheLink, ontoMains, putBack, settle, shaftPower, usualMains } from "../src/follow";
 import { initial } from "../src/state";
 import type { State } from "../src/state";
 import { noteAt, setPath } from "../src/boxes";
@@ -226,5 +226,86 @@ describe("a made-up part's application", () => {
     state.supply = "battery";
     settle(state, setup, low);
     expect(state.supply).toBe("battery");
+  });
+});
+
+describe("a part put under test on a mains it cannot stand", () => {
+  it("goes back to the supply it runs from, with the move said; a part that stands the link stays", () => {
+    const state = initial(setup);
+    state.supply = "mains";
+    state.supplyOwn = true;
+    state.conditions.link_own = "1";
+    // 48 V suits it: far under the 325 V crest of a 230 V mains.
+    const change = leaveMains(state, { ...low, v_supply: 48 });
+    expect(change).toMatchObject({ path: "supply", from: "Mains", to: "Power supply" });
+    expect([state.supply, state.supplyOwn, state.conditions.link_own]).toEqual(["one-way", false, ""]);
+    const high = initial(setup);
+    high.supply = "mains";
+    expect(leaveMains(high, { ...low, v_supply: 400 })).toBeNull();
+    expect(high.supply).toBe("mains");
+    // A lower mains the part can stand is left alone too, and a DC supply is never touched.
+    high.conditions.mains_v = "24";
+    expect(leaveMains(high, { ...low, v_supply: 48 })).toBeNull();
+    expect(leaveMains(initial(setup), { ...low, v_supply: 48 })).toBeNull();
+  });
+  it("takes the made-up part's own supply where it names one", () => {
+    const state = initial(setup);
+    state.supply = "mains";
+    const battery = {
+      ...low,
+      v_supply: 36,
+      application: { id: "tool", label: "Power tool", start: "sensor", supply: "battery" },
+    };
+    expect(leaveMains(state, battery as never)?.to).toBe("Battery");
+    expect(state.supply).toBe("battery");
+  });
+});
+
+describe("the link's voltage on the mains", () => {
+  it("is the front end's to hold through a settle, and the part's own start again once off the mains", () => {
+    const state = initial(setup);
+    state.supply = "mains";
+    state.conditions.v_dc = 390;
+    settle(state, setup, low);
+    expect(state.conditions.v_dc).toBe(390);
+    // A figure held for a kind of motor while on the mains is let go with it.
+    state.pointOf = { [state.kind]: { v_dc: 390, rpm: 900 } };
+    state.supply = "one-way";
+    offTheLink(state);
+    settle(state, setup, low);
+    expect(state.conditions.v_dc).toBe(low.motors[state.kind].start.v_dc);
+    expect(state.pointOf[state.kind]).toEqual({ rpm: 900 });
+  });
+});
+
+describe("a drive put on the mains", () => {
+  it("starts on three phases where its point is over what one phase gives", () => {
+    const state = initial(setup);
+    // 4500 rpm at 156 N·m: 73.5 kW.
+    Object.assign(state.conditions, { rpm: 4500, torque: 156 });
+    expect(shaftPower(state)).toBeCloseTo(73513, -1);
+    expect(ontoMains(state)).toBe(true);
+    expect(state.conditions).toMatchObject({ mains_phases: "3", mains_v: "400" });
+    // A small drive stays on one phase, and so does a mains voltage of the user's own.
+    const small = initial(setup);
+    Object.assign(small.conditions, { rpm: 4200, torque: 2.05 });
+    expect(ontoMains(small)).toBe(false);
+    expect(small.conditions).toMatchObject({ mains_phases: "1", mains_v: "230" });
+    const own = initial(setup);
+    Object.assign(own.conditions, { rpm: 4500, torque: 156, mains_v: "277" });
+    expect(ontoMains(own)).toBe(false);
+  });
+
+  it("takes a usual voltage to the usual one of the other count of phases, and keeps another", () => {
+    const state = initial(setup);
+    state.conditions.mains_phases = "3";
+    usualMains(state);
+    expect(state.conditions.mains_v).toBe("400");
+    state.conditions.mains_phases = "1";
+    usualMains(state);
+    expect(state.conditions.mains_v).toBe("230");
+    state.conditions.mains_v = "480";
+    usualMains(state);
+    expect(state.conditions.mains_v).toBe("480");
   });
 });

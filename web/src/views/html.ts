@@ -3,7 +3,7 @@
 import { NotWorkedOut, Refused } from "../api";
 import type { Check } from "../api";
 import type { Change } from "../follow";
-import { eng, escape, sentence, sig } from "../format";
+import { eng, escape, num, sentence, tied } from "../format";
 import { icon } from "../icons";
 import { signNote } from "../limits";
 import { shownAs, shownText } from "../motorentry";
@@ -11,6 +11,8 @@ import { numberOr } from "../parse";
 import { since as sinceTag } from "../elapsed";
 import { noteAt } from "../boxes";
 import { app, res, ui, underTest } from "../store";
+import { verdictMarkup, verdictWords } from "../verdictwords";
+import type { VerdictWords } from "../verdictwords";
 
 export const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 /** The element a selector names, where the page has one. */
@@ -59,12 +61,12 @@ export function coolingWords(): string {
   const under = given ? `, ${k.rth_case_sink} K/W from each case to it` : pad;
   // What the user typed is text until the engine has taken it: it is written out as text.
   if (k.cooling === "heatsink")
-    return escape(`a ${k.rth_sink || "?"} K/W heatsink in ${sig(k.t_ambient)} °C air${under}`);
-  if (k.cooling === "none") return `no heatsink, in ${sig(k.t_ambient)} °C air`;
+    return escape(`a ${k.rth_sink || "?"} K/W heatsink in ${num(k.t_ambient)} °C air${under}`);
+  if (k.cooling === "none") return `no heatsink, in ${num(k.t_ambient)} °C air`;
   if (k.cooling === "board") {
-    return escape(`no heatsink, on a ${k.board_area || "?"} cm² board in ${sig(k.t_ambient)} °C air`);
+    return escape(`no heatsink, on a ${k.board_area || "?"} cm² board in ${num(k.t_ambient)} °C air`);
   }
-  return escape(`a ${sig(k.t_sink)} °C heatsink${under}`);
+  return escape(`a ${num(k.t_sink)} °C heatsink${under}`);
 }
 
 /** A figure typed in a base unit, said the way it is spoken: 0.00833 H is "8.33 mH". Only
@@ -229,8 +231,8 @@ function overRating(path: string, volts: number | null): string | null {
   const part = app.setup.devices.find((d) => d.id === underTest());
   if (!part?.v_max || volts <= part.v_max) return null;
   return (
-    `${escape(sig(volts))} V is above this part's ` +
-    `<b class="caution-figure">${escape(sig(part.v_max))} V</b> rating.`
+    `${escape(num(volts))} V is above this part's ` +
+    `<b class="caution-figure">${escape(num(part.v_max))} V</b> rating.`
   );
 }
 
@@ -238,15 +240,16 @@ function overRating(path: string, volts: number | null): string | null {
 export const levelClass = (level: string): string =>
   ["ok", "caution", "undecided", "fail"].includes(level) ? level : "caution";
 
-export const VERDICT_ICON: Record<string, string> = { ok: "circle-check", fail: "circle-x", undecided: "help-circle" };
-const VERDICT_WORD: Record<string, string> = { ok: "Passes", fail: "Ruled out", undecided: "Undecided on this data" };
+/** A verdict known only by its level, in the one vocabulary (verdictwords.ts): a caution with
+ *  nothing counted is a result that asks for a change. A part's verdict is said from its
+ *  counts instead (verdictline.ts, wordsOf). */
+const byLevel = (level: string) => verdictWords({ level, needsChange: level === "caution" });
 
 /** The verdict as a word, as it is written and as it is said. */
-export const verdictWord = (level: string): string => VERDICT_WORD[level] ?? "Cautions";
+export const verdictWord = (level: string): string => byLevel(level).text;
 
-export const verdict = (level: string, words = verdictWord(level)) =>
-  `<span class="verdict ${levelClass(level)}">${icon(VERDICT_ICON[level] ?? "alert-triangle")}` +
-  `${escape(words)}</span>`;
+/** The verdict as its icon and word, by level; or, given its words, those. */
+export const verdict = (level: string, words?: VerdictWords) => verdictMarkup(words ?? byLevel(level));
 
 const CHECK_ICON: Record<string, string> = { ok: "check", fail: "x", undecided: "help-circle" };
 
@@ -267,6 +270,78 @@ export function checkList(checks: Check[]): string {
     `<li class="${levelClass(c.level)}">${icon(CHECK_ICON[c.level] ?? "alert-triangle")}` +
     `<span><b>${escape(sentence(c.topic))}.</b> ${escape(sentence(c.message))}${toFigure(c)}</span></li>`;
   return `<ul class="checks">${checks.map(row).join("")}</ul>`;
+}
+
+/** A group as one row: its name and the figure to remember, with the lines behind it one press
+ *  away, in place, under a +. `lines` are markup already escaped. */
+export function recRow(id: string, name: string, value: string, lines: string[], cls = ""): string {
+  const list = lines.length ? `<ul class="plain small">${lines.map((l) => `<li>${l}</li>`).join("")}</ul>` : "";
+  return (
+    `<details class="rec${cls}" data-fold="${escape(id)}"><summary><h4>${name}` +
+    `<span class="rec-value">${value}</span></h4><span class="plus" aria-hidden="true">${icon("plus")}</span>` +
+    `</summary>${list}</details>`
+  );
+}
+
+/** A block drawn as a heading over a list, folded into one row under its heading. */
+export function foldBlock(id: string, block: string, value = ""): string {
+  const m = /^<h4>([\s\S]*?)<\/h4><ul class="plain small">([\s\S]*)<\/ul>$/.exec(block);
+  if (!m) return block;
+  const items = m[2]
+    .split(/(?=<li>)/)
+    .map((l) => l.replace(/^<li>|<\/li>$/g, ""))
+    .filter(Boolean);
+  return recRow(id, m[1], value, items);
+}
+
+/** Topics that say what a result rests on (the data, the model) rather than what to change in
+ *  the design: they are notes, read after the design actions. */
+export const NOTE_TOPICS = new Set(["data", "solver", "edges"]);
+
+/** Whether a check asks for a change to the design, or to a figure given: every fail, and every
+ *  caution or open question that is not about the data a result rests on. */
+export const isAction = (c: Check): boolean => c.level === "fail" || (c.level !== "ok" && !NOTE_TOPICS.has(c.topic));
+
+/** A finding's message as one line and the rest: the line ends at its first colon or semicolon,
+ *  where the engine's sentences turn from the number and its limit to the reason and the fix. */
+export function splitFinding(message: string): [string, string] {
+  const at = message.search(/[:;] /);
+  if (at < 16 || at > 140) return [message, ""];
+  return [message.slice(0, at), message.slice(at + 2)];
+}
+
+/** Findings one line each: the topic, the number against its limit, and, one press away in
+ *  place, why and what to change. `id` keeps an opened line open through a redraw. */
+export function findingList(checks: Check[], id: string): string {
+  const row = (c: Check, k: number) => {
+    const [line, rest] = splitFinding(sentence(c.message));
+    const mark = icon(CHECK_ICON[c.level] ?? "alert-triangle");
+    const head = `${mark}<span class="f-line"><b>${escape(sentence(c.topic))}</b> ${escape(line)}</span>`;
+    const more = rest || c.field;
+    if (!more) return `<li class="finding ${levelClass(c.level)}"><div class="f-head">${head}</div></li>`;
+    const body = `<p>${rest ? `${escape(sentence(rest))}.` : ""}${toFigure(c)}</p>`;
+    const opens = rest ? "Why, and how to fix it" : "How to fix it";
+    return (
+      `<li class="finding ${levelClass(c.level)}"><details data-fold="${escape(`${id}-${k}`)}">` +
+      `<summary class="f-head">${head}<span class="f-more">${opens}</span></summary>` +
+      `${body}</details></li>`
+    );
+  };
+  return `<ul class="findings">${checks.map(row).join("")}</ul>`;
+}
+
+/** The one-line why of a figure, on hover and on focus (the WAI-ARIA tooltip pattern): the
+ *  figure stays one value and its unit, and the reason is one move away, never a paragraph. */
+export function tip(label: string, why: string): string {
+  if (!why) return escape(label);
+  // Named by what it says, so a redraw keeps the same id and the same text.
+  let h = 0;
+  for (const ch of label + why) h = (h * 31 + ch.charCodeAt(0)) | 0;
+  const id = `tip-${(h >>> 0).toString(36)}`;
+  return (
+    `<span class="has-tip" tabindex="0" aria-describedby="${id}">${escape(label)}` +
+    `<span role="tooltip" id="${id}" class="tip">${escape(why)}</span></span>`
+  );
 }
 
 export function refusal(r: Refused): string {
@@ -327,12 +402,15 @@ export function asking(r: Refused): string {
   return `<div class="asking" role="status">${icon("info-circle")}<div>${said}</div></div>`;
 }
 
-export function readout(label: string, value: string, note = "", tone = ""): string {
-  // A figure is set large; a name or a phrase is set smaller and may wrap.
+/** A figure as the page shows it: its name, the value with its unit, at most one short line
+ *  under it, and `why`, the line that explains it, on hover and on focus of the name. */
+export function readout(label: string, value: string, note = "", tone = "", why = "", delta = ""): string {
+  // A figure is set large; a name or a phrase is set smaller and may wrap. A what-if's
+  // difference from the result pinned as A sits beside it.
   const words = /^[^\d–]/.test(value) ? " words" : "";
-  const figure = `<span class="figure${words}" data-roll>${escape(value)}</span>`;
-  const under = note ? `<span class="note">${escape(note)}</span>` : "";
-  return `<div class="readout ${tone}"><dt>${escape(label)}</dt><dd>${figure}${under}</dd></div>`;
+  const figure = `<span class="figure${words}" data-roll>${escape(tied(value))}</span>${delta}`;
+  const under = note ? `<span class="note">${escape(tied(note))}</span>` : "";
+  return `<div class="readout ${tone}"><dt>${tip(label, why)}</dt><dd>${figure}${under}</dd></div>`;
 }
 
 /** How a part is packaged, in the words a builder would use. */

@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<IPC-2581 revision="C" xmlns="http://webstds.ipc.org/2581">
+  <!-- A made-up board for MotionSim's tests: no real product, no real part. -->
+  <Content roleRef="Owner">
+    <DictionaryStandard units="MILLIMETER">
+      <EntryStandard id="PAD_1"><RectCenter width="10" height="8"/></EntryStandard>
+      <EntryStandard id="PAD_2"><RectCenter width="1.2" height="3"/></EntryStandard>
+      <EntryStandard id="PAD_3"><RectCenter width="1.8" height="1.2"/></EntryStandard>
+      <EntryStandard id="PAD_4"><RectCenter width="2.6" height="1.2"/></EntryStandard>
+      <EntryStandard id="PAD_5"><RectCenter width="1.5" height="0.6"/></EntryStandard>
+      <EntryStandard id="PAD_6"><RectCenter width="0.8" height="0.9"/></EntryStandard>
+      <EntryStandard id="PAD_7"><RectCenter width="0.9" height="0.8"/></EntryStandard>
+      <EntryStandard id="PAD_8"><RectCenter width="3" height="3"/></EntryStandard>
+      <EntryStandard id="PAD_9"><RectCenter width="1.2" height="1"/></EntryStandard>
+    </DictionaryStandard>
+    <DictionaryLineDesc units="MILLIMETER">
+      <EntryLineDesc id="LINE_1"><LineDesc lineEnd="ROUND" lineWidth="2"/></EntryLineDesc>
+      <EntryLineDesc id="LINE_2"><LineDesc lineEnd="ROUND" lineWidth="0.3"/></EntryLineDesc>
+      <EntryLineDesc id="LINE_3"><LineDesc lineEnd="ROUND" lineWidth="0.5"/></EntryLineDesc>
+    </DictionaryLineDesc>
+  </Content>
+  <Bom name="made_up"><BomHeader assembly="made_up" revision="1"/>
+    <BomItem OEMDesignNumberRef="made_up:TO-263-2" quantity="1" category="ELECTRICAL"><RefDes name="Q1" packageRef="made_up:TO-263-2" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="made-up 100 V MOSFET"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:TO-263-2" quantity="1" category="ELECTRICAL"><RefDes name="Q2" packageRef="made_up:TO-263-2" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="made-up 100 V MOSFET"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:C_1206" quantity="1" category="ELECTRICAL"><RefDes name="C1" packageRef="made_up:C_1206" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="100n"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:C_1210" quantity="1" category="ELECTRICAL"><RefDes name="C2" packageRef="made_up:C_1210" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="4.7uF/100V"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:SOIC-8" quantity="1" category="ELECTRICAL"><RefDes name="U1" packageRef="made_up:SOIC-8" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="made-up half-bridge driver"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:R_0603" quantity="1" category="ELECTRICAL"><RefDes name="R1" packageRef="made_up:R_0603" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="10R"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:R_0603" quantity="1" category="ELECTRICAL"><RefDes name="R2" packageRef="made_up:R_0603" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="10R"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:R_0603" quantity="1" category="ELECTRICAL"><RefDes name="R3" packageRef="made_up:R_0603" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="10k"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:C_0603" quantity="1" category="ELECTRICAL"><RefDes name="C3" packageRef="made_up:C_0603" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="100n"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:Terminal_3" quantity="1" category="ELECTRICAL"><RefDes name="J1" packageRef="made_up:Terminal_3" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="made-up 3-pin terminal"/></Characteristics></BomItem>
+    <BomItem OEMDesignNumberRef="made_up:Header_3" quantity="1" category="ELECTRICAL"><RefDes name="J2" packageRef="made_up:Header_3" populate="true" layerRef="TOP"/>
+      <Characteristics category="ELECTRICAL"><Textual definitionSource="made_up" textualCharacteristicName="Value" textualCharacteristicValue="made-up 3-pin header"/></Characteristics></BomItem>
+  </Bom>
+  <Ecad name="made_up">
+    <CadHeader units="MILLIMETER"/>
+    <CadData>
+      <Layer name="TOP" layerFunction="CONDUCTOR" side="TOP" polarity="POSITIVE"/>
+      <Layer name="CORE" layerFunction="DIELCORE" side="INTERNAL" polarity="POSITIVE"/>
+      <Layer name="BOTTOM" layerFunction="CONDUCTOR" side="BOTTOM" polarity="POSITIVE"/>
+      <Layer name="DRILL_TOP_BOTTOM" layerFunction="DRILL" side="ALL" polarity="POSITIVE"><Span fromLayer="TOP" toLayer="BOTTOM"/></Layer>
+      <Stackup name="made_up" overallThickness="1.65" tolPlus="0" tolMinus="0" whereMeasured="METAL">
+        <StackupGroup name="all" thickness="1.6" tolPlus="0" tolMinus="0">
+          <StackupLayer layerOrGroupRef="TOP" thickness="0.07" tolPlus="0" tolMinus="0" sequence="1"/>
+          <StackupLayer layerOrGroupRef="CORE" thickness="1.51" tolPlus="0" tolMinus="0" sequence="2"/>
+          <StackupLayer layerOrGroupRef="BOTTOM" thickness="0.07" tolPlus="0" tolMinus="0" sequence="3"/>
+        </StackupGroup>
+      </Stackup>
+      <Step name="made_up">
+        <Component refDes="Q1" packageRef="made_up:TO-263-2" layerRef="TOP" part="made-up 100 V MOSFET" mountType="SMT"><Xform rotation="0"/><Location x="20" y="15"/></Component>
+        <Component refDes="Q2" packageRef="made_up:TO-263-2" layerRef="TOP" part="made-up 100 V MOSFET" mountType="SMT"><Xform rotation="0"/><Location x="20" y="38"/></Component>
+        <Component refDes="C1" packageRef="made_up:C_1206" layerRef="TOP" part="100n" mountType="SMT"><Xform rotation="0"/><Location x="32" y="19.6"/></Component>
+        <Component refDes="C2" packageRef="made_up:C_1210" layerRef="TOP" part="4.7uF/100V" mountType="SMT"><Xform rotation="0"/><Location x="36" y="19.6"/></Component>
+        <Component refDes="U1" packageRef="made_up:SOIC-8" layerRef="TOP" part="made-up half-bridge driver" mountType="SMT"><Xform rotation="0"/><Location x="8" y="30"/></Component>
+        <Component refDes="R1" packageRef="made_up:R_0603" layerRef="TOP" part="10R" mountType="SMT"><Xform rotation="0"/><Location x="14" y="27"/></Component>
+        <Component refDes="R2" packageRef="made_up:R_0603" layerRef="TOP" part="10R" mountType="SMT"><Xform rotation="0"/><Location x="14" y="44"/></Component>
+        <Component refDes="R3" packageRef="made_up:R_0603" layerRef="TOP" part="10k" mountType="SMT"><Xform rotation="0"/><Location x="18.3" y="46"/></Component>
+        <Component refDes="C3" packageRef="made_up:C_0603" layerRef="TOP" part="100n" mountType="SMT"><Xform rotation="0"/><Location x="10.7" y="25.2"/></Component>
+        <Component refDes="J1" packageRef="made_up:Terminal_3" layerRef="TOP" part="made-up 3-pin terminal" mountType="SMT"><Xform rotation="0"/><Location x="44" y="30"/></Component>
+        <Component refDes="J2" packageRef="made_up:Header_3" layerRef="TOP" part="made-up 3-pin header" mountType="SMT"><Xform rotation="0"/><Location x="1" y="29"/></Component>
+        <LogicalNet name="GH"><PinRef componentRef="Q1" pin="1"/><PinRef componentRef="R1" pin="2"/></LogicalNet>
+        <LogicalNet name="GL"><PinRef componentRef="Q2" pin="1"/><PinRef componentRef="R2" pin="2"/><PinRef componentRef="R3" pin="1"/></LogicalNet>
+        <LogicalNet name="GND"><PinRef componentRef="Q2" pin="3"/><PinRef componentRef="C1" pin="2"/><PinRef componentRef="C2" pin="2"/><PinRef componentRef="U1" pin="4"/><PinRef componentRef="R3" pin="2"/><PinRef componentRef="J1" pin="3"/></LogicalNet>
+        <LogicalNet name="HIN"><PinRef componentRef="U1" pin="2"/><PinRef componentRef="J2" pin="2"/></LogicalNet>
+        <LogicalNet name="HO"><PinRef componentRef="U1" pin="7"/><PinRef componentRef="R1" pin="1"/></LogicalNet>
+        <LogicalNet name="LIN"><PinRef componentRef="U1" pin="3"/><PinRef componentRef="J2" pin="3"/></LogicalNet>
+        <LogicalNet name="LO"><PinRef componentRef="U1" pin="5"/><PinRef componentRef="R2" pin="1"/></LogicalNet>
+        <LogicalNet name="SW"><PinRef componentRef="Q1" pin="3"/><PinRef componentRef="Q2" pin="2"/><PinRef componentRef="U1" pin="6"/><PinRef componentRef="C3" pin="1"/><PinRef componentRef="J1" pin="2"/></LogicalNet>
+        <LogicalNet name="VB"><PinRef componentRef="U1" pin="8"/><PinRef componentRef="C3" pin="2"/></LogicalNet>
+        <LogicalNet name="VBUS"><PinRef componentRef="Q1" pin="2"/><PinRef componentRef="C1" pin="1"/><PinRef componentRef="C2" pin="1"/><PinRef componentRef="J1" pin="1"/></LogicalNet>
+        <LogicalNet name="VCC"><PinRef componentRef="U1" pin="1"/><PinRef componentRef="J2" pin="1"/></LogicalNet>
+        <LayerFeature layerRef="TOP">
+          <Set net="VBUS"><Pad><Location x="20" y="15"/><StandardPrimitiveRef id="PAD_1"/><PinRef componentRef="Q1" pin="2"/></Pad></Set>
+          <Set net="GH"><Pad><Location x="17.5" y="25"/><StandardPrimitiveRef id="PAD_2"/><PinRef componentRef="Q1" pin="1"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="22.5" y="25"/><StandardPrimitiveRef id="PAD_2"/><PinRef componentRef="Q1" pin="3"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="20" y="38"/><StandardPrimitiveRef id="PAD_1"/><PinRef componentRef="Q2" pin="2"/></Pad></Set>
+          <Set net="GL"><Pad><Location x="17.5" y="48"/><StandardPrimitiveRef id="PAD_2"/><PinRef componentRef="Q2" pin="1"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="22.5" y="48"/><StandardPrimitiveRef id="PAD_2"/><PinRef componentRef="Q2" pin="3"/></Pad></Set>
+          <Set net="VBUS"><Pad><Location x="32" y="18"/><StandardPrimitiveRef id="PAD_3"/><PinRef componentRef="C1" pin="1"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="32" y="21.2"/><StandardPrimitiveRef id="PAD_3"/><PinRef componentRef="C1" pin="2"/></Pad></Set>
+          <Set net="VBUS"><Pad><Location x="36" y="18"/><StandardPrimitiveRef id="PAD_4"/><PinRef componentRef="C2" pin="1"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="36" y="21.2"/><StandardPrimitiveRef id="PAD_4"/><PinRef componentRef="C2" pin="2"/></Pad></Set>
+          <Set net="VCC"><Pad><Location x="5.3" y="28.095"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="1"/></Pad></Set>
+          <Set net="HIN"><Pad><Location x="5.3" y="29.365"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="2"/></Pad></Set>
+          <Set net="LIN"><Pad><Location x="5.3" y="30.635"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="3"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="5.3" y="31.905"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="4"/></Pad></Set>
+          <Set net="VB"><Pad><Location x="10.7" y="28.095"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="8"/></Pad></Set>
+          <Set net="HO"><Pad><Location x="10.7" y="29.365"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="7"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="10.7" y="30.635"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="6"/></Pad></Set>
+          <Set net="LO"><Pad><Location x="10.7" y="31.905"/><StandardPrimitiveRef id="PAD_5"/><PinRef componentRef="U1" pin="5"/></Pad></Set>
+          <Set net="HO"><Pad><Location x="13.2" y="27"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R1" pin="1"/></Pad></Set>
+          <Set net="GH"><Pad><Location x="14.8" y="27"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R1" pin="2"/></Pad></Set>
+          <Set net="LO"><Pad><Location x="13.2" y="44"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R2" pin="1"/></Pad></Set>
+          <Set net="GL"><Pad><Location x="14.8" y="44"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R2" pin="2"/></Pad></Set>
+          <Set net="GL"><Pad><Location x="17.5" y="46"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R3" pin="1"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="19.1" y="46"/><StandardPrimitiveRef id="PAD_6"/><PinRef componentRef="R3" pin="2"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="10.7" y="24.4"/><StandardPrimitiveRef id="PAD_7"/><PinRef componentRef="C3" pin="1"/></Pad></Set>
+          <Set net="VB"><Pad><Location x="10.7" y="26"/><StandardPrimitiveRef id="PAD_7"/><PinRef componentRef="C3" pin="2"/></Pad></Set>
+          <Set net="VBUS"><Pad><Location x="44" y="10"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="1"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="44" y="30"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="2"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="44" y="50"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="3"/></Pad></Set>
+          <Set net="VCC"><Pad><Location x="1" y="28.095"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="1"/></Pad></Set>
+          <Set net="HIN"><Pad><Location x="1" y="29.365"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="2"/></Pad></Set>
+          <Set net="LIN"><Pad><Location x="1" y="30.635"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="3"/></Pad></Set>
+          <Set net="VBUS"><Features><Line startX="36" startY="18" endX="32" endY="18"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="VBUS"><Features><Line startX="32" startY="18" endX="22" endY="18"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="36" startY="21.2" endX="32" endY="21.2"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="32" startY="21.2" endX="32" endY="48"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="32" startY="48" endX="22.5" endY="48"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="SW"><Features><Line startX="22.5" startY="25" endX="22.5" endY="35"><LineDescRef id="LINE_1"/></Line></Features></Set>
+          <Set net="HO"><Features><Line startX="10.7" startY="29.365" endX="12" endY="29.365"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="HO"><Features><Line startX="12" startY="29.365" endX="12" endY="27"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="HO"><Features><Line startX="12" startY="27" endX="13.2" endY="27"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GH"><Features><Line startX="14.8" startY="27" endX="17.5" endY="27"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GH"><Features><Line startX="17.5" startY="27" endX="17.5" endY="25"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="SW"><Features><Line startX="10.7" startY="30.635" endX="22.5" endY="30.635"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="LO"><Features><Line startX="10.7" startY="31.905" endX="12" endY="31.905"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="LO"><Features><Line startX="12" startY="31.905" endX="12" endY="44"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="LO"><Features><Line startX="12" startY="44" endX="13.2" endY="44"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GL"><Features><Line startX="14.8" startY="44" endX="17.5" endY="44"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GL"><Features><Line startX="17.5" startY="44" endX="17.5" endY="48"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="5.3" startY="31.905" endX="5.3" endY="52"><LineDescRef id="LINE_3"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="5.3" startY="52" endX="22.5" endY="52"><LineDescRef id="LINE_3"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="22.5" startY="52" endX="22.5" endY="48"><LineDescRef id="LINE_3"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="19.1" startY="46" endX="21" endY="46"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="GND"><Features><Line startX="21" startY="46" endX="22.5" endY="48"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="VB"><Features><Line startX="10.7" startY="28.095" endX="10.7" endY="26"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="VCC"><Features><Line startX="1" startY="28.095" endX="5.3" endY="28.095"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="HIN"><Features><Line startX="1" startY="29.365" endX="5.3" endY="29.365"><LineDescRef id="LINE_2"/></Line></Features></Set>
+          <Set net="LIN"><Features><Line startX="1" startY="30.635" endX="5.3" endY="30.635"><LineDescRef id="LINE_2"/></Line></Features></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="BOTTOM">
+          <Set net="VBUS"><Pad><Location x="44" y="10"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="1"/></Pad></Set>
+          <Set net="SW"><Pad><Location x="44" y="30"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="2"/></Pad></Set>
+          <Set net="GND"><Pad><Location x="44" y="50"/><StandardPrimitiveRef id="PAD_8"/><PinRef componentRef="J1" pin="3"/></Pad></Set>
+          <Set net="VCC"><Pad><Location x="1" y="28.095"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="1"/></Pad></Set>
+          <Set net="HIN"><Pad><Location x="1" y="29.365"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="2"/></Pad></Set>
+          <Set net="LIN"><Pad><Location x="1" y="30.635"/><StandardPrimitiveRef id="PAD_9"/><PinRef componentRef="J2" pin="3"/></Pad></Set>
+        </LayerFeature>
+        <LayerFeature layerRef="DRILL_TOP_BOTTOM">
+          <Set net="VBUS"><Hole name="H" diameter="1.5" platingStatus="PLATED" plusTol="0" minusTol="0" x="44" y="10"/></Set>
+          <Set net="SW"><Hole name="H" diameter="1.5" platingStatus="PLATED" plusTol="0" minusTol="0" x="44" y="30"/></Set>
+          <Set net="GND"><Hole name="H" diameter="1.5" platingStatus="PLATED" plusTol="0" minusTol="0" x="44" y="50"/></Set>
+          <Set net="VCC"><Hole name="H" diameter="0.7" platingStatus="PLATED" plusTol="0" minusTol="0" x="1" y="28.095"/></Set>
+          <Set net="HIN"><Hole name="H" diameter="0.7" platingStatus="PLATED" plusTol="0" minusTol="0" x="1" y="29.365"/></Set>
+          <Set net="LIN"><Hole name="H" diameter="0.7" platingStatus="PLATED" plusTol="0" minusTol="0" x="1" y="30.635"/></Set>
+        </LayerFeature>
+      </Step>
+    </CadData>
+  </Ecad>
+</IPC-2581>

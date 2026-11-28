@@ -19,29 +19,30 @@
 .ev h4 {
   margin: var(--s5) 0 var(--s2);
 }
-.ev-edges {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--s5);
-  margin-top: var(--s4);
-}
-/* Side by side where both edges have room to be read; one above the other on a phone. */
-@container (min-width: 640px) {
-  .ev-edges {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--s4);
-  }
-}
-/* On a desk the form gives the open event some of its width, so the edges sit side by side. */
+/* The two edges are panels, one above the other (charts/plot.css sets them side by side
+   only where each has 520 px). */
+/* On a desk the form gives the open event some of its width, so each edge is drawn wide. */
 @media (min-width: 1200px) {
   #app:has(#pwm .ev-wrap) {
     --panel: clamp(400px, 32vw, 560px);
   }
 }
+/* On a wide desk the two edges are compared without scrolling: the form yields until the
+   event has the 1104 px its pair needs side by side with each plot drawn as on a desk (520 px
+   and its panel's padding, twice, and the gap; then the stage's 24 px either side), and the
+   event is let past the measure the stage keeps its other drawings to. Under that width the
+   pair could only be had as two thumbnails, so it stays one above the other. */
+@media (min-width: 1784px) {
+  #app:has(#pwm .ev-wrap) {
+    --panel: clamp(400px, calc(100vw - var(--rail) - 1152px), 560px);
+  }
+  #stage > #pwm:has(.ev-wrap) {
+    max-width: 1440px;
+  }
+}
 .ev-edge {
   margin: 0;
   min-width: 0;
-  container-type: inline-size;
 }
 .ev-signature {
   margin: var(--s4) 0 0;
@@ -83,7 +84,7 @@
   padding: var(--s3) var(--s4);
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--r);
   font-size: 0.92rem;
   line-height: 1.5;
 }
@@ -115,51 +116,13 @@
   margin-right: var(--s1);
   vertical-align: -3px;
 }
-.ev-edge figcaption {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--s2) var(--s3);
-}
-/* Beside the edge's name: its two plots full screen, and Reset zoom, quieter than a form's buttons. */
-.ev-edge-actions,
-.ev-full-opens {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--s2);
-}
-.ev-edge-actions button.ghost {
-  min-height: 32px;
-  padding: 0 var(--s2);
-  gap: var(--s1);
-  font-size: 0.88rem;
-}
-/* The button that saves an edge's plot as an image: an icon alone, as wide as it is high. */
-.ev-edge-actions button.ev-save {
-  width: 32px;
-  padding: 0;
-  justify-content: center;
-}
-.ev-edge-actions .icon {
-  width: 18px;
-  height: 18px;
-}
-.ev-edge figcaption h4 {
-  margin: 0;
-}
-/* The edge pressed on the loss chart is told in ink, by an underline, as a selected tab is. */
-.ev-edge.is-marked figcaption h4 {
-  text-decoration: underline 2px var(--ink);
-  text-underline-offset: 6px;
-}
+/* The plot is drawn at the size it is shown (spans.ts), so its words are never scaled. */
 .ev-plot {
   margin-top: var(--s2);
   touch-action: pan-y;
   cursor: grab;
   user-select: none;
-  border-radius: var(--radius);
+  border-radius: var(--r);
 }
 .ev-plot:active {
   cursor: grabbing;
@@ -171,9 +134,9 @@
 .ev-plot .chart {
   margin-top: 0;
 }
-/* Each trace has its own colour, and its axis title and its peak take the same, so each is
-   read with its trace and needs no key: voltage in bone, current in lilac, the gate in teal,
-   power in orange, which means heat. */
+/* Each trace has its own colour, and the square by its axis title and the dot on its peak take
+   the same: voltage in bone, current in lilac, the gate in teal, power in orange, which means
+   heat. The words themselves are in ink (charts/plot.css). */
 .chart.ev-svg .series.ev-v {
   stroke: var(--ink);
 }
@@ -192,24 +155,21 @@
   stroke: var(--line-strong);
   stroke-width: 1;
 }
-.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-v {
+.chart.ev-svg :is(.ev-peak, .ev-dot).ev-v {
   fill: var(--ink);
 }
-.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-i {
+.chart.ev-svg :is(.ev-peak, .ev-dot).ev-i {
   fill: var(--trace-current);
 }
-.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-g {
+.chart.ev-svg :is(.ev-peak, .ev-dot).ev-g {
   fill: var(--trace-gate);
 }
-.chart.ev-svg :is(.axis, .ev-peak, .ev-dot, .mark-label).ev-p {
+.chart.ev-svg :is(.ev-peak, .ev-dot).ev-p {
   fill: var(--orange);
 }
 .chart.ev-svg .ev-dot {
   stroke: var(--surface);
   stroke-width: 1.5;
-}
-.chart.ev-svg .mark-label.is-caution {
-  fill: var(--caution);
 }
 .chart.ev-svg .ev-cross path {
   stroke: var(--ink-3);
@@ -218,42 +178,9 @@
 .chart.ev-svg .ev-touch {
   fill: transparent;
 }
-/* Shown narrow, the drawing's words are set larger, so they stay readable on a phone. */
-@container (max-width: 520px) {
-  .chart.ev-svg text {
-    font-size: 17px;
-  }
-}
 .ev-read {
   display: block;
-  min-height: 2.8em;
   overflow-wrap: anywhere;
-  margin-top: var(--s2);
-}
-.ev-figures {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: var(--s3) var(--s4);
-  margin: var(--s3) 0 0;
-}
-.ev-figures dt {
-  color: var(--ink-3);
-  font-size: 0.88rem;
-}
-.ev-figures dd {
-  margin: 0;
-}
-.ev-figures b {
-  display: block;
-  font-weight: 500;
-  font-size: 1.05rem;
-  white-space: nowrap;
-}
-.ev-figures .note {
-  display: block;
-  color: var(--ink-3);
-  font-size: 0.88rem;
-  line-height: 1.4;
 }
 .ev-row.is-caution .note,
 .ev-row.is-caution .caution-word {
@@ -312,6 +239,131 @@
   margin: 0;
   flex: 1 1 260px;
 }
+/* The control waits while a board is being read: one file at a time. */
+.ev-layout label.ghost:has(input:disabled) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* What was read from a board's own file: the board and the leg, the loop's parts to change,
+   the six figures each with its range, the cautions, and the press that takes the figures.
+   Nothing in it has a width of its own, and a name of any length wraps. */
+.board-read {
+  min-width: 0;
+  margin-top: var(--s4);
+  overflow-wrap: anywhere;
+}
+.board-read .waiting {
+  margin: var(--s4) 0;
+}
+.board-read h4 {
+  margin: var(--s4) 0 0;
+}
+.board-read.is-reading .board-figures,
+.board-read.is-reading .board-cautions {
+  opacity: 0.5;
+}
+.board-took {
+  margin: var(--s4) 0 var(--s3);
+  color: var(--ink-2);
+}
+.board-caps {
+  min-width: 0;
+  margin: var(--s4) 0 0;
+  padding: 0;
+  border: 0;
+}
+.board-caps legend {
+  margin-bottom: var(--s1);
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+.board-caps > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--s4);
+}
+.board-caps label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 32px;
+  cursor: pointer;
+}
+.board-caps input {
+  flex: none;
+  accent-color: var(--ink);
+}
+.board-figures {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--s5);
+  margin: var(--s4) 0 0;
+  border-top: 1px solid var(--line);
+}
+.board-figures > div {
+  min-width: 0;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--line);
+}
+.board-figures dt {
+  color: var(--ink-3);
+  font-size: 0.88rem;
+}
+.board-figures dd,
+.board-figures dd p {
+  margin: 0;
+}
+.board-figures b {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.board-figures .help svg,
+.board-cautions .caution-word svg {
+  width: 16px;
+  height: 16px;
+  margin-right: var(--s1);
+  vertical-align: -3px;
+}
+/* What a figure rests on: a small fold inside the event's own, which is open around it. Its
+   face and its mark are set here over the outer fold's, whose rules reach every summary in it. */
+.board-read .board-rests summary {
+  display: inline-flex;
+  min-height: 32px;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 0.88rem;
+  font-weight: 400;
+}
+.board-read .board-rests:not([open]) summary::after {
+  transform: rotate(45deg);
+}
+.board-rests .plain {
+  margin: 0 0 var(--s2);
+}
+.board-cautions {
+  margin-top: var(--s4);
+}
+.board-cautions .caution-word {
+  margin: 0;
+  color: var(--caution);
+  font-weight: 500;
+}
+.board-use {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  margin: var(--s4) 0 0;
+}
+.board-use .quiet {
+  flex: 1 1 220px;
+}
+@container (max-width: 520px) {
+  .board-figures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 #ev-estimate {
   margin-top: var(--s3);
 }
@@ -336,7 +388,7 @@ dialog.ev-full {
   background: var(--surface);
   color: var(--ink);
   border: 1px solid var(--line-strong);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
   overscroll-behavior: contain;
 }
@@ -358,10 +410,10 @@ dialog.ev-full::backdrop {
 }
 @media (prefers-reduced-motion: no-preference) {
   dialog.ev-full[open] {
-    animation: ev-full-in 0.18s var(--ease);
+    animation: ev-full-in var(--dur-2) var(--ease-out);
   }
   dialog.ev-full[open]::backdrop {
-    animation: ev-full-dim 0.18s var(--ease);
+    animation: ev-full-dim var(--dur-2) var(--ease-out);
   }
 }
 @keyframes ev-full-in {
@@ -426,7 +478,7 @@ dialog.ev-full::backdrop {
   touch-action: none;
   cursor: grab;
   user-select: none;
-  border-radius: var(--radius);
+  border-radius: var(--r);
 }
 .ev-full-plot:active {
   cursor: grabbing;
@@ -438,7 +490,7 @@ dialog.ev-full::backdrop {
 /* Drawn at the size it is shown, its words are set at the drawing's own size, never the
    larger size a drawing shown small takes. */
 dialog.ev-full .chart text {
-  font-size: 12.5px;
+  font-size: var(--t-data);
 }
 .ev-full-plot svg.chart {
   display: block;

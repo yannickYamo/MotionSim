@@ -1,7 +1,7 @@
 // The design on the page as a design file: the file `motionsim design run` takes, so that
 // what was set up here can be run, kept and compared from a terminal or by an agent.
 
-import { motionRequest, request } from "./state";
+import { motionRequest, request, tied } from "./state";
 import type { State } from "./state";
 
 type Plain = string | number | boolean | null | Plain[] | { [key: string]: Plain };
@@ -73,6 +73,18 @@ export function designFile(state: State, examples: Set<string>, lead: string | u
     start: given(motion.start),
     repeats: motion.repeats,
   };
+  if (req.supply === "mains" && "mains" in req) {
+    // Fed from the mains: the mains and the stage chosen; the link is the stage's unless typed.
+    const c = state.conditions;
+    if (!c.link_own) delete (design.conditions as Record<string, Plain>).v_dc;
+    design.mains = given(req.mains as Record<string, unknown>);
+    design.front_end = given({
+      topology: c.front_end || null,
+      f_sw: req.front_end?.f_sw ?? null,
+      feed_forward: tied(state) ? null : "off",
+    });
+    if (!Object.keys(design.front_end).length) delete design.front_end;
+  }
   const heatsink = given(motion.heatsink);
   if (heatsink.rth !== undefined) design.heatsink = heatsink;
   if (motion.c_link !== null) design.c_link = motion.c_link;

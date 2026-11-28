@@ -7,10 +7,12 @@
 import type { SwitchingEvent } from "../api";
 import { tickLabels } from "../format";
 import { ticks } from "../charts/scale";
-import { line, names, powerUnit, ranges, sideTicks, visible, xOf, yOf } from "./plot";
+import { flagMarkup } from "../charts/flag";
+import { line, names, outline, pairPower, ranges, sideTicks, visible, xOf, yOf } from "./plot";
 import type { Box, Drawn, Trace } from "./plot";
 import { edgeOf } from "./spans";
-import { CLASS, labels, placed, ratingLine, windowLines } from "./svg";
+import { CLASS, labels, placed, ratingAt, ratingLine, ratingName, windowLines, windowName } from "./svg";
+import type { Clear } from "./svg";
 import type { Which } from "./svg";
 import { timeUnit } from "./zoom";
 import type { Span } from "./zoom";
@@ -57,7 +59,7 @@ export const partRanges = (r: Drawn, part: Part): [[number, number], [number, nu
 function timeTicks(box: Box, v: Span): string {
   const { unit, scale } = timeUnit(v);
   const sx = xOf(box, v);
-  const y = box.y + box.h + 18;
+  const y = box.y + box.h + 16;
   const count = Math.max(3, Math.min(10, Math.round(box.w / 110)));
   const at = ticks(v.t0 * scale, v.t1 * scale, count);
   const labels = tickLabels(at);
@@ -80,6 +82,51 @@ export interface PartDrawn {
   per: number;
 }
 
+/** An axis title with a square of its trace's colour before it: the key to the plot. */
+function title(text: string, cls: string, x: number, y: number, end: boolean): string {
+  const at = end ? x - [...text].length * 7 - 14 : x;
+  return (
+    `<rect class="plot-sw ${cls}" x="${at.toFixed(1)}" y="${y - 8}" width="8" height="8" rx="1.5"/>` +
+    `<text class="axis ${cls}" x="${end ? x : x + 13}" y="${y}"${end ? ' text-anchor="end"' : ""}>${text}</text>`
+  );
+}
+
+/** The words on a part, set clear of what it draws: the names of its marks, the rating's and
+ *  the energy window's. Kept clear of the two traces as drawn, the rating's line and the
+ *  window's ends. */
+function partWords(
+  ev: SwitchingEvent,
+  which: Which,
+  part: Part,
+  v: Span,
+  at: { box: Box; r: Drawn; named: ReturnType<typeof labels> },
+): string {
+  const { box, r, named } = at;
+  const e = edgeOf(ev, which);
+  const [ra, rb] = partRanges(r, part);
+  const [a, b] = TRACES[part];
+  const rated = part === "vi" ? ratingAt(r, ev.v_max, box) : null;
+  const level: [number, number][][] =
+    rated === null
+      ? []
+      : [
+          [
+            [box.x, rated],
+            [box.x + box.w, rated],
+          ],
+        ];
+  const clear: Clear = {
+    curves: [outline(e, e[a], v, box, ra), outline(e, e[b], v, box, rb), ...level],
+    uprights: (e.window ?? []).filter((t) => t >= v.t0 && t <= v.t1).map(xOf(box, v)),
+  };
+  const taken: Box[] = [];
+  return (
+    placed(named, () => clear, taken) +
+    (part === "vi" ? ratingName(r, ev.v_max, box, clear, taken) : "") +
+    windowName(e, v, box, clear, taken)
+  );
+}
+
 /** The part as it is drawn over the span v at w by h, as markup, and what it was drawn with. */
 export function partSvg(
   ev: SwitchingEvent,
@@ -95,7 +142,8 @@ export function partSvg(
   const box = partBox(w, h);
   const [a, b] = TRACES[part];
   const n = names(ev.kind);
-  const per = part === "gp" ? powerUnit(rb) : 1;
+  // The power is written in the one unit both edges of the event take, here as under the chart.
+  const per = part === "gp" ? pairPower(ev) : 1;
   const unitB = part === "vi" ? "A" : per > 1 ? "kW" : "W";
   const rows = Math.max(3, Math.min(8, Math.round(box.h / 70)));
   const clip = `ev-full-clip-${which}-${part}`;
@@ -104,25 +152,29 @@ export function partSvg(
     `<path class="series ${cls}" clip-path="url(#${clip})" d="${line(e, x, at, xOf(box, v), yOf(box, range))}"/>`;
   const features = (ev.signature?.features ?? []).filter((f) => f.edge === which);
   const named = labels(e, v, r, which, features, { top: box, low: box }).filter((l) => l.trace === a || l.trace === b);
+  const words = partWords(ev, which, part, v, { box, r, named });
   const said = `${partTitle(ev.kind, which, part)} through time, ${at[1] - at[0] + 1} samples in view`;
   const svg =
     `<svg class="chart ev-svg ev-full-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" ` +
     `aria-label="${said}">` +
     `<defs><clipPath id="${clip}"><rect x="${box.x}" y="0" width="${box.w}" height="${h}"/></clipPath></defs>` +
-    `<text class="axis ${CLASS[a]}" x="${box.x}" y="${box.y - (w < NARROW ? 28 : 12)}">${n[a]}, V</text>` +
-    `<text class="axis ${CLASS[b]}" x="${box.x + box.w}" y="${box.y - 12}" text-anchor="end">${n[b]}, ${unitB}</text>` +
+    title(`${n[a]}, V`, CLASS[a], box.x, box.y - (w < NARROW ? 28 : 12), false) +
+    title(`${n[b]}, ${unitB}`, CLASS[b], box.x + box.w, box.y - 12, true) +
     sideTicks(box, ra, "left", 1, rows) +
     sideTicks(box, rb, "right", per, rows) +
     timeTicks(box, v) +
-    `<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>` +
     windowLines(e, v, [box]) +
+    `<rect class="plot" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>` +
     (part === "vi" ? ratingLine(r, ev.v_max, box) : "") +
     one(e[a], ra, CLASS[a]) +
     one(e[b], rb, CLASS[b]) +
-    placed(named) +
+    words +
     `<g class="ev-cross" visibility="hidden"><path d="M0 ${box.y}V${box.y + box.h}"/>` +
     `<circle class="ev-dot ${CLASS[a]}" cx="0" cy="0" r="4"/>` +
-    `<circle class="ev-dot ${CLASS[b]}" cx="0" cy="0" r="4"/></g>` +
+    `<circle class="ev-dot ${CLASS[b]}" cx="0" cy="0" r="4"/>` +
+    flagMarkup(CLASS[a]) +
+    flagMarkup(CLASS[b]) +
+    `</g>` +
     `<rect class="ev-touch" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}"/>` +
     `</svg>`;
   return { svg, drawn: { box, ranges: [ra, rb], per } };

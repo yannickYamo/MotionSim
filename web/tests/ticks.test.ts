@@ -32,7 +32,7 @@ describe("the labels of one axis's ticks", () => {
   it("carry as many decimals as tell the ticks apart, the same on every one", () => {
     expect(tickLabels([0, 0.5, 1])).toEqual(["0.0", "0.5", "1.0"]);
     expect(tickLabels([0, 5, 10])).toEqual(["0", "5", "10"]);
-    expect(tickLabels([-5, 0, 5, 10])).toEqual(["-5", "0", "5", "10"]);
+    expect(tickLabels([-5, 0, 5, 10])).toEqual(["−5", "0", "5", "10"]);
     expect(tickLabels([8, 8.05, 8.1, 8.15, 8.2])).toEqual(["8.00", "8.05", "8.10", "8.15", "8.20"]);
   });
   it("keep a label each where the ticks are a small step apart on a large figure", () => {

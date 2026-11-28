@@ -341,9 +341,10 @@ describe("the ids a chart gives its parts", () => {
 });
 
 // What a reader who cannot see the drawing is told it is.
-// The icon on the button that saves a chart is no drawing: its button carries the name.
+// The icon on the button that saves a chart is no drawing: its button carries the name. The
+// loss split is drawn as blocks, not as a drawing, and is named as one.
 const namesOf = (svg: string) =>
-  [...svg.matchAll(/<svg\b(?! class="icon")[^>]*>/g)].map((m) => {
+  [...svg.matchAll(/<(?:svg\b(?! class="icon")|div class="lossbar")[^>]*>/g)].map((m) => {
     const label = m[0].match(/aria-label="([^"]*)"/)?.[1];
     const by = m[0].match(/aria-labelledby="([^"]*)"/)?.[1];
     const title = by ? svg.match(new RegExp(`<title id="${by}">([^<]*)</title>`))?.[1] : undefined;

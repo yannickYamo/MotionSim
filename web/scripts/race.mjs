@@ -50,6 +50,8 @@ const type = async (page, path, text) => {
 // builds it while it is still busy with what came before, which can take minutes on a slow
 // machine. A refusal ends the wait at once, with its words.
 const bring = async (page, part) => {
+  // A first visit offers the file box behind "Your part".
+  if (!(await page.locator("#part-file, [data-part-file]").count())) await page.click("#panel [data-your-part]");
   await page.setInputFiles("#part-file, [data-part-file]", part.path);
   const handle = await page.waitForFunction(
     (id) =>
@@ -197,7 +199,7 @@ async function failThenStale(parts) {
   await toStep(page, 2);
   await type(page, "conditions.f_khz", "35");
   await toStep(page, 4);
-  await page.waitForSelector('#readouts[aria-busy="true"]');
+  await page.waitForSelector('#readouts[aria-busy="true"]', { state: "attached" });
   hold(true, `${how}: while the answer is on its way the figures are marked as waiting`);
   release();
   await settled(page);
@@ -333,10 +335,21 @@ async function addEachKind() {
   await columnsOnceWorked(page, 3);
   hold((await kept(page)).compare === "sweep", `${how}: a setting at three values is three columns`);
   hold(await everyColumnAnswered(page), `${how}: each value has its own loss`);
+  // The load margin is searched for after the figures are in: it is waited for both times.
+  const marginFound = () =>
+    page.waitForFunction(
+      () => !/finding the load it carries/.test(document.querySelector("#tab-body")?.textContent ?? ""),
+      null,
+      {
+        timeout: 300000,
+      },
+    );
+  await marginFound();
   const now = await shown(page);
   await page.reload();
   await page.waitForSelector("#panel h2");
   await columnsOnceWorked(page, 3);
+  await marginFound();
   hold((await shown(page)) === now, `${how}: the same after a reload`);
   hold(page.faults.length === 0, `${how}: no page error${page.faults[0] ? `: ${page.faults[0]}` : ""}`);
   await page.close();
@@ -418,18 +431,12 @@ async function cancelLargest() {
   await page.close();
 }
 
-/** Open the typed form wherever it sits on step 1, with every fold it is in. */
-const openTyped = (page) =>
-  page.evaluate(() => {
-    let fold = document.querySelector("details.typed");
-    for (; fold; fold = fold.parentElement?.closest("details") ?? null) fold.open = true;
-  });
-
 /** An IGBT typed in, from the hot figures of the made-up module, the knees and the cold
  *  energies left empty. Typed from the first moment, while the engine may be starting. */
 async function typedIgbt() {
   const page = await fresh(browser, url);
-  await openTyped(page);
+  // A first visit types a part's figures under "Your part".
+  await page.click("#panel [data-your-part]");
   await page.check('[data-typed-kind][value="igbt"]');
   await page.waitForSelector("#t-vce_sat");
   hold(
@@ -442,13 +449,12 @@ async function typedIgbt() {
     tj_max: "150", hot_tj: "150",
   }; // prettier-ignore
   for (const [key, value] of Object.entries(figures)) await page.fill(`#t-${key}`, value);
-  await page.selectOption("#t-topology", "six_pack");
-  await page.click("[data-add-typed]");
+  await page.click("[data-quick-add]");
   const handle = await page.waitForFunction(
     () =>
       document.querySelector('[data-device^="typed-igbt-"]')
         ? "in"
-        : (document.querySelector("details.typed .refusal, details.typed .said-wrong")?.textContent ?? ""),
+        : (document.querySelector("#panel .refusal, #panel .said-wrong")?.textContent ?? ""),
     null,
     { timeout: 300000 },
   );
@@ -457,12 +463,17 @@ async function typedIgbt() {
   if (got !== "in") return page.close();
   await walkToResults(page);
   const strip = (await page.textContent("#verdict-strip")) ?? "";
-  hold(/caution/i.test(strip), `a typed IGBT: the verdict is held at a caution (${strip.trim().slice(0, 60)})`);
+  hold(/caution|note/i.test(strip), `a typed IGBT: the verdict carries what was taken (${strip.trim().slice(0, 60)})`);
   const ways = await page.$$eval("[data-to-figure]", (b) => b.map((x) => x.getAttribute("data-to-figure")));
   hold(
     ["v_ce0", "v_f0", "e_cold"].every((k) => ways.includes(k)),
     `a typed IGBT: each figure taken has the way to its box (${ways.join(", ")})`,
   );
+  // The way to a box stands with its finding, in a fold that starts shut.
+  await page.evaluate(() => {
+    let fold = document.querySelector('[data-to-figure="v_ce0"]')?.closest("details");
+    for (; fold; fold = fold.parentElement?.closest("details") ?? null) fold.open = true;
+  });
   await page.click('[data-to-figure="v_ce0"]');
   await page.waitForFunction(() => document.body.dataset.at === "0");
   hold(
@@ -558,7 +569,8 @@ async function switchingEvent() {
   hold(other.includes(high.name) && !other.includes(low.name), `the event: the other device's own (${high.name})`);
   hold(/collector-emitter voltage/.test(other), "the event: an IGBT's traces are named as an IGBT's");
   hold(page.faults.length === 0, `the event: no page error${page.faults[0] ? `: ${page.faults[0]}` : ""}`);
-  await page.setViewportSize({ width: 1920, height: 1080 });
+  // Under 1784 px the two edges stand one above the other, held to the stage's measure.
+  await page.setViewportSize({ width: 1700, height: 1080 });
   await page.waitForTimeout(300);
   const wrapped = await page.evaluate(() => {
     const box = document.querySelector("#pwm .ev").getBoundingClientRect();
@@ -607,10 +619,12 @@ async function zoomAndMove(page) {
     "the event: a wheel passing over a plot scrolls the page and does not zoom",
   );
   hold((await scrolled()) > before, "the event: the page scrolled on under the pointer");
-  await page.locator('[data-edge-plot="on"]').scrollIntoViewIfNeeded();
+  // A plot taller than the screen is brought to its top, so that the pointer rests on it.
+  await page.evaluate(() => document.querySelector('[data-edge-plot="on"]').scrollIntoView({ block: "start" }));
+  await page.waitForTimeout(400);
   box = await page.locator('[data-edge-plot="on"]').boundingBox();
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.4);
-  await page.waitForTimeout(450); // the pointer rests on the plot
+  await page.waitForTimeout(800); // the pointer rests on the plot, the page still
   for (let k = 0; k < 4; k++) await page.mouse.wheel(0, -100);
   await page.waitForTimeout(100);
   const zoomed = await plotSaid(page, "on");
@@ -685,7 +699,10 @@ async function fullScreen(page) {
   );
   hold((await plotSaid(page, "on")).samples === zoomed, "full screen: closed, the plot keeps the zoom reached");
   // Every chart of the page is saved the same way: the loss chart and an edge stand for them.
-  hold(await savedPng(page, page.locator("#pwm .chart-box .chart-save").first()), "the loss chart is saved as a PNG");
+  hold(
+    await savedPng(page, page.locator("#pwm .plot-panel [data-save-png]").first()),
+    "the loss chart is saved as a PNG",
+  );
   hold(await savedPng(page, page.locator(".ev-edge [data-save-png]").first()), "an edge is saved as a PNG");
   hold(page.faults.length === 0, `full screen: no page error${page.faults[0] ? `: ${page.faults[0]}` : ""}`);
 }
@@ -763,7 +780,12 @@ async function washerDuty() {
   await toStep(page, 3);
   await page.waitForSelector('[data-load][value="drum"]', { timeout: 300000 });
   await page.check('[data-load][value="drum"]');
-  await page.waitForSelector('[data-usual-motor="drum"]', { timeout: 300000 });
+  // The motor such products have is offered under "About this load", a fold that starts shut.
+  await page.waitForSelector('[data-usual-motor="drum"]', { state: "attached", timeout: 300000 });
+  await page.evaluate(() => {
+    let fold = document.querySelector('[data-usual-motor="drum"]')?.closest("details");
+    for (; fold; fold = fold.parentElement?.closest("details") ?? null) fold.open = true;
+  });
   await page.click('[data-usual-motor="drum"]');
   await page.waitForFunction(() => document.querySelector("table.phases"), null, { timeout: 300000 });
   const state = await kept(page);

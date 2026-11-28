@@ -3,24 +3,24 @@ import type { Cycle, LoadPreset } from "../../api";
 import { minutesSaid, overlayChart, timeChart } from "../../charts/motion";
 import { series } from "../../compare";
 import type { Series } from "../../compare";
-import { degrees, eng, escape, fig, percent, sentence, sig, watts } from "../../format";
+import { degrees, eng, escape, fig, num, percent, sentence, watts } from "../../format";
 import { icon } from "../../icons";
 import { LOAD, STEPS } from "../../steps";
 import { app, focused, res } from "../../store";
-import { checkList, legendOf, refusal, waiting, whenAnswered } from "../html";
+import { checkList, findingList, foldBlock, legendOf, refusal, tip, waiting, whenAnswered } from "../html";
 import { notReady } from "./ready";
 
 /** A large count in words, to two figures. */
 const big = (v: number): string =>
   v >= 1e12
-    ? `${sig(v / 1e12, 2)} trillion`
+    ? `${num(v / 1e12, 2)} trillion`
     : v >= 1e9
-      ? `${sig(v / 1e9, 2)} billion`
+      ? `${num(v / 1e9, 2)} billion`
       : v >= 1e6
-        ? `${sig(v / 1e6, 2)} million`
+        ? `${num(v / 1e6, 2)} million`
         : v >= 1e3
-          ? `${sig(v / 1e3, 2)} thousand`
-          : sig(v, 2);
+          ? `${num(v / 1e3, 2)} thousand`
+          : num(v, 2);
 
 /** The application's own use in a year, where the load is one: its runs or its hours. */
 function usageOf(): LoadPreset["usage"] | null {
@@ -45,7 +45,7 @@ function yearsOf(l: Cycle["life"], repeats: number): number | null {
 function countLines(l: Cycle["life"], repeats: number): string {
   const use = usageOf();
   const years = yearsOf(l, repeats);
-  const per = use ? `At ${sig(use.per_year)} ${use.unit} a year (${escape(use.said)}), ` : "";
+  const per = use ? `At ${num(use.per_year)} ${use.unit} a year (${escape(use.said)}), ` : "";
   if (years !== null && years > BEYOND_YEARS) {
     return (
       `<li>${per}these swings would take <b>more than ${BEYOND_YEARS} years</b> to wear the part out: ` +
@@ -68,8 +68,8 @@ function lifeLines(l: Cycle["life"], repeats: number): string {
   const count = countLines(l, repeats);
   const chip = l.chip ? `The chip that wears out first is the ${escape(l.chip)}. ` : "";
   const swing = l.within_turn
-    ? `a swing of ${sig(l.swing, 2)} °C on every turn of the motor`
-    : `one swing of ${sig(l.swing, 2)} °C`;
+    ? `a swing of ${num(l.swing, 2)} K on every turn of the motor`
+    : `one swing of ${num(l.swing, 2)} K`;
   const smaller = l.within_turn ? " Turning faster, or a larger chip, makes that swing smaller." : "";
   const wear =
     `${percent(l.swing_share, 0)} of its wear comes from ${swing}, with the junction at about ` +
@@ -95,7 +95,7 @@ export function lifeBlock(c: Cycle): string {
   }
   const body =
     l.repeats === null
-      ? "<li>The junction temperature swings by less than 1 °C through this motion: " +
+      ? "<li>The junction temperature swings by less than 1 K through this motion: " +
         "this thermal-cycling model counts the wear from a swing that small as negligible.</li>"
       : lifeLines(l, l.repeats);
   // Shown, since it is what the swings on the chart above cost; named for what it is, a generic model.
@@ -149,14 +149,14 @@ function comparedMotion(): string {
 function startupNote(c: Cycle): string {
   const s = c.startup;
   if (!s) return "";
-  const limit = s.at_limit && s.limit !== null ? `, at the drive's limit of ${sig(s.limit)} A` : "";
+  const limit = s.at_limit && s.limit !== null ? `, at the drive's limit of ${num(s.limit)} A` : "";
   const lines = [
-    `<li><b>Start current ${sig(s.current)} A for ${sig(s.time, 2)} s</b>${limit}.</li>`,
+    `<li><b>Start current ${num(s.current)} A for ${num(s.time, 2)} s</b>${limit}.</li>`,
     s.tj_peak !== null
       ? `<li>The junction peaks at ${degrees(s.tj_peak)} in the start-up, ${minutesSaid(s.tj_at ?? 0)} in.</li>`
       : "",
     s.run_up !== null && s.run_up_reached
-      ? `<li>The inertia is run up at the current limit in ${sig(s.run_up, 2)} s, ` +
+      ? `<li>The inertia is run up at the current limit in ${num(s.run_up, 2)} s, ` +
         "against the break-away and what the load asks.</li>"
       : s.run_up_reached === false
         ? "<li>At its current limit the drive cannot bring the load to speed: " +
@@ -177,9 +177,9 @@ function steadyNote(c: Cycle): string {
   });
   const w = c.worst_swing;
   const swing = w
-    ? `<li>The worst swing within one period is ${sig(w.swing, 2)} °C, ` +
+    ? `<li>The worst swing within one period is ${num(w.swing, 2)} K, ` +
       `${w.phase ? `in the ${escape(w.phase)} phase, ` : ""}` +
-      `at ${minutesSaid(w.time)}${w.f_e ? `, where the output runs at ${sig(w.f_e, 2)} Hz` : ""}.</li>`
+      `at ${minutesSaid(w.time)}${w.f_e ? `, where the output runs at ${num(w.f_e, 2)} Hz` : ""}.</li>`
     : "";
   const m = c.method;
   const how = m
@@ -195,11 +195,11 @@ function motionFacts(s: Cycle["summary"]): string {
   const fact = (label: string, value: string) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
   const facts = [
     fact("Lasts", minutesSaid(s.duration ?? 0)),
-    fact("Mean loss", watts(s.mean_loss)),
-    fact("Torque, rms", `${sig(s.rms_torque)} N·m`),
-    fact("Energy to the shaft", `${fig(s.shaft_energy)} J`),
-    fact("Energy lost", `${fig(s.loss_energy)} J`),
-    fact("Returned by braking", `${fig(s.returned ?? 0)} J`),
+    fact("Mean loss, power stage", watts(s.mean_loss)),
+    fact("Torque, rms", `${num(s.rms_torque)} N·m`),
+    fact("Energy to the shaft", eng(s.shaft_energy, "J")),
+    fact("Energy lost, power stage and motor", eng(s.loss_energy, "J")),
+    fact("Returned by braking", eng(s.returned ?? 0, "J")),
   ];
   return `<dl class="facts">${facts.join("")}</dl>`;
 }
@@ -220,7 +220,7 @@ function inrushNote(cycle: Cycle): string {
     "and whatever limits the charging current absorbs as much again.</li>";
   const peak =
     inrush.peak !== null
-      ? `Through your precharge resistance the current peaks at ${sig(inrush.peak)} A ` +
+      ? `Through your precharge resistance the current peaks at ${num(inrush.peak)} A ` +
         `and the link is charged in about ${eng(inrush.time, "s")}.`
       : "With no precharge resistance given, only the supply and the wiring limit the current. " +
         "Give one in step 4 to see the peak.";
@@ -242,7 +242,8 @@ function peakNote(s: Cycle["summary"], partly: boolean): string {
       `In the part it can, the hottest junction reaches ${degrees(s.peak)}; the rest is not known.</span></p>`
     );
   }
-  return `<p class="quiet">The hottest junction reaches <b>${degrees(s.peak)}</b>.${steady}</p>`;
+  const why = steady.trim() || "The hottest junction through the motion.";
+  return `<p class="motion-peak">${tip("Tj peak", why)} <b>${degrees(s.peak)}</b></p>`;
 }
 
 /** The engine's reason the motion cannot be followed, and the button back to the load. A
@@ -259,6 +260,21 @@ export function motionTab(): string {
   return whenAnswered("cycle", res.cycle, "Following the motion through time.", throughMotion, refusedMotion);
 }
 
+/** The checks over the whole motion: what does not pass or asks for a change, in the open, one
+ *  line each; the checks that pass counted and folded. */
+function motionChecks(cycle: Cycle): string {
+  const raised = cycle.checks.filter((x) => x.level !== "ok");
+  const passed = cycle.checks.filter((x) => x.level === "ok");
+  const open = raised.length ? `<h4>Over the whole motion</h4>${findingList(raised, "motion-checks")}` : "";
+  const count = `${passed.length} ${passed.length === 1 ? "check passes" : "checks pass"} over the whole motion`;
+  const folded = passed.length
+    ? `<details class="more" data-fold="motion-passed"><summary>${icon("circle-check")}${count}` +
+      `<span class="quiet">${escape(passed.map((x) => x.topic).join(", "))}</span></summary>` +
+      `${checkList(passed)}</details>`
+    : "";
+  return `<section class="finding-group">${open}${folded}</section>`;
+}
+
 /** The device on the drawing through the motion, once it has been followed. */
 function throughMotion(cycle: Cycle): string {
   const s = cycle.summary;
@@ -267,13 +283,12 @@ function throughMotion(cycle: Cycle): string {
     peakNote(s, followedInPart(cycle)),
     timeChart(cycle),
     motionFacts(s),
-    startupNote(cycle),
-    steadyNote(cycle),
-    startingNote(cycle),
-    inrushNote(cycle),
-    lifeBlock(cycle),
-    `<h4>Checks over the whole motion</h4>${checkList(cycle.checks)}`,
-    '<p class="quiet after-facts">Change the load or the motion in step 4 and this redraws.</p>',
+    motionChecks(cycle),
+    foldBlock("m-startup", startupNote(cycle), cycle.startup ? `${num(cycle.startup.current)} A` : ""),
+    foldBlock("m-steady", steadyNote(cycle)),
+    foldBlock("m-starting", startingNote(cycle)),
+    foldBlock("m-inrush", inrushNote(cycle), cycle.inrush ? `${fig(cycle.inrush.energy)} J` : ""),
+    foldBlock("m-life", lifeBlock(cycle)),
   ];
   return parts.join("\n");
 }

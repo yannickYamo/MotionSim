@@ -3,8 +3,11 @@
 
 import type { Cycle } from "../api";
 import { degrees, escape, sentence, sig } from "../format";
-import type { Box, Scale } from "./frame";
-import { between, frame, FULL, hotSeries, line, nothing, ratingLine, savable, saveButton } from "./frame";
+import { dense } from "./dense";
+import { fit, fitted } from "./fit";
+import type { Box, Frame, Scale } from "./frame";
+import { between, frame, frameFor, FULL, hotSeries, line, nothing, plotPanel, ratingLine } from "./frame";
+import { readable } from "./readout";
 import { along, figures, lengthOf, scale, ticks } from "./scale";
 
 /** The time axis of a motion: seconds, or minutes once it lasts more than three of them. */
@@ -48,10 +51,10 @@ export function phaseBands(c: Cycle, box: Box, sx: Scale, named: boolean): strin
     .join("");
 }
 
-// How wide a character and how tall a line of a chart's words are, in the drawing's units,
-// at the largest the page sets them (on a phone).
-const CHAR = 12;
-const LINE = 24;
+// How wide a character and how tall a line of a chart's words are, in the drawing's units: the
+// mono face at the size a drawing made at its own width sets them.
+const CHAR = 7.2;
+const LINE = 16;
 
 /** A mark on a plot at one instant: a dot, and its name above where it is asked for. */
 function markAt(
@@ -133,10 +136,18 @@ export function minutesSaid(seconds: number): string {
   return s ? `${min} min ${s} s` : `${min} min`;
 }
 
-/** One quantity against time, on the frame every full-width chart shares. `said` names it
- *  to a reader who cannot see it, and is followed by the range it runs over in `unit`. */
-function against(c: Cycle, values: (number | null)[], unit: string, tone: string, said: string, marks = ""): string {
-  const { view, box } = FULL;
+/** One quantity of a motion: its values, its unit, the ink it is drawn in and what it is called. */
+interface Quantity {
+  values: (number | null)[];
+  unit: string;
+  tone: string;
+  said: string;
+  marks?: "current";
+}
+
+/** One quantity against time, in a frame as wide as it is shown. `said` names it to a reader
+ *  who cannot see it, and is followed by the range it runs over in `unit`. */
+function against(c: Cycle, { values, unit, tone, said, marks }: Quantity, { view, box }: Frame): string {
   const time = c.time;
   const tMax = lengthOf(time);
   const held = figures(values);
@@ -145,16 +156,20 @@ function against(c: Cycle, values: (number | null)[], unit: string, tone: string
     hi = yt[yt.length - 1];
   const sx = (t: number) => box.x + along(t, 0, tMax) * box.w;
   const sy = (v: number) => box.y + box.h - along(v, lo, hi) * box.h;
-  const axis = timeTicks(0, tMax);
+  const axis = timeTicks(0, tMax, across(box));
   const sxa = (v: number) => sx(v * axis.per);
   const zero = lo < 0 ? `<path class="zero" d="M${box.x} ${sy(0)}h${box.w}"/>` : "";
   const yLabel = `${said.toLowerCase()}, ${unit}`;
   const name = held.length ? `${said} over the motion: ${between(held, unit)}` : said;
   const extra = marks === "current" ? currentMark(c, sx, sy) : "";
-  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${escape(name)}">
+  const read = readable(box, time, sx, minutesSaid, [{ read: { name: said, unit, tone, values }, sy }]);
+  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${escape(name)}"${read}>
 ${phaseBands(c, box, sx, false)}${frame({ box, sx: sxa, sy }, axis.at, yt, axis.label, yLabel)}${zero}
 <path class="series ${tone}" d="${line(time, values, sx, sy)}"/>${extra}</svg>`;
 }
+
+/** How many time ticks go across a plot of this width. */
+const across = (box: Box): number => Math.max(3, Math.min(8, Math.round(box.w / 96)));
 
 /** On the current chart: the most current in the start-up, and how long it stood near it. */
 export function currentMark(c: Cycle, sx: Scale, sy: Scale): string {
@@ -167,9 +182,9 @@ export function currentMark(c: Cycle, sx: Scale, sy: Scale): string {
 /** The key to the temperature chart: the junction followed, the junction held, and what it is cooled by. */
 function temperatureLegend(sink: string): string {
   const items = [
-    `<li><span class="key hot"></span>junction, followed through time</li>`,
-    `<li><span class="key ghost"></span>junction, if each instant lasted forever</li>`,
-    `<li><span class="key sink"></span>${escape(sink)}</li>`,
+    `<li><span class="key line hot"></span>junction, followed through time</li>`,
+    `<li><span class="key line ghost"></span>junction, if each instant lasted forever</li>`,
+    `<li><span class="key line sink"></span>${escape(sink)}</li>`,
   ];
   return `<ul class="legend inline">${items.join("")}</ul>`;
 }
@@ -185,50 +200,69 @@ function temperatureRange(temps: number[]): { lo: number; hi: number } | null {
 
 /** The junction through a motion, against what each instant would reach if it lasted and
  *  against what cools it, with the rating drawn across where it is in sight. */
-function temperatureChart(c: Cycle): string {
-  const { view, box } = FULL;
+function temperatureChart(c: Cycle, f: Frame): string {
+  const { view, box } = f;
   const what = "Junction temperature over the motion";
   const range = temperatureRange(figures([...c.tj, ...c.steady, ...c.t_sink]));
-  if (!range) return nothing(FULL, what);
+  if (!range) return nothing(f, what);
   const { lo, hi } = range;
   const tMax = lengthOf(c.time);
   const limit = c.summary.tj_max ?? 150;
   const sx = (t: number) => box.x + along(t, 0, tMax) * box.w;
   const sy = (v: number) => box.y + box.h - along(v, lo, hi) * box.h;
-  const axis = timeTicks(0, tMax);
+  const axis = timeTicks(0, tMax, across(box));
   const sxa = (v: number) => sx(v * axis.per);
   const limitLine = limit <= hi ? ratingLine(box, sy, limit) : "";
   const reached = figures(c.tj);
   const peak = reached.length ? `: peaks at ${degrees(Math.max(...reached))}, rating ${degrees(limit)}` : "";
-  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${what}${peak}">
+  const sink = sentence(c.sink_name ?? "heatsink");
+  const read = readable(box, c.time, sx, minutesSaid, [
+    { read: { name: "Junction", unit: "°C", tone: "hot", values: c.tj, say: degrees }, sy },
+    { read: { name: "If held", unit: "°C", tone: "ghost", values: c.steady, say: degrees }, sy },
+    { read: { name: sink, unit: "°C", tone: "sink", values: c.t_sink, say: degrees }, sy },
+  ]);
+  // A junction that swings with every turn through a long motion has more samples than the
+  // chart has pixels: it is drawn as the scope draws such a trace, a band where it is densest.
+  const held = dense("ghost", [c.time, c.steady], [sx, sy], box);
+  const junction = dense("hot", [c.time, c.tj], [sx, sy], box);
+  return `<svg class="chart" viewBox="${view}" role="img" aria-label="${what}${peak}"${read}>
 ${phaseBands(c, box, sx, true)}
 ${frame({ box, sx: sxa, sy }, axis.at, ticks(lo, hi, 4), axis.label, "junction temperature, °C")}
 ${limitLine}
 <path class="series sink" d="${line(c.time, c.t_sink, sx, sy)}"/>
-<path class="series ghost" d="${line(c.time, c.steady, sx, sy)}"/>
-${hotSeries("junction", line(c.time, c.tj, sx, sy))}
+${held.band}<path class="series ghost" d="${held.line}"/>
+${junction.band}${hotSeries("junction", junction.line, drawnOnce(c.time, c.tj))}
 ${temperatureMarks(c, sx, sy)}
 </svg>`;
 }
 
-/** A motion, as four drawings of one size on one time axis: the junction temperature against
+/** What a line is of, whatever width it is drawn at: it is drawn in once, and a redraw at
+ *  another width leaves it standing. */
+const drawnOnce = (time: number[], values: (number | null)[]): string =>
+  `${time.length}:${time[time.length - 1]}:${figures(values).reduce((a, v) => a + v, 0)}`;
+
+/** A motion, as four panels of one size on one time axis: the junction temperature against
  *  what each instant would reach if it lasted, then what the motor was asked for (speed,
- *  torque) and what it drew. Each has its own scale and says its unit. */
+ *  torque) and what it drew. Each has its own scale and says its unit, and is drawn at the
+ *  width it is shown at; pressed, it opens full screen. */
 export function timeChart(c: Cycle): string {
   // One instant is no stretch of time: there is no line to draw through it.
   if (c.time.length < 2) return nothing(FULL, "Junction temperature over the motion");
   const amps = c.i_peak.map((v) => v ?? 0);
-  const open = (which: string, name: string, svg: string) =>
-    `<button type="button" class="mo-plot" data-motion-full="${which}" ` +
-    `aria-label="Open ${escape(name)} full screen">${svg}</button>`;
-  const kept = (which: string, name: string, svg: string) =>
-    `<div class="chart-box" data-png-host>${open(which, name, svg)}` +
-    `${saveButton(`${sentence(name.replace(/^the /, ""))} over the motion`)}</div>`;
-  return `${kept("tj", "the junction temperature", temperatureChart(c))}
-${temperatureLegend(c.sink_name ?? "heatsink")}
-${kept("rpm", "the motor speed", against(c, c.rpm, "rpm", "speed", "Motor speed"))}
-${kept("torque", "the motor torque", against(c, c.torque, "N·m", "speed", "Motor torque"))}
-${kept("i_peak", "the motor current", against(c, amps, "A peak", "hot", "Motor current", "current"))}`;
+  const kept = (which: string, name: string, draw: (f: Frame) => string, foot = "") => {
+    const what = sentence(name.replace(/^the /, ""));
+    const drawing =
+      `<button type="button" class="mo-plot" data-motion-full="${which}" data-fit="mo-${which}" ` +
+      `aria-label="Open ${escape(name)} full screen">${fit(`mo-${which}`, (w) => draw(frameFor(w)))}</button>`;
+    return plotPanel(["Motion", what], drawing, { title: `${what} over the motion` }, { foot });
+  };
+  const one = (q: Quantity) => (f: Frame) => against(c, q, f);
+  const current: Quantity = { values: amps, unit: "A peak", tone: "hot", said: "Motor current", marks: "current" };
+  const key = temperatureLegend(c.sink_name ?? "heatsink");
+  return `${kept("tj", "the junction temperature", (f) => temperatureChart(c, f), key)}
+${kept("rpm", "the motor speed", one({ values: c.rpm, unit: "rpm", tone: "speed", said: "Motor speed" }))}
+${kept("torque", "the motor torque", one({ values: c.torque, unit: "N·m", tone: "speed", said: "Motor torque" }))}
+${kept("i_peak", "the motor current", one(current))}`;
 }
 
 /** One thing compared, with its series on the chart. */
@@ -242,18 +276,22 @@ function overlaySaid(list: Compared[], limit: number): string {
   return escape(`Junction temperature over the motion: ${peaks.join(", ")}; rating ${degrees(limit)}`);
 }
 
-/** Junction temperature through the motion for up to five things compared, on one chart. */
+/** Junction temperature through the motion for up to five things compared, on one chart drawn
+ *  at the width it is shown at. */
 export function overlayChart(list: Compared[], limit: number): string {
-  const { view, box } = FULL;
   const range = temperatureRange(figures(list.flatMap((s) => s.tj)));
   if (!range) return nothing(FULL, "Junction temperature over the motion, for each one compared");
   const { lo, hi } = range;
   const tMax = Math.max(...figures(list.map((s) => s.time[s.time.length - 1])), 1e-9);
-  const sx = (t: number) => box.x + along(t, 0, tMax) * box.w;
-  const sy = (v: number) => box.y + box.h - along(v, lo, hi) * box.h;
-  const limitLine = limit <= hi ? ratingLine(box, sy, limit) : "";
-  const svg = `<svg class="chart" viewBox="${view}" role="img" aria-label="${overlaySaid(list, limit)}">
-${frame({ box, sx, sy }, ticks(0, tMax), ticks(lo, hi, 4), "time, s", "hottest junction, °C")}${limitLine}
+  const draw = ({ view, box }: Frame): string => {
+    const sx = (t: number) => box.x + along(t, 0, tMax) * box.w;
+    const sy = (v: number) => box.y + box.h - along(v, lo, hi) * box.h;
+    const limitLine = limit <= hi ? ratingLine(box, sy, limit) : "";
+    return `<svg class="chart" viewBox="${view}" role="img" aria-label="${overlaySaid(list, limit)}">
+${frame({ box, sx, sy }, ticks(0, tMax, across(box)), ticks(lo, hi, 4), "time, s", "hottest junction, °C")}${limitLine}
 ${list.map((s, k) => `<path class="series s${k}" d="${line(s.time, s.tj, sx, sy)}"/>`).join("")}</svg>`;
-  return savable(svg, "Hottest junction over the motion", list.map((s) => s.name).join(", "));
+  };
+  const drawing = fitted("mo-overlay", (w) => draw(frameFor(w)));
+  const under = list.map((s) => s.name).join(", ");
+  return plotPanel(["Motion", "Hottest junction"], drawing, { title: "Hottest junction over the motion", under });
 }

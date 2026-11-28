@@ -46,6 +46,8 @@ function claim(keys: string[]): void {
     const typed = { [last]: state.conditions[last as keyof Point] };
     state.pointOf = { ...state.pointOf, [state.kind]: { ...state.pointOf[state.kind], ...typed } };
     state.kindPicked = true;
+    // The link of a drive on the mains, typed: it is held there, no longer where the stage puts it.
+    if (last === "v_dc" && state.supply === "mains") state.conditions.link_own = "1";
   }
   if (keys[0] === "load" || keys[0] === "segments") state.loadTouched = true;
   // A stretch changed by hand: the motion is the stretches as they now stand, no longer a duty's phases.

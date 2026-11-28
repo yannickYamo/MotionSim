@@ -14,6 +14,7 @@
     "measure": "node scripts/measure.mjs",
     "walk": "node scripts/walk.mjs",
     "journey": "node scripts/journey.mjs",
+    "typed": "node scripts/typedpath.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -21,7 +22,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "eslint": "^10.15.0",
     "happy-dom": "^21.0.4",
     "playwright": "1.63.0",
@@ -33,7 +37,11 @@
     "vitest": "^5.1.0"
   },
   "dependencies": {
+    "@xyflow/react": "^13.0.3",
     "jspdf": "4.2.1",
+    "katex": "^0.19.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
     "svg2pdf.js": "2.9.0"
   }
 }

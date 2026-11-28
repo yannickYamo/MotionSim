@@ -1,0 +1,4025 @@
+{
+  "about": "Every scheme the engine's presets list, with the registry of kinds, as recorded from it for a made-up 48 V drive: the wiring and the ports alone, for the drawing's tests.",
+  "chosen": "foc_servo",
+  "schemes": [
+    {
+      "id": "foc_servo",
+      "label": "Cascaded speed and current control (servo)",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 526378.9013914323
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 3.508635605551543,
+            "ki": 324.34061309359697,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "foc_torque",
+      "label": "Torque control with least current and field weakening (traction)",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "foc_high_speed",
+      "label": "Speed control at a low carrier ratio (high speed)",
+      "about": "",
+      "timing": {
+        "update": "double",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 1052757.8027828645
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 7.017271211103086,
+            "ki": 1297.3624523743879,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 11757.550765359254,
+            "jerk": 59099896.17385868
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 1.5079644737231006,
+            "ki_d": 565.4866776461627,
+            "kp_q": 1.5079644737231006,
+            "ki_q": 565.4866776461627
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mpc_torque",
+      "label": "Predictive torque control with no modulator (finite control set)",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": 100000.0
+      },
+      "actuation": {
+        "kind": "states",
+        "wires": ["predictive.s_a", "predictive.s_b", "predictive.s_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "predictive",
+          "kind": "fcs_mpc",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "weight": 0.0,
+            "delay_compensation": true
+          }
+        }
+      ]
+    },
+    {
+      "id": "servo_joint",
+      "label": "Joint servo: speed and current control along an S-curve",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "s-curve",
+            "slew": 837.7580409572781,
+            "jerk": 526378.9013914323
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 3.508635605551543,
+            "ki": 324.34061309359697,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "traction_dpwm",
+      "label": "Traction torque control with the clamp placed for least switching loss",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc",
+            "i_a": "sample.i_a",
+            "i_b": "sample.i_b",
+            "i_c": "sample.i_c"
+          },
+          "params": {
+            "pwm": "discontinuous-min-loss",
+            "threshold": 0.5
+          }
+        }
+      ]
+    },
+    {
+      "id": "discrete_high_speed",
+      "label": "Speed control with a discrete-time current regulator (very low carrier ratio)",
+      "about": "",
+      "timing": {
+        "update": "double",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 1052757.8027828645
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 7.017271211103086,
+            "ki": 1297.3624523743879,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 11757.550765359254,
+            "jerk": 59099896.17385868
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_discrete_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "gain": 0.25,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 2.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "discrete_torque",
+      "label": "Torque control with a discrete-time current regulator",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_discrete_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "gain": 0.25,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 2.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensorless_flux",
+      "label": "High-speed speed control with no encoder (a flux observer)",
+      "about": "",
+      "timing": {
+        "update": "double",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "observer",
+          "kind": "observer_flux",
+          "inputs": {
+            "v_alpha": "inverse_park.alpha",
+            "v_beta": "inverse_park.beta",
+            "i_alpha": "clarke.alpha",
+            "i_beta": "clarke.beta",
+            "theta_true": "plant.theta_e"
+          },
+          "params": {
+            "crossover": 23.333333333333332,
+            "pll_bandwidth": 399.99999999999994
+          }
+        },
+        {
+          "name": "position",
+          "kind": "if_startup",
+          "inputs": {
+            "theta": "observer.theta",
+            "omega_e": "observer.omega_e",
+            "target": "cmd.speed"
+          },
+          "params": {
+            "current": 28.284271247461902,
+            "align": 0.02,
+            "ramp": 1466.0765716752367,
+            "handover": 146.60765716752368,
+            "blend": 0.08571428571428572
+          }
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 1052757.8027828645
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 0.05039302255187422,
+            "ki": 0.0037462338899564994,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 11757.550765359254,
+            "jerk": 59099896.17385868
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "start_current",
+          "kind": "if_current",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "current": "position.current",
+            "mode": "position.mode"
+          },
+          "params": {}
+        },
+        {
+          "name": "current",
+          "kind": "current_discrete_dq",
+          "inputs": {
+            "id_ref": "start_current.i_d",
+            "iq_ref": "start_current.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "gain": 0.25,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 2.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensorless_emf",
+      "label": "High-speed speed control with no encoder (a back-EMF observer with a phase-locked loop)",
+      "about": "",
+      "timing": {
+        "update": "double",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "observer",
+          "kind": "observer_emf_pll",
+          "inputs": {
+            "v_alpha": "inverse_park.alpha",
+            "v_beta": "inverse_park.beta",
+            "i_alpha": "clarke.alpha",
+            "i_beta": "clarke.beta",
+            "theta_true": "plant.theta_e"
+          },
+          "params": {
+            "bandwidth": 700.0,
+            "pll_bandwidth": 399.99999999999994
+          }
+        },
+        {
+          "name": "position",
+          "kind": "if_startup",
+          "inputs": {
+            "theta": "observer.theta",
+            "omega_e": "observer.omega_e",
+            "target": "cmd.speed"
+          },
+          "params": {
+            "current": 28.284271247461902,
+            "align": 0.02,
+            "ramp": 1466.0765716752367,
+            "handover": 146.60765716752368,
+            "blend": 0.08571428571428572
+          }
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 1052757.8027828645
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 0.05039302255187422,
+            "ki": 0.0037462338899564994,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 11757.550765359254,
+            "jerk": 59099896.17385868
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "start_current",
+          "kind": "if_current",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "current": "position.current",
+            "mode": "position.mode"
+          },
+          "params": {}
+        },
+        {
+          "name": "current",
+          "kind": "current_discrete_dq",
+          "inputs": {
+            "id_ref": "start_current.i_d",
+            "iq_ref": "start_current.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "gain": 0.25,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 2.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sensorless_smo",
+      "label": "High-speed speed control with no encoder (a sliding-mode observer)",
+      "about": "",
+      "timing": {
+        "update": "double",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "observer",
+          "kind": "observer_smo",
+          "inputs": {
+            "v_alpha": "inverse_park.alpha",
+            "v_beta": "inverse_park.beta",
+            "i_alpha": "clarke.alpha",
+            "i_beta": "clarke.beta",
+            "theta_true": "plant.theta_e"
+          },
+          "params": {
+            "gain": 25.639595179856602,
+            "boundary": 5.316621724758499,
+            "cutoff": 700.0,
+            "pll_bandwidth": 399.99999999999994
+          }
+        },
+        {
+          "name": "position",
+          "kind": "if_startup",
+          "inputs": {
+            "theta": "observer.theta",
+            "omega_e": "observer.omega_e",
+            "target": "cmd.speed"
+          },
+          "params": {
+            "current": 28.284271247461902,
+            "align": 0.02,
+            "ramp": 1466.0765716752367,
+            "handover": 146.60765716752368,
+            "blend": 0.08571428571428572
+          }
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": {
+            "target": "cmd.speed"
+          },
+          "params": {
+            "shape": "step",
+            "slew": 837.7580409572781,
+            "jerk": 1052757.8027828645
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": {
+            "ref": "speed_ref.ref",
+            "speed": "position.omega_m"
+          },
+          "params": {
+            "kp": 0.05039302255187422,
+            "ki": 0.0037462338899564994,
+            "limit": 4.678180807402057
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "speed.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 11757.550765359254,
+            "jerk": 59099896.17385868
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "start_current",
+          "kind": "if_current",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "current": "position.current",
+            "mode": "position.mode"
+          },
+          "params": {}
+        },
+        {
+          "name": "current",
+          "kind": "current_discrete_dq",
+          "inputs": {
+            "id_ref": "start_current.i_d",
+            "iq_ref": "start_current.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "gain": 0.25,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 2.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "mpc_loss_weighted",
+      "label": "Predictive torque control with commutations charged by their switching energy",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": 100000.0
+      },
+      "actuation": {
+        "kind": "states",
+        "wires": ["predictive.s_a", "predictive.s_b", "predictive.s_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "predictive",
+          "kind": "fcs_mpc",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "weight": 1.5,
+            "delay_compensation": true,
+            "weighting": "loss"
+          }
+        }
+      ]
+    },
+    {
+      "id": "deadbeat_torque",
+      "label": "Deadbeat predictive torque control (with a modulator)",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "deadbeat_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "delay_compensation": true,
+            "gain": 1.0,
+            "voltage_share": 1.0
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "dtc_torque",
+      "label": "Direct torque control (hysteresis bands, no modulator)",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": 100000.0
+      },
+      "actuation": {
+        "kind": "states",
+        "wires": ["predictive.s_a", "predictive.s_b", "predictive.s_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "predictive",
+          "kind": "dtc",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "torque_band": 0.23390904037010288,
+            "flux_band": 0.0001601735225881888
+          }
+        }
+      ]
+    },
+    {
+      "id": "vsf_torque",
+      "label": "Torque control with the switching frequency held to a ripple limit",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["frequency.d_a", "frequency.d_b", "frequency.d_c"],
+        "period": "frequency.period"
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        },
+        {
+          "name": "frequency",
+          "kind": "variable_frequency",
+          "inputs": {
+            "d_a": "modulator.d_a",
+            "d_b": "modulator.d_b",
+            "d_c": "modulator.d_c",
+            "v_dc": "plant.v_dc",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "mode": "peak",
+            "ripple_limit": 0.7882104334955237,
+            "f_min": 10000.0,
+            "f_max": 40000.0
+          }
+        }
+      ]
+    },
+    {
+      "id": "least_loss_torque",
+      "label": "Torque control on the line of least total loss",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "least_loss",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "foc_compensated",
+      "label": "Torque control with dead-time and device-drop compensation",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"]
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "compensation",
+          "kind": "dead_time_compensation",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc",
+            "i_a": "sample.i_a",
+            "i_b": "sample.i_b",
+            "i_c": "sample.i_c"
+          },
+          "params": {
+            "dead_time": 1.3e-7,
+            "drop": 6.938893903907228e-18,
+            "band": 0.7882104334955237,
+            "share": 1.0
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "compensation.alpha",
+            "beta": "compensation.beta",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thermal_guard",
+      "label": "Torque control with active thermal control",
+      "about": "",
+      "timing": {
+        "update": "single",
+        "delay": true,
+        "f_control": null
+      },
+      "actuation": {
+        "kind": "duties",
+        "wires": ["frequency.d_a", "frequency.d_b", "frequency.d_c"],
+        "period": "frequency.period"
+      },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": {
+            "i_a": "plant.i_a",
+            "i_b": "plant.i_b",
+            "i_c": "plant.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": {
+            "theta": "plant.theta_e",
+            "omega_m": "plant.omega_m"
+          },
+          "params": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": {
+            "a": "sample.i_a",
+            "b": "sample.i_b",
+            "c": "sample.i_c"
+          },
+          "params": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": {
+            "alpha": "clarke.alpha",
+            "beta": "clarke.beta",
+            "theta": "position.theta"
+          },
+          "params": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": {
+            "torque": "cmd.torque"
+          },
+          "params": {
+            "shape": "step",
+            "limit": 4.678180807402057,
+            "rate": 5878.775382679627,
+            "jerk": 14774974.04346467
+          }
+        },
+        {
+          "name": "thermal",
+          "kind": "thermal_supervisor",
+          "inputs": {
+            "i_a": "sample.i_a",
+            "i_b": "sample.i_b",
+            "i_c": "sample.i_c",
+            "d_a": "modulator.d_a",
+            "d_b": "modulator.d_b",
+            "d_c": "modulator.d_c",
+            "f_sw": "frequency.f_sw"
+          },
+          "params": {
+            "actuators": "all",
+            "limit": 165.0,
+            "t_clamp": 120.0,
+            "t_frequency": 135.0,
+            "t_derate": 150.0,
+            "hysteresis": 15.0,
+            "f_step": 0.25,
+            "f_floor": 0.5
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": {
+            "torque": "shaper.torque",
+            "omega_m": "position.omega_m",
+            "v_dc": "plant.v_dc",
+            "derate": "thermal.i_scale"
+          },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.568542494923804,
+            "voltage_share": 0.9922203784530209,
+            "torque_grid": 0.07309657511565715,
+            "speed_grid": 3.2724923474893677
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": {
+            "kp_d": 0.7539822368615503,
+            "ki_d": 282.74333882308133,
+            "kp_q": 0.7539822368615503,
+            "ki_q": 282.74333882308133
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "advance": 1.5
+          }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": {
+            "alpha": "inverse_park.alpha",
+            "beta": "inverse_park.beta",
+            "v_dc": "plant.v_dc",
+            "i_a": "sample.i_a",
+            "i_b": "sample.i_b",
+            "i_c": "sample.i_c",
+            "clamp": "thermal.clamp"
+          },
+          "params": {
+            "pwm": "space-vector"
+          }
+        },
+        {
+          "name": "frequency",
+          "kind": "variable_frequency",
+          "inputs": {
+            "d_a": "modulator.d_a",
+            "d_b": "modulator.d_b",
+            "d_c": "modulator.d_c",
+            "v_dc": "plant.v_dc",
+            "scale": "thermal.f_scale",
+            "omega_e": "position.omega_e"
+          },
+          "params": {
+            "mode": "fixed"
+          }
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "clarke": {
+      "kind": "clarke",
+      "role": "transform_feedback",
+      "title": "Clarke transform",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "c",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "alpha",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "current_discrete_dq": {
+      "kind": "current_discrete_dq",
+      "role": "inner_regulator",
+      "title": "Current regulator (discrete-time, complex vector)",
+      "definition": "",
+      "math": [],
+      "linear": true,
+      "loop": "current",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "v_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "err_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "err_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "int_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "int_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "ff_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "ff_q",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "current_pi_dq": {
+      "kind": "current_pi_dq",
+      "role": "inner_regulator",
+      "title": "Current regulator (PI, rotor frame)",
+      "definition": "",
+      "math": [],
+      "linear": true,
+      "loop": "current",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "v_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "err_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "err_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "prop_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "prop_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "int_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "int_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "ff_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "ff_q",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "current_reference": {
+      "kind": "current_reference",
+      "role": "reference_generator",
+      "title": "Torque to current reference",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "torque",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "derate",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "current_sampling": {
+      "kind": "current_sampling",
+      "role": "sensing",
+      "title": "Current sampling",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "i_a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_c",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "i_a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_c",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "dead_time_compensation": {
+      "kind": "dead_time_compensation",
+      "role": "actuation",
+      "title": "Dead time and device drop compensation",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "i_a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_c",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "added",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "deadbeat_dq": {
+      "kind": "deadbeat_dq",
+      "role": "inner_regulator",
+      "title": "Deadbeat predictive current control",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "current",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "v_d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "err_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "err_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "dtc": {
+      "kind": "dtc",
+      "role": "inner_regulator",
+      "title": "Direct torque control (hysteresis bands)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "current",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "s_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "s_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "s_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "torque",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "flux",
+          "unit": "Wb",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "fcs_mpc": {
+      "kind": "fcs_mpc",
+      "role": "inner_regulator",
+      "title": "Predictive current control (finite control set)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "current",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "s_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "s_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "s_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "cost",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "chosen",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "cost_0",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_1",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_2",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_3",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_4",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_5",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_6",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "cost_7",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "if_current": {
+      "kind": "if_current",
+      "role": "reference_generator",
+      "title": "Current references through the start (I-f)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "id_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "iq_ref",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "current",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "mode",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "i_d",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_q",
+          "unit": "A",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "if_startup": {
+      "kind": "if_startup",
+      "role": "estimation",
+      "title": "Open-loop start and hand-over (I-f)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "target",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "current",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "mode",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "inverse_park": {
+      "kind": "inverse_park",
+      "role": "transform_forward",
+      "title": "Inverse Park transform",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "d",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "q",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "V",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "modulator": {
+      "kind": "modulator",
+      "role": "actuation",
+      "title": "Modulator",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "i_a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_c",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "clamp",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "d_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "m",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "clamped",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "observer_emf_pll": {
+      "kind": "observer_emf_pll",
+      "role": "estimation",
+      "title": "Back-EMF observer with phase-locked loop",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "v_alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "i_alpha",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_beta",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "theta_true",
+          "unit": "rad",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "error",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "size",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "observer_flux": {
+      "kind": "observer_flux",
+      "role": "estimation",
+      "title": "Flux observer (Luenberger)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "v_alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "i_alpha",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_beta",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "theta_true",
+          "unit": "rad",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "error",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "size",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "observer_smo": {
+      "kind": "observer_smo",
+      "role": "estimation",
+      "title": "Sliding-mode observer",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "v_alpha",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "v_beta",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "i_alpha",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_beta",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "theta_true",
+          "unit": "rad",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "error",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "size",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "park": {
+      "kind": "park",
+      "role": "transform_feedback",
+      "title": "Park transform",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "alpha",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "beta",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "d",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "q",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "position_sensing": {
+      "kind": "position_sensing",
+      "role": "sensing",
+      "title": "Position sensing",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "theta",
+          "unit": "rad",
+          "about": ""
+        },
+        {
+          "name": "omega_m",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "speed_pi": {
+      "kind": "speed_pi",
+      "role": "outer_regulator",
+      "title": "Speed regulator (PI)",
+      "definition": "",
+      "math": [],
+      "linear": true,
+      "loop": "speed",
+      "inputs": [
+        {
+          "name": "ref",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "speed",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "torque",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "error",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "prop",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "int",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "speed_reference": {
+      "kind": "speed_reference",
+      "role": "reference",
+      "title": "Speed reference",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "target",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "ref",
+          "unit": "rad/s",
+          "about": ""
+        },
+        {
+          "name": "accel",
+          "unit": "rad/s2",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "thermal_supervisor": {
+      "kind": "thermal_supervisor",
+      "role": "supervisor",
+      "title": "Active thermal control (supervisor)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "i_a",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_b",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "i_c",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "d_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "f_sw",
+          "unit": "Hz",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "tj",
+          "unit": "\u00b0C",
+          "about": ""
+        },
+        {
+          "name": "clamp",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "f_scale",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "i_scale",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "p_hot",
+          "unit": "W",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "torque_shaper": {
+      "kind": "torque_shaper",
+      "role": "reference",
+      "title": "Torque limit and shaping",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "torque",
+          "unit": "N\u00b7m",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "torque",
+          "unit": "N\u00b7m",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    },
+    "variable_frequency": {
+      "kind": "variable_frequency",
+      "role": "actuation",
+      "title": "Switching frequency (controlled)",
+      "definition": "",
+      "math": [],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        {
+          "name": "d_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "v_dc",
+          "unit": "V",
+          "about": ""
+        },
+        {
+          "name": "scale",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "omega_e",
+          "unit": "rad/s",
+          "about": ""
+        }
+      ],
+      "outputs": [
+        {
+          "name": "period",
+          "unit": "s",
+          "about": ""
+        },
+        {
+          "name": "f_sw",
+          "unit": "Hz",
+          "about": ""
+        },
+        {
+          "name": "ripple",
+          "unit": "A",
+          "about": ""
+        },
+        {
+          "name": "d_a",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_b",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "d_c",
+          "unit": "",
+          "about": ""
+        },
+        {
+          "name": "limited",
+          "unit": "",
+          "about": ""
+        }
+      ],
+      "params": []
+    }
+  },
+  "sources": [
+    {
+      "name": "time.t",
+      "unit": "s",
+      "about": ""
+    },
+    {
+      "name": "plant.i_a",
+      "unit": "A",
+      "about": ""
+    },
+    {
+      "name": "plant.i_b",
+      "unit": "A",
+      "about": ""
+    },
+    {
+      "name": "plant.i_c",
+      "unit": "A",
+      "about": ""
+    },
+    {
+      "name": "plant.i_d",
+      "unit": "A",
+      "about": ""
+    },
+    {
+      "name": "plant.i_q",
+      "unit": "A",
+      "about": ""
+    },
+    {
+      "name": "plant.theta_e",
+      "unit": "rad",
+      "about": ""
+    },
+    {
+      "name": "plant.omega_m",
+      "unit": "rad/s",
+      "about": ""
+    },
+    {
+      "name": "plant.torque",
+      "unit": "N\u00b7m",
+      "about": ""
+    },
+    {
+      "name": "plant.load_torque",
+      "unit": "N\u00b7m",
+      "about": ""
+    },
+    {
+      "name": "plant.v_dc",
+      "unit": "V",
+      "about": ""
+    },
+    {
+      "name": "cmd.speed",
+      "unit": "rad/s",
+      "about": ""
+    },
+    {
+      "name": "cmd.torque",
+      "unit": "N\u00b7m",
+      "about": ""
+    },
+    {
+      "name": "const.zero",
+      "unit": "",
+      "about": ""
+    }
+  ]
+}

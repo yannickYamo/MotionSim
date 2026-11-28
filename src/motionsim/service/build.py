@@ -107,7 +107,7 @@ def _schemes(device, motor, rpm: float, torque: float, op: OperatingPoint):
 
 ALONE = (
     "With no heatsink at all, a package may have up to {alone:.0f} K/W from junction to air (RthJA on the "
-    "datasheet) for its hottest junction to stay 25 °C under its rating, counting the hardest-worked one, running and held still. A TO-220 "
+    "datasheet) for its hottest junction to stay 25 K under its rating, counting the hardest-worked one, running and held still. A TO-220 "
     "standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
 )
 NEVER_ALONE = "With no heatsink at all the hardest-worked package's junction would come within 25 °C of its rating whatever its path to the air"

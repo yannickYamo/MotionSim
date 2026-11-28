@@ -2,6 +2,7 @@
 // The applications on the page: each offered with what it is and how long it runs, the
 // motor such products have offered and never put in over what the user typed, and a duty's
 // run in the Motion tab with its phases, its start-up and where it got steady.
+import { lasting } from "../src/views/load";
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Cycle, LoadPreset, Setup } from "../src/api";
@@ -35,6 +36,14 @@ beforeEach(() => {
   res.stale = false;
 });
 
+describe("how long a motion is said to last", () => {
+  it("says the most it lasts where a stretch ends as soon as the junction is steady", () => {
+    expect(lasting(3605)).toBe("About 60 min");
+    expect(lasting(3605, true)).toBe("Up to 60 min");
+    expect(lasting(90, true)).toBe("Up to 90 s");
+  });
+});
+
 describe("the applications offered in step 4", () => {
   it("each is a choice with a line saying what it is, and the washer says how long it runs", () => {
     app.state.step = 3;
@@ -43,8 +52,13 @@ describe("the applications offered in step 4", () => {
     expect(kinds.map((k) => k.value)).toContain("drum");
     const washer = document.querySelector('[data-load][value="drum"]')!.closest("label")!;
     expect(washer.querySelector(".kind-name")!.textContent).toContain("Washing machine");
-    expect(washer.querySelector(".kind-about")!.textContent).toMatch(/About \d+ min\./);
-    expect(washer.textContent).toContain("its own motor");
+    // One line of what it is, and how long its motion lasts beside the name.
+    expect(washer.querySelector(".kind-about")!.textContent).toBe("A wet load tumbled each way at 45 rpm");
+    expect(washer.querySelector(".kind-time")!.textContent).toMatch(/^\d+ min$/);
+    // Chosen, its story, with the motor it brings, is one press away.
+    app.state.loadKind = "drum";
+    renderPanel(true);
+    expect(document.querySelector('[data-fold="load-story"] summary')!.textContent).toContain("its own motor");
   });
 
   it("a duty picked is held as its phases, written out as stretches, and sent as phases", () => {

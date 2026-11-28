@@ -31,7 +31,7 @@ EPILOG = (
 PWM = ("sine", "third-harmonic", "space-vector", "discontinuous", "discontinuous-high", "discontinuous-low")
 MOTORS = ("pmsm", "induction", "bldc", "dc", "stepper")
 PACKAGES = ("leadframe-module", "substrate-module", "TO-220", "TO-247", "TO-263", "TO-252", "TOLL")
-DEVICE = "a device file, a file of typed figures, or a made-up part: example-mosfet, example, example-mosfet-40v, example-gan, example-sic, example-sic-module"
+DEVICE = "a device file, a file of typed figures, or a made-up part: example-mosfet, example, example-mosfet-40v, example-mosfet-80v, example-gan, example-sic, example-sic-module"
 
 
 class Parser(argparse.ArgumentParser):
@@ -75,6 +75,10 @@ def _run(name: str) -> Callable[[argparse.Namespace], int]:
             from motionsim.cli.event import event
 
             return event(args)
+        if name == "control":
+            from motionsim.cli.control import control
+
+            return control(args)
         return (getattr(commands, name, None) or getattr(tools, name))(args)
 
     return call
@@ -291,7 +295,14 @@ def _add_trajectory_parser(sub) -> None:
 def _add_serve_parser(sub) -> None:
     p = sub.add_parser("serve", help="open the local web page")
     p.add_argument("--port", type=_whole(0, 65535), default=4310, help="0 for any free port (default 4310)")
-    p.add_argument("--devices", help="folder of device files (default: ~/.motionsim/devices)")
+    p.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="the address to answer on (default 127.0.0.1, this machine only; 0.0.0.0 inside a container)",
+    )
+    p.add_argument(
+        "--devices", help="folder of device files (default: ~/.motionsim/devices, or devices in $MOTIONSIM_HOME)"
+    )
     p.add_argument("--no-browser", action="store_true", help="do not open a browser window")
     p.add_argument(
         "--log-level",
@@ -488,6 +499,56 @@ def _add_event_parser(sub) -> None:
     p.set_defaults(func=_run("event"), refused_as="cannot work out the event")
 
 
+def _add_control_parser(sub) -> None:
+    p = sub.add_parser(
+        "control",
+        help="the control lab: a design's closed loop simulated under a control scheme, and sweeps of it",
+    )
+    kinds = p.add_subparsers(dest="what", required=True)
+
+    def design(name: str, text: str):
+        k = kinds.add_parser(name, help=text)
+        k.add_argument("setup", type=resolved, help="the design file (YAML or JSON), as `motionsim design run` takes")
+        k.add_argument("--device", help="the device of the design to run with (default: its first)")
+        _json(k)
+        k.set_defaults(func=_run("control"), refused_as="cannot run the control lab")
+        return k
+
+    def running(k) -> None:
+        k.add_argument("--scheme", help="a scheme by its id (see: motionsim control presets)")
+        k.add_argument("--scenario", help="the test: hold, torque_step, speed_step, start, load_step or stall")
+        k.add_argument("--set", action="append", metavar="NAME=VALUE", help="a figure of the test, e.g. to=3.5")
+        k.add_argument("--fidelity", choices=("switched", "averaged"), help="how the stage is simulated")
+        k.add_argument("--mismatch", action="append", metavar="NAME=FACTOR", help="r, ld, lq or flux of the motor")
+        k.add_argument("--dead-time", dest="dead_time", action="store_true", help="simulate the dead time in use")
+        k.add_argument("--device-drop", dest="device_drop", action="store_true", help="simulate the device's drop")
+
+    design("presets", "the scheme chosen for the design, the others, and the tests there are")
+    design("loops", "the linear analysis of a scheme: bandwidth, margins and poles").add_argument(
+        "--scheme", help="a scheme by its id (default: the one chosen for the design)"
+    )
+    running(design("run", "one test under a scheme: losses, ripple, junction temperature and the step"))
+    design("explore", "the questions a sweep can answer for this design")
+    sweep = design("sweep", "one thing varied and the runs set side by side")
+    sweep.add_argument("exploration", nargs="?", help="an exploration by its id (see: motionsim control explore)")
+    sweep.add_argument("--vary", metavar="PATH", help="what to vary, e.g. conditions.f_sw or mismatch.ld")
+    sweep.add_argument("--values", help="its values, with commas (scheme ids where --vary is scheme)")
+    running(sweep)
+    export = kinds.add_parser(
+        "export-c",
+        help="the scheme's control law as C (a header and a source), with the replay that shows it steps as the "
+        "simulation does, in a zip",
+    )
+    export.add_argument("setup", nargs="?", type=resolved, help="the design file (or give it as --design)")
+    export.add_argument("--design", dest="design_file", type=resolved, help="the design file (YAML or JSON)")
+    export.add_argument("--device", help="the device of the design to run with (default: its first)")
+    running(export)
+    export.add_argument("-o", "--out", help="the zip to write (default: motionsim_ctrl_<scheme>.zip here)")
+    export.add_argument("--no-replay", dest="no_replay", action="store_true", help="make the bundle without the replay")
+    _json(export)
+    export.set_defaults(func=_run("control"), refused_as="cannot export the control law")
+
+
 def _add_examples_parser(sub) -> None:
     p = sub.add_parser(
         "examples",
@@ -522,6 +583,7 @@ ADDERS = (
     _add_reader_parsers,
     _add_design_parser,
     _add_event_parser,
+    _add_control_parser,
     _add_examples_parser,
     _add_agent_parser,
 )

@@ -8,7 +8,7 @@ import { partSvg, partTitle, TRACES } from "./part";
 import type { Part, PartDrawn } from "./part";
 import { exportPdf, pointSaid } from "./pdf";
 import { valuesAt as readValues, yOf } from "./plot";
-import { readingAt } from "./reading";
+import { flagsAt, readingAt } from "./reading";
 import { edgeOf, eventNow, resetSpan, setSpan, spanOf } from "./spans";
 import type { Which } from "./svg";
 import { firstSpan, NARROWEST, whole } from "./zoom";
@@ -37,9 +37,11 @@ export function openFull(which: Which, part: Part): void {
       const e = edge();
       const [a, b] = TRACES[part];
       const at = readValues(e, t);
+      const said = flagsAt(e, t);
       return {
         ys: [yOf(drawn.box, drawn.ranges[0])(at[a]), yOf(drawn.box, drawn.ranges[1])(at[b])],
         text: readingAt(ev.kind, e, t, v),
+        flags: part === "vi" ? [said[0], said[1]] : [said[2], said[3]],
       };
     },
     pdf: (v) => exportPdf(eventNow() ?? ev, which, part, v),

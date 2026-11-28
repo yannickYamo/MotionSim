@@ -69,6 +69,31 @@ describe("the largest load from a local server", () => {
     expect(seen).toEqual([1, 2]);
     expect(posted.at(-1)!.url).toBe("api/largest/stream");
   });
+  it("reads the answer to its end once its last line is in, so the request is never cut off", async () => {
+    const text = `${JSON.stringify({ status: 200, body: answer })}\n`;
+    let pulls = 0;
+    let cancelled = false;
+    // Pulled only as it is read: the close is read only by a reader that reads past the answer.
+    const stream = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          pulls += 1;
+          if (pulls === 1) controller.enqueue(new TextEncoder().encode(text));
+          else controller.close();
+        },
+        cancel() {
+          cancelled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    reply = () => ({ ok: true, status: 200, body: stream });
+    const { api } = await boot();
+    await expect(api.largest({}, () => undefined)).resolves.toEqual(answer);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(pulls).toBe(2);
+    expect(cancelled).toBe(false);
+  });
   it("throws the refusal its last line carries, as the address would have", async () => {
     const refused = { status: 422, body: { refused: "the load does not fit", fix: "check it", field: "load" } };
     reply = () => ({ ok: true, status: 200, body: body([`${JSON.stringify(refused)}\n`]) });

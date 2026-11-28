@@ -9,9 +9,11 @@
 import { openFull } from "./full";
 import { partAtY } from "./part";
 import type { Part } from "./part";
-import { LOW, TOP, VIEW } from "./plot";
-import { readingAt, timeAt } from "./reading";
-import { edgeOf, eventNow, resetSpan, setSpan, spanOf } from "./spans";
+import { setFlags } from "../charts/flag";
+import { ranges, USUAL, valuesAt, yOf } from "./plot";
+import type { Layout } from "./plot";
+import { flagsAt, readingAt, timeAt } from "./reading";
+import { edgeOf, eventNow, layoutOf, resetSpan, setSpan, spanOf } from "./spans";
 import type { Which } from "./svg";
 import { keySpan, firstSpan, panBy, pinchFactor, wheelFactor, whole, zoomAbout } from "./zoom";
 import type { Span } from "./zoom";
@@ -26,24 +28,33 @@ export const CLICK_PX = 4;
 export const DOUBLE_MS = 250;
 
 /** The plot under an event, with its edge and what it shows now. */
-function plotAt(target: EventTarget | null): { el: HTMLElement; which: Which; v: Span; all: Span } | null {
+interface Pointed {
+  el: HTMLElement;
+  which: Which;
+  v: Span;
+  all: Span;
+  /** The layout the drawing under the pointer was made with. */
+  lay: Layout;
+}
+
+function plotAt(target: EventTarget | null): Pointed | null {
   const el = (target as Element | null)?.closest?.<HTMLElement>("[data-edge-plot]");
   const ev = eventNow();
   if (!el || !ev) return null;
   const which = el.dataset.edgePlot as Which;
   const e = edgeOf(ev, which);
-  return { el, which, v: spanOf(which, e), all: whole(e) };
+  return { el, which, v: spanOf(which, e), all: whole(e), lay: layoutOf(which) };
 }
 
 /** Where a point on the screen falls in time on a plot, and whether it is inside the plot. */
-export const timeAtX = (clientX: number, rect: { left: number; width: number }, v: Span) =>
-  timeAt(clientX, rect, v, TOP, VIEW.w);
+export const timeAtX = (clientX: number, rect: { left: number; width: number }, v: Span, lay: Layout = USUAL) =>
+  timeAt(clientX, rect, v, lay.top, lay.view.w);
 
 /** Which of an edge's two plots a point on the screen is over: the voltage and current
  *  above, the gate and power beneath, parted halfway across the gap between them. */
-export function partAt(clientY: number, rect: { top: number; height: number }): Part {
-  const y = ((clientY - rect.top) / rect.height) * VIEW.h;
-  return partAtY(y, (TOP.y + TOP.h + LOW.y) / 2);
+export function partAt(clientY: number, rect: { top: number; height: number }, lay: Layout = USUAL): Part {
+  const y = ((clientY - rect.top) / rect.height) * lay.view.h;
+  return partAtY(y, (lay.top.y + lay.top.h + lay.low.y) / 2);
 }
 
 const rectOf = (el: HTMLElement) => el.querySelector("svg")?.getBoundingClientRect() ?? el.getBoundingClientRect();
@@ -66,7 +77,7 @@ function onWheel(e: WheelEvent): void {
   const since = resting?.el === p.el ? resting.since : null;
   if (!wheelZooms(e.timeStamp || performance.now(), since, scrolledAt, e.ctrlKey)) return;
   e.preventDefault();
-  const { t } = timeAtX(e.clientX, rectOf(p.el), p.v);
+  const { t } = timeAtX(e.clientX, rectOf(p.el), p.v, p.lay);
   setSpan(p.which, zoomAbout(p.v, t, wheelFactor(e.deltaY, e.deltaMode, e.ctrlKey), p.all));
 }
 
@@ -113,7 +124,7 @@ function onMove(e: PointerEvent): void {
 
 /** A drag moves along time once it has gone past a press; two pointers moving apart or
  *  together zoom about their middle. */
-function moved(p: NonNullable<ReturnType<typeof plotAt>>, e: PointerEvent, was: number): void {
+function moved(p: Pointed, e: PointerEvent, was: number): void {
   if (press && !press.dragged && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= CLICK_PX) {
     press.dragged = true;
   }
@@ -121,14 +132,14 @@ function moved(p: NonNullable<ReturnType<typeof plotAt>>, e: PointerEvent, was: 
   down.set(e.pointerId, e.clientX);
   const rect = rectOf(p.el);
   if (down.size === 1) {
-    const dt = ((was - e.clientX) / ((rect.width * TOP.w) / VIEW.w)) * (p.v.t1 - p.v.t0);
+    const dt = ((was - e.clientX) / ((rect.width * p.lay.top.w) / p.lay.view.w)) * (p.v.t1 - p.v.t0);
     setSpan(p.which, panBy(p.v, dt, p.all));
     return;
   }
   const now = spread();
   if (pinchFrom > 0 && now > 0) {
     const [a, b] = [...down.values()];
-    setSpan(p.which, zoomAbout(p.v, timeAtX((a + b) / 2, rect, p.v).t, pinchFactor(now, pinchFrom), p.all));
+    setSpan(p.which, zoomAbout(p.v, timeAtX((a + b) / 2, rect, p.v, p.lay).t, pinchFactor(now, pinchFrom), p.all));
   }
   pinchFrom = now;
 }
@@ -147,23 +158,42 @@ function onUp(e: PointerEvent): void {
   press = null;
   if (!p || e.type === "pointercancel" || !isPress(was, e.clientX, e.clientY, was.dragged, was.pinched)) return;
   // A press opens the plot full screen, unless a second press follows, which goes back.
-  const part = partAt(was.y, rectOf(p.el));
+  const part = partAt(was.y, rectOf(p.el), p.lay);
   const which = p.which;
   clearTimeout(pending);
   pending = window.setTimeout(() => openFull(which, part), DOUBLE_MS);
 }
 
-/** Each trace at the instant pointed at, said under the plot, and a hairline across it. */
-function readAt(p: NonNullable<ReturnType<typeof plotAt>>, clientX: number): void {
+/** Each trace at the instant pointed at: said under the plot, and shown on it by a hairline, a
+ *  dot on each trace and a flag of each value. */
+function readAt(p: Pointed, clientX: number): void {
   const ev = eventNow()!;
-  const { t, inside } = timeAtX(clientX, rectOf(p.el), p.v);
+  const { t, inside } = timeAtX(clientX, rectOf(p.el), p.v, p.lay);
   const cross = p.el.querySelector<SVGGElement>(".ev-cross");
   const out = document.getElementById(`ev-read-${p.which}`);
   if (!cross || !out || !inside) return void cross?.setAttribute("visibility", "hidden");
-  const x = TOP.x + ((t - p.v.t0) / (p.v.t1 - p.v.t0)) * TOP.w;
+  const { top, low } = p.lay;
+  const e = edgeOf(ev, p.which);
+  const x = top.x + ((t - p.v.t0) / (p.v.t1 - p.v.t0)) * top.w;
   cross.setAttribute("transform", `translate(${x.toFixed(1)} 0)`);
   cross.setAttribute("visibility", "visible");
-  out.textContent = readingAt(ev.kind, edgeOf(ev, p.which), t, p.v);
+  // The dots and the flags, in the order they were drawn: voltage, current, gate, power.
+  const r = ranges(e, p.v, ev.v_max);
+  const at = valuesAt(e, t);
+  const ys = [
+    yOf(top, r.top[0])(at.v_ds),
+    yOf(top, r.top[1])(at.i),
+    yOf(low, r.low[0])(at.v_gs),
+    yOf(low, r.low[1])(at.p),
+  ];
+  cross.querySelectorAll("circle.ev-dot").forEach((dot, k) => dot.setAttribute("cy", ys[k].toFixed(1)));
+  const said = flagsAt(e, t);
+  setFlags(
+    [...cross.querySelectorAll(".plot-flag")],
+    ys.map((y, k) => ({ y, text: said[k], box: k < 2 ? top : low })),
+    x,
+  );
+  out.textContent = readingAt(ev.kind, e, t, p.v);
 }
 
 function onKey(e: KeyboardEvent): void {

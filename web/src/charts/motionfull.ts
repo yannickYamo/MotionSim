@@ -9,8 +9,10 @@ import type { Plottable } from "../eventplot/dialog";
 import { pageBytes, PLOT_SIZE, PRINT, saveFile, slug } from "../eventplot/pdf";
 import type { Span } from "../eventplot/zoom";
 import { degrees, escape, sentence, sig } from "../format";
+import { dense, stretch } from "./dense";
+import { flagMarkup } from "./flag";
 import type { Box } from "./frame";
-import { frame, line, ratingLine } from "./frame";
+import { frame, ratingLine } from "./frame";
 import { currentMark, minutesSaid, phaseBands, temperatureMarks, timeTicks } from "./motion";
 import { figures, scale, ticks } from "./scale";
 
@@ -76,11 +78,14 @@ export function motionSvg(c: Cycle, which: MotionWhich, v: Span, w: number, h: n
   const axis = timeTicks(v.t0, v.t1, Math.max(3, Math.min(10, Math.round(box.w / 110))), all);
   const sxa = (m: number) => sx(m * axis.per);
   const clip = `mo-clip-${which}`;
+  // Drawn as the scope draws a trace: a series denser than the screen's pixels keeps a few
+  // points a column, and is a band where it swings faster than a line can be read.
   const lines = chart.series
-    .map(
-      ([key, tone]) =>
-        `<path class="series ${tone}" clip-path="url(#${clip})" d="${line(c.time, seriesOf(c, key), sx, sy)}"/>`,
-    )
+    .map(([key, tone]) => {
+      const shown = stretch(c.time, seriesOf(c, key), v.t0, v.t1);
+      const drawn = dense(tone, shown, [sx, sy], box, ` clip-path="url(#${clip})"`);
+      return `${drawn.band}<path class="series ${tone}" clip-path="url(#${clip})" d="${drawn.line}"/>`;
+    })
     .join("");
   const limit = c.summary.tj_max ?? 150;
   const rating = which === "tj" && limit <= hi ? ratingLine(box, sy, limit) : "";
@@ -90,7 +95,9 @@ export function motionSvg(c: Cycle, which: MotionWhich, v: Span, w: number, h: n
       : which === "i_peak" && c.startup && c.startup.at >= v.t0 && c.startup.at <= v.t1
         ? currentMark(c, sx, sy)
         : "";
-  const dots = chart.series.map(([, tone]) => `<circle class="ev-dot ${tone}" cx="0" cy="0" r="4"/>`).join("");
+  const dots =
+    chart.series.map(([, tone]) => `<circle class="ev-dot ${tone}" cx="0" cy="0" r="4"/>`).join("") +
+    chart.series.map(([, tone]) => flagMarkup(tone)).join("");
   const svg =
     `<svg class="chart ev-svg ev-full-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" role="img" ` +
     `aria-label="${escape(chart.title)}, from ${escape(minutesSaid(v.t0))} to ${escape(minutesSaid(v.t1))}">` +
@@ -166,12 +173,12 @@ export function openMotion(c: Cycle, which: MotionWhich, name: string): void {
     draw: (v, w, h) => motionSvg(c, which, v, w, h),
     read: (t, _v, drawn) => {
       const sy = (y: number) => drawn.box.y + drawn.box.h - ((y - drawn.lo) / (drawn.hi - drawn.lo || 1)) * drawn.box.h;
+      const values = chart.series.map(([key]) => valueAt(c, key, t));
+      const unit = chart.unit.replace(/ peak$/, "");
       return {
-        ys: chart.series.map(([key]) => {
-          const y = valueAt(c, key, t);
-          return y === null ? NaN : sy(y);
-        }),
+        ys: values.map((y) => (y === null ? NaN : sy(y))),
         text: readingAt(c, which, t),
+        flags: values.map((y) => (y === null ? "" : `${sig(y)} ${unit}`)),
       };
     },
     pdf: async (v) => {

@@ -2,7 +2,10 @@
 // each edge is zoomed to. A new answer keeps the zoom, held inside its own trace.
 
 import type { EventEdge, SwitchingEvent } from "../api";
-import { edgeSvg } from "./svg";
+import { fit, refit } from "../charts/fit";
+import { layout, pairPower, USUAL } from "./plot";
+import type { Layout } from "./plot";
+import { edgeSvgIn } from "./svg";
 import type { Which } from "./svg";
 import { clampSpan, firstSpan, whole } from "./zoom";
 import type { Span } from "./zoom";
@@ -23,18 +26,35 @@ export function spanOf(which: Which, e: EventEdge): Span {
   return held ? clampSpan(held, whole(e)) : firstSpan(e);
 }
 
-/** One edge's drawing over its span. */
+/** The layout each edge was drawn with last: what the pointer reads the drawing by. */
+const layouts = new Map<Which, Layout>();
+export const layoutOf = (which: Which): Layout => layouts.get(which) ?? USUAL;
+
+/** The name an edge's drawing is fitted to its place by (charts/fit.ts). */
+export const fitKey = (which: Which) => `ev-${which}`;
+
+/** One edge's drawing over its span, laid out for the width it is shown at: its place is
+ *  watched, and it is drawn again when that place has another width. */
 export function plotSvg(ev: SwitchingEvent, which: Which): string {
-  const e = edgeOf(ev, which);
-  const features = (ev.signature?.features ?? []).filter((f) => f.edge === which);
-  return edgeSvg(e, spanOf(which, e), ev.kind, ev.v_max, which, features);
+  return fit(
+    fitKey(which),
+    (width) => {
+      const now = current ?? ev;
+      const e = edgeOf(now, which);
+      const features = (now.signature?.features ?? []).filter((f) => f.edge === which);
+      const lay = layout(width);
+      layouts.set(which, lay);
+      const drawing = { kind: now.kind, vMax: now.v_max, which, features, per: pairPower(now) };
+      return edgeSvgIn(lay, e, spanOf(which, e), drawing);
+    },
+    USUAL.view.w,
+  );
 }
 
 /** Show an edge over another span, and draw it again in place. */
 export function setSpan(which: Which, v: Span): void {
   spans.set(which, v);
-  const plot = document.querySelector(`[data-edge-plot="${which}"]`);
-  if (current && plot) plot.innerHTML = plotSvg(current, which);
+  if (current) refit(fitKey(which));
 }
 
 /** Nothing is held of an event: the design it was of is gone, and its zoom with it. */

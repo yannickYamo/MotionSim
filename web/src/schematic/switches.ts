@@ -28,9 +28,15 @@ interface SwitchDrawn {
 function glowOf({ x, y, level, over, ruledOut }: SwitchDrawn, order: number): string {
   const warmth = Math.min(level, 1);
   const name = `heat${over ? " over" : ruledOut ? " ruled-out" : ""}`;
+  // A switch running warm has a hot core inside its glow: the eye finds the hottest at once.
+  const core =
+    warmth > 0.35
+      ? `<circle class="${name} core" cx="${x}" cy="${y}" r="${(8 + 6 * warmth).toFixed(1)}" ` +
+        `style="--heat:${warmth.toFixed(3)};--i:${order}"/>`
+      : "";
   return level > 0
     ? `<circle class="${name}" cx="${x}" cy="${y}" r="${22 + 8 * warmth}" ` +
-        `style="--heat:${warmth.toFixed(3)};--i:${order}"/>`
+        `style="--heat:${warmth.toFixed(3)};--i:${order}"/>${core}`
     : "";
 }
 

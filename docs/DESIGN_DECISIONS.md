@@ -41,7 +41,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 - Margins a specialist applies without thinking are checked and explained: voltage against the supply, junction temperature, peak and stall current, dead time, results that rest on assumed data.
 - The output is a verdict with its reasons, and not only numbers.
 
-**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing a few figures from a datasheet, and six made-up parts to try, are there to make that first step short.
+**No part database, and no vendor preference.** Users bring datasheets. Nothing in the repository is a real part: the examples are made up and say so. A list of ready-made parts reads as a catalogue and as a recommendation of the vendors on it, and the tool has grounds for neither. It also keeps vendors' documents and data out of the project. The cost is real: the first thing a new user has to do is bring a part. Typing a few figures from a datasheet, and seven made-up parts to try, are there to make that first step short.
 
 ## Data: the datasheet is the model
 
@@ -65,7 +65,7 @@ The rest of this page goes through the decisions behind that right-hand column.
 
 **A power stage is a set of roles.** The engine works on kinds of switch position, each with its current and its conduction pattern. A three-phase inverter, an H-bridge and a pair of H-bridges are then the same calculation with different roles. This is what makes seven kinds of motor possible without seven engines.
 
-**The control is modelled by what it settles to.** Field-oriented control is the base of a modern drive, and it is here: for each speed and torque the motor's equations give the d- and q-axis currents such a drive commands, least current for the torque and then field weakening when the voltage runs out. A working current loop converges to exactly those currents. What is not here is the loop itself, running in time.
+**In the five steps, the control is modelled by what it settles to.** Field-oriented control is the base of a modern drive, and it is here: for each speed and torque the motor's equations give the d- and q-axis currents such a drive commands, least current for the torque and then field weakening when the voltage runs out. A working current loop converges to exactly those currents. What is not here is the loop itself, running in time.
 
 That is a choice about time scales. A transistor's loss and temperature follow from the current it carries, the voltage it switches and how often. A current loop settles in about a millisecond; a chip's temperature answers to loss averaged over milliseconds to seconds; a motion lasts seconds. For the question this tool answers, which power stage a load needs, the settled current at each instant carries almost all of the answer, and the loop's transient is a correction on top.
 
@@ -75,7 +75,7 @@ The cost is real and it is stated. The tool cannot say whether your control will
 - a sensorless start is told the speed below which the rotor cannot be read through the voltage this device and its dead time get wrong, so the choice of transistor shows up in how slowly the drive can run;
 - where the motor's iron loss is known, the advice gives the d-axis current that loses least in motor and power stage together.
 
-A simulated controller would be a second product, larger than this one, answering a different question (will my control work), and every figure it gave would be a claim with no measurement behind it yet. Where a control loop's behaviour does decide the answer, its currents and duty cycles can be imported from another simulator or a drive's log. A point the motor cannot reach from the supply is refused with the reason. [LIMITS.md](LIMITS.md) lists what this leaves out.
+A simulated controller answers a different question (what does this control do, and what does it cost the switches), and its figures are claims with no measurement behind them yet. So it is kept apart, in the control lab below: the verdict of the five steps never depends on it. Where a control loop's behaviour does decide the answer, it can be run there for a permanent-magnet motor, or its currents and duty cycles imported from another simulator or a drive's log. A point the motor cannot reach from the supply is refused with the reason. [LIMITS.md](LIMITS.md) lists what this leaves out.
 
 **Each kind of motor has its own equations.** A reluctance motor's torque comes from the difference between two inductances, a series-wound motor's from current squared. A recommendation is only as good as the motor model behind it, so a machine that behaves differently is modelled differently.
 
@@ -84,6 +84,40 @@ A simulated controller would be a second product, larger than this one, answerin
 **A gate drive and a dead time left open are chosen.** A transistor with no measured switching energy cannot be worked out without a gate voltage and gate resistors, and a builder who does not know what to type is who the tool is for. Left empty, the smallest resistors that keep the voltage slew rate and the turn-off overshoot within stated limits are chosen, the dead time is what a carefully set drive would use, and every result says which values were used and whether the tool or the user chose them. What the user types is never changed.
 
 **Standstill is part of every answer.** The same torque is checked at zero speed, where one chip carries the current without the relief of an alternating load. A fan can ignore it. A robot joint cannot.
+
+## The control lab
+
+**The loop is simulated, beside the settled result and not in its place.** The choice of a control scheme moves the same things a choice of transistor does: how much current the switches carry, how often they commutate, at what current, and what the junction does at a stall. A loss tool that holds the device's switching energy against current and the junction's thermal network is the place to put a number on that. So the lab closes the loop in time and hands the run to the same loss and thermal engine. It adds no loss model of its own, and a field-oriented drive held at a steady point has to end where the settled result is; a test holds it there. The cost: a second, larger body of code, and figures with no measured drive behind them, which is said wherever they are shown.
+
+**Fixed topologies with blocks that can be swapped, not a free-form diagram editor.** A scheme is a wiring a control engineer would recognise, tuned for the design by stated rules, and any block in it can be exchanged for another of its role or have its figures changed: an observer for the encoder, a predictive controller for the regulator and its modulator. A blank canvas would ask the user to build a drive before learning anything from one, and would let through wirings nothing has been checked on. The cost is that a structure not among the schemes has to be written as data and sent to the engine.
+
+**The run in time is the answer; the Laplace view is a second lens.** Transfer functions, margins and poles are how a loop is designed and explained, and they are on show beside the run. But they know no voltage limit, no ripple, no sensor and no observer, and some controllers have no transfer function at all. Where the two part, the page says the run is right.
+
+**Gains that linear theory calls unstable are run, with a caution.** A loop with a pole outside the unit circle does not run away in a real drive: the voltage limit holds it in an oscillation, and seeing that oscillation and what it costs is the point of a lab. Only a current that truly runs away is refused.
+
+**Accuracy is stated per case.** There is no single figure for how right the lab is. What is said is what each thing is held to: the settled engine at a steady point, linear theory for a step, a closed form for a block. A comparison of two schemes on one device shares most of what the model gets wrong; one scheme's watts do not. [VALIDATION.md](VALIDATION.md) sets it out loss by loss.
+
+**Permanent-magnet motors first.** They are what the applications here mostly run, and one machine done with its observers, its low-carrier-ratio regulators and its start is worth more than four done thinly. Other kinds are refused.
+
+**All of it is worked out by the engine on the user's machine.** The lab's page draws and asks; it has no model. A closed loop stepped switch by switch, and a mesh of a board's copper, are heavier work than a loss at one point, and they belong on the user's machine and not in a Python runtime inside a browser tab. So the lab and the board reader are on the local page only, and the hosted page keeps its scope and says where they are.
+
+## The local app
+
+**One command.** `docker compose up`, or `pip install` and `motionsim serve`. A tool that takes an afternoon to start is not tried.
+
+**FastAPI and uvicorn as an optional extra, the standard library's server kept.** The extra buys a WebSocket, a store and a place for the key. Without it the page is served as before and every figure is the same, because both servers answer through one dispatch. The package's four core libraries stay four.
+
+**SQLite, not a database server.** What is kept is a few schemes and runs for one person on one machine. One file in the user's own folder needs nothing installed, backs up by being copied, and is gone when it is deleted.
+
+**The key is given in the page.** An environment variable is a hurdle for someone who is not a programmer, and it is the first thing a new user meets. The key typed under Settings goes one way: it is kept in a file only the user's account can read, never sent back to the page, never put in the store or a log. A key in the environment still comes first.
+
+**React for the control lab alone.** A block diagram that is panned, zoomed and alive with a run is what a component library is for. The five steps stay as they are, and the lab's code is fetched when the lab is first opened, so the first screen carries none of it.
+
+## A board's own file
+
+**KiCad and IPC-2581 are read; ODB++ and STEP are refused for now.** KiCad's file is open and text. IPC-2581 is an open standard that the common layout tools export, so one reader serves them all. Both carry what a loop needs: copper by net, the parts' pads, the stack-up. A STEP file holds shapes and no nets, so nothing in it says which copper is the supply and which the switch node; reading a loop from it would be a guess, and it is refused with that reason. ODB++ carries the nets and is not read yet.
+
+**Every figure comes with a band and what it rests on.** A loop inductance to four figures from a mesh would read as a field solver's answer, and it is not one. The band says how far the figure is believed, and it widens for each thing that was assumed.
 
 ## Thermal: three terms kept apart
 
@@ -135,7 +169,7 @@ Tj = T_heatsink + R_case-to-heatsink · P_package + R_junction-to-case · P_chip
 
 **The page has no model of its own.** Every number on it comes from the engine. A second implementation of any formula in the browser would be a second thing to verify.
 
-**The engine runs in the browser.** The live page loads a Python runtime and runs the same Python engine there. There is no server, nothing to install, and nothing the user enters leaves their machine. One engine still holds: a check in CI compares the engine in the browser with the installed one, figure for figure. The cost is a first load of about 20 MB and some seconds before the first result.
+**The engine runs in the browser.** The live page loads a Python runtime and runs the same Python engine there. There is no server of the project's, nothing to install, and nothing the user enters leaves their machine. One engine still holds: a check in CI compares the engine in the browser with the installed one, figure for figure. The cost is a first load of about 20 MB and some seconds before the first result.
 
 **Reading a datasheet stays on the user's machine.** It needs a paid language-model call, so it is made with the user's own key, from their machine. The project has no server, keeps no key and sees no file. The cost is that the live page cannot read a PDF: it takes typed figures and device files instead, and says so at the first step.
 
@@ -151,7 +185,11 @@ Tj = T_heatsink + R_case-to-heatsink · P_package + R_junction-to-case · P_chip
 | Language model reads, code decides | A wrong reading is caught or flagged, not used | A paid call per datasheet; some values are set aside for the user to check |
 | Tables over fitted coefficients | Interpolation and extrapolation can be told apart | Larger device files; no smoothing of noisy curves |
 | One engine for every mode | One thing to verify; modes cannot disagree | Maps and motions are slower than a dedicated approximation |
-| Control as its settled result, no simulated loop | Works from catalogue figures; nothing to tune; every figure checkable in closed form | Cannot say whether the control holds; a loop's transient is an allowance, not a result |
+| Control as its settled result in the five steps | Works from catalogue figures; nothing to tune; every figure checkable in closed form | The verdict cannot say whether the control holds; a loop's transient is an allowance, not a result |
+| A control lab beside it, local only | A scheme's cost in loss, ripple and junction temperature, from the same loss engine | A second body of code; no measured drive behind it; permanent-magnet motors only |
+| Fixed schemes with swappable blocks | Every scheme tuned and checked; nothing to build first | No free-form diagram |
+| An optional local app, SQLite, the key in the page | One command; nothing to configure | Two servers to hold to one answer; a key kept in a file |
+| A board file read with bands | The event's inductances from the real copper | Not a field solver; other nets' copper ignored |
 | Thermal defaults from first principles | Vendor-neutral; every default traceable | Wider ranges than calibrated figures |
 | A range and "undecided" | Honest where the data is thin | Some answers are "this data cannot say" |
 | No part database | No vendor bias; no redistributed data | The user has to bring a part first |

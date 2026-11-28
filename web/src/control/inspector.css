@@ -1,0 +1,540 @@
+/* The block inspector, lightened: its title and a short account, the key settings as large
+   direct controls, then what the block does at the cursor, its equations, and every figure
+   folded. Structure is carried by space and three ink strengths, not by boxes. Loaded after
+   lab.css, so these rules win where both speak. */
+
+.lab-inspector {
+  padding: var(--s4) var(--s5) var(--s7);
+}
+.lab-inspector header {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0 calc(-1 * var(--s3)) 0 0;
+}
+.lab-inspector h3 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.3;
+  text-wrap: balance;
+}
+.lab-insp-tag {
+  flex: none;
+  margin-right: auto;
+  padding: 1px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+}
+.lab-inspector .lab-definition {
+  margin: var(--s2) 0 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.lab-inspector .lab-indetail {
+  margin: var(--s1) 0 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+}
+.lab-inspector .lab-indetail summary,
+.lab-inspector .lab-all summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  color: var(--ink-3);
+  cursor: pointer;
+  list-style: none;
+}
+.lab-inspector .lab-indetail summary::-webkit-details-marker,
+.lab-inspector .lab-all summary::-webkit-details-marker {
+  display: none;
+}
+.lab-inspector .lab-indetail summary::after,
+.lab-inspector .lab-all summary::after {
+  content: "";
+  width: 7px;
+  height: 7px;
+  margin-left: var(--s1);
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.lab-inspector details[open] > summary::after {
+  transform: translateY(1px) rotate(-135deg);
+}
+.lab-inspector .lab-indetail summary:hover,
+.lab-inspector .lab-all summary:hover {
+  color: var(--ink);
+}
+.lab-inspector .lab-indetail p {
+  margin: 0 0 var(--s2);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Section headings: quiet, the same step everywhere, more room above than below. */
+.lab-inspector h4 {
+  margin: var(--s6) 0 var(--s2);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-weight: 500;
+}
+
+/* ---------- Key settings ---------- */
+
+.lab-keys {
+  display: grid;
+  gap: var(--s4);
+}
+.lab-keys h4 {
+  margin: var(--s5) 0 calc(-1 * var(--s2));
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.lab-key {
+  display: grid;
+  gap: var(--s1);
+  min-width: 0;
+}
+.lab-key-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  min-width: 0;
+}
+.lab-key-name {
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 500;
+  user-select: none;
+  touch-action: pan-y;
+}
+.lab-key-name.is-scrub {
+  cursor: ew-resize;
+}
+.lab-key-note {
+  min-width: 0;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  text-wrap: pretty;
+}
+.lab-key.is-changed .lab-key-name::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: var(--s2);
+  border-radius: 50%;
+  background: var(--ink-2);
+  vertical-align: middle;
+}
+.lab-key-control {
+  display: flex;
+  align-items: stretch;
+  gap: var(--s1);
+  min-width: 0;
+}
+
+/* A figure: minus, the box with its unit inside, plus. */
+.lab-key-step,
+.lab-key-reset {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.lab-key-step {
+  background: var(--surface);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-key-step:hover:not(:disabled),
+  .lab-key-reset:hover {
+    background: var(--raised);
+    color: var(--ink);
+  }
+}
+.lab-key-step:active:not(:disabled),
+.lab-key-reset:active {
+  transform: scale(0.96);
+}
+.lab-key-step:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.lab-key-reset[hidden] {
+  display: grid;
+  visibility: hidden;
+}
+.lab-key-step .icon,
+.lab-key-reset .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-key-step:focus-visible,
+.lab-key-reset:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.lab-key-box {
+  position: relative;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  height: 44px;
+  background: var(--surface);
+  border: 1px solid var(--edge);
+  border-radius: var(--r);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.lab-key-box:hover {
+  border-color: var(--ink-3);
+}
+.lab-key-box:focus-within {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 1px var(--focus);
+}
+.lab-key-box input,
+.lab-key-box select {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--s3);
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  outline: none;
+}
+.lab-key-box select {
+  font-size: var(--t-body);
+  cursor: pointer;
+}
+.lab-key-box input::placeholder {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.lab-key-unit {
+  flex: none;
+  padding-right: var(--s3);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  pointer-events: none;
+}
+.lab-key.is-wrong .lab-key-box {
+  border-color: var(--fail);
+  box-shadow: 0 0 0 1px var(--fail);
+}
+.lab-key-wrong {
+  margin: 0;
+  color: var(--fail);
+  font-size: var(--t-small);
+  line-height: 1.4;
+}
+
+/* A choice: the page's segmented switch, filling the row, wrapping where the words are long. */
+.lab-key-segments {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  min-width: 0;
+}
+.lab-key-segments button {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--s3);
+  border: 0;
+  border-radius: var(--r);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-body);
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-key-segments button:hover {
+    color: var(--ink);
+  }
+}
+.lab-key-segments button:active {
+  transform: scale(0.97);
+}
+.lab-key-segments button.is-on {
+  background: var(--raised);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  color: var(--ink);
+  font-weight: 600;
+}
+.lab-key-segments button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* Four ways and an Other… place: the ways on a row of their own, the place beneath. */
+.lab-key-control:has(.lab-key-segments + .is-select) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+.lab-key-control:has(.lab-key-segments + .is-select) .is-select {
+  grid-row: 2;
+}
+.lab-key-control:has(.lab-key-segments + .is-select) .lab-key-reset {
+  grid-row: 1;
+  grid-column: 2;
+}
+.lab-key-control .lab-key-box.is-select {
+  flex: 1 1 8rem;
+  border-color: transparent;
+}
+.lab-key-control .lab-key-box.is-select.is-on {
+  background: var(--raised);
+  border-color: var(--edge);
+}
+.lab-key-control .lab-key-box.is-select.is-on select {
+  font-weight: 600;
+}
+.lab-key-segments.is-tests button {
+  flex-basis: calc(33% - var(--s1));
+}
+
+/* The design point and the loop as it closes: read, not set. */
+.lab-key-point,
+.lab-key-loop {
+  display: grid;
+  gap: var(--s1);
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  font-variant-numeric: tabular-nums;
+}
+.lab-key-point-figures b {
+  color: var(--ink);
+  font-size: var(--t-title);
+  font-weight: 500;
+}
+.lab-key-point .lab-key-note {
+  text-align: left;
+}
+.lab-key-loop {
+  display: block;
+}
+.lab-key-loop b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* ---------- At the cursor: the animation, calmer, and the values ---------- */
+
+.lab-inspector .lab-animation {
+  margin: 0;
+}
+.lab-inspector .lab-animation .lab-face {
+  max-width: none;
+  padding: var(--s3) var(--s3) var(--s2);
+  border: 0;
+  background: var(--surface);
+}
+.lab-inspector .lab-animation .caption {
+  margin: var(--s1) 0 0;
+  font-size: var(--t-small);
+}
+.lab-inspector .lab-io {
+  margin-top: var(--s3);
+  font-variant-numeric: tabular-nums;
+}
+.lab-inspector .lab-io th,
+.lab-inspector .lab-io td {
+  padding: var(--s1) var(--s2) var(--s1) 0;
+  border-top-color: var(--line);
+}
+.lab-inspector .lab-plotted {
+  margin-top: var(--s3);
+}
+
+/* ---------- The equations, on the ground ---------- */
+
+.lab-inspector .lab-maths {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  overflow-x: auto;
+}
+
+/* ---------- Every figure, folded ---------- */
+
+.lab-inspector .lab-all {
+  margin-top: var(--s5);
+  border-top: 1px solid var(--line);
+}
+.lab-inspector .lab-all summary {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.lab-all-count {
+  color: var(--ink-3);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.lab-inspector .lab-all .lab-params {
+  padding: var(--s2) 0 var(--s3);
+}
+.lab-inspector .lab-replace {
+  margin-top: var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+/* A phone: the inspector is a sheet from the foot. */
+@media (max-width: 700px) {
+  .lab-inspector {
+    padding: var(--s3) var(--s4) var(--s6);
+  }
+  .lab-key-control:has(.lab-key-segments) {
+    flex-wrap: wrap;
+  }
+  .lab-key-control .lab-key-box.is-select {
+    flex: 1 1 8rem;
+    border-color: transparent;
+  }
+  .lab-key-control .lab-key-box.is-select.is-on {
+    background: var(--raised);
+    border-color: var(--edge);
+  }
+  .lab-key-control .lab-key-box.is-select.is-on select {
+    font-weight: 600;
+  }
+  .lab-key-segments.is-tests button {
+    flex-basis: calc(50% - var(--s1));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-key-step,
+  .lab-key-reset,
+  .lab-key-box,
+  .lab-key-segments button,
+  .lab-inspector details > summary::after {
+    transition: none;
+  }
+}
+
+/* ---------- The learning layer: why a value, and the theory, each a "+" away ---------- */
+
+.lab-keys {
+  margin-top: var(--s4);
+}
+.lab-why-value,
+.lab-inspector .lab-learn {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+}
+.lab-why-value {
+  margin-top: calc(-1 * var(--s2));
+}
+.lab-why-value > summary,
+.lab-inspector .lab-learn > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  min-height: 28px;
+  color: var(--ink-3);
+  cursor: pointer;
+  list-style: none;
+  transition: color var(--dur-1) var(--ease-out);
+}
+.lab-why-value > summary::-webkit-details-marker,
+.lab-inspector .lab-learn > summary::-webkit-details-marker {
+  display: none;
+}
+.lab-why-value > summary .icon,
+.lab-inspector .lab-learn > summary .icon {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.lab-why-value[open] > summary .icon,
+.lab-inspector .lab-learn[open] > summary .icon {
+  transform: rotate(45deg);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-why-value > summary:hover,
+  .lab-inspector .lab-learn > summary:hover {
+    color: var(--ink);
+  }
+}
+.lab-rule {
+  margin: var(--s1) 0 0;
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-variant-numeric: tabular-nums;
+}
+.lab-rule-full {
+  margin: var(--s1) 0 0;
+  color: var(--ink-3);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.lab-inspector .lab-learn {
+  margin-top: var(--s4);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--line);
+  font-size: var(--t-body);
+}
+.lab-inspector .lab-learn > summary {
+  font-weight: 500;
+}
+.lab-inspector .lab-learn .lab-maths {
+  margin: var(--s3) 0;
+}
+.lab-effects {
+  display: grid;
+  gap: var(--s2);
+  margin: var(--s3) 0 0;
+}
+.lab-effects div {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: var(--s3);
+}
+.lab-effects dt {
+  color: var(--ink);
+  font-weight: 500;
+}
+.lab-effects dd {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}

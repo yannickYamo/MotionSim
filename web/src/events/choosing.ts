@@ -6,8 +6,10 @@ import { addMission } from "../actions";
 import { openSetup } from "../actions/setup";
 import { schedule } from "../engine";
 import { fitFor } from "../engine/fit";
-import { applyPreset } from "../engine/loads";
-import { settle } from "../follow";
+import { applyPreset, proposeAgain } from "../engine/loads";
+import { startingLoad } from "../engine/proposed";
+import { offTheLink, ontoMains, settle, usualMains } from "../follow";
+import { remagnetised } from "../motorentry";
 import { suggestFor } from "../engine/suggest";
 import { DEVICE, MOST } from "../steps";
 import { setPath } from "../boxes";
@@ -18,6 +20,7 @@ import { nextButton } from "../views/rail";
 import { sweepKeyChosen } from "./columns";
 import { shutMenu } from "./menus";
 import { takeLayout } from "../eventask";
+import { chooseOnBoard } from "../board/reading";
 
 /** A kind of load picked from the list: it is sized to the motor, and is the load of step 4. */
 function pickLoad(el: HTMLInputElement): void {
@@ -25,10 +28,12 @@ function pickLoad(el: HTMLInputElement): void {
   const picked = res.presets?.list.find((p) => p.id === el.value);
   if (!picked) return;
   state.loadTouched = false;
+  state.loadUsual = true; // a kind picked starts on its usual load, the duty; the load the part can carry is offered
   state.loadPicked = picked.id;
   state.mission = null;
   ui.missionFault = null;
-  applyPreset(picked);
+  applyPreset(startingLoad(picked));
+  proposeAgain();
   // Picked by the user, the application brings how its drive starts: sealed in a shell, a
   // compressor's motor has no sensor.
   if (["pmsm", "bldc", "synrm"].includes(state.kind) && picked.start) state.start.method = picked.start;
@@ -80,29 +85,39 @@ function pickEdgeLimit(el: HTMLInputElement): void {
   schedule();
 }
 
+/** Why a tick or an untick in the list is not taken, or null where it is: five parts at most
+ *  are compared, and a part on the page is always under test. */
+function tickRefused(el: HTMLInputElement): string | null {
+  const { devices, added } = app.state;
+  const id = el.dataset.device!;
+  if (el.checked && !devices.includes(id) && devices.length >= MOST)
+    return "Five devices is the most at once: untick one to tick another.";
+  if (!el.checked && devices.length === 1 && devices[0] === id)
+    return added.length > 1
+      ? "One part is always under test: tick another before unticking this one."
+      : "One part is always under test: add another to compare, or take this one off the page.";
+  return null;
+}
+
 /** A part ticked or unticked in the list. */
 function tickDevice(el: HTMLInputElement): void {
   const { state } = app;
   const id = el.dataset.device!;
-  if (el.checked && !state.devices.includes(id) && state.devices.length >= MOST) {
-    // Five are compared at most: a sixth is not ticked, and the step says why.
-    el.checked = false;
-    at("#most-devices")?.remove();
-    const why = "Five devices is the most at once: untick one to tick another.";
-    const note = `<li class="quiet small" id="most-devices" role="alert">${why}</li>`;
+  at("#most-devices")?.remove();
+  const refused = tickRefused(el);
+  if (refused) {
+    // Not taken: the box goes back as it was, and the step says why beside the part.
+    el.checked = !el.checked;
+    const note = `<li class="quiet small" id="most-devices" role="alert">${refused}</li>`;
     el.closest(".device")?.insertAdjacentHTML("afterend", note);
     return;
   }
-  at("#most-devices")?.remove();
   state.devices = el.checked ? [...new Set([...state.devices, id])] : state.devices.filter((d) => d !== id);
   void suggestFor();
   if (state.focus === id && !el.checked) state.focusPicked = false;
   el.closest(".device")?.classList.toggle("is-on", el.checked);
   const foot = at("#panel .actions");
-  if (foot) {
-    at("#need-device")?.remove();
-    foot.outerHTML = nextButton(DEVICE);
-  }
+  if (foot) foot.outerHTML = nextButton(DEVICE);
   draw.rail();
   draw.stage();
   schedule();
@@ -134,15 +149,49 @@ function tickToCompare(el: HTMLInputElement): void {
   schedule();
 }
 
+/** The supply's kind, the mains' phases or the stage in front of the link was picked: the step
+ *  shows what goes with it. */
+function pickedSupply(bind: string): void {
+  const stage = bind === "conditions.front_end";
+  if (bind !== "supply" && bind !== "conditions.mains_phases" && !stage) return;
+  // Three phases have their own stages: one picked for one phase is let go.
+  if (!stage) app.state.conditions.front_end = "";
+  if (bind === "conditions.mains_phases") usualMains(app.state);
+  draw.panel(true);
+  at(`[data-bind="${bind}"]${stage ? ":checked" : ""}`)?.focus();
+}
+
+/** The supply's kind was chosen by the user: what goes with the mains comes or goes with it. */
+function supplyChosen(was: string): void {
+  const { state } = app;
+  state.supplyOwn = true;
+  if (was !== "mains" && state.supply === "mains") ontoMains(state);
+  // Off the mains by the user's choice: the link's figure goes, and the part's own supply comes back.
+  if (was === "mains" && state.supply !== "mains") {
+    offTheLink(state);
+    settle(state, app.setup, res.suggestion && res.suggestion.id === underTest() ? res.suggestion.data : null);
+  }
+}
+
 /** A list bound to the state: what follows from the choice depends on which list it is. */
 function pickOption(el: HTMLInputElement): void {
   const { state } = app;
   const bind = el.dataset.bind!;
-  setPath(bind, el.value);
-  if (bind === "supply") state.supplyOwn = true;
+  const was = state.supply;
+  // A list's choice is a word unless it is a figure: a motor's magnets or drive is kept as the
+  // word, never read as a number and left out.
+  setPath(bind, el.value, el.value.trim() !== "" && Number.isFinite(Number(el.value)));
+  if (bind === "supply") supplyChosen(was);
+  pickedSupply(bind);
   if (bind.startsWith("motors.")) {
     draw.stage();
     fitFor();
+  }
+  if (bind === "motors.pmsm.magnets") {
+    // Set in or buried, the magnets make the two axes' inductances differ: the step asks for both.
+    state.motors.pmsm = remagnetised(state.motors.pmsm, el.value);
+    draw.panel(true);
+    at(`[data-bind="${bind}"]`)?.focus();
   }
   if (bind === "conditions.cooling") {
     if (state.sweep.key === "t_sink") state.sweep.values = "";
@@ -179,11 +228,12 @@ export function onChange(e: Event): void {
 function changedOther(el: HTMLInputElement, file: File | undefined): void {
   const data = el.dataset;
   if (el.matches("[data-edge-limit]")) return pickEdgeLimit(el);
+  if (data.boardChoose !== undefined) return chooseOnBoard(el);
   if (data.variant === "sweep.key") return sweepKeyChosen(el as unknown as HTMLSelectElement);
   if (data.setupFile !== undefined && file) {
     shutMenu(el.closest<HTMLElement>("[popover]"));
     el.value = "";
     return void openSetup(file);
   }
-  if (el.tagName === "SELECT" && data.bind) pickOption(el);
+  if ((el.tagName === "SELECT" || el.type === "radio") && data.bind) pickOption(el);
 }

@@ -74,7 +74,7 @@ def _sink_advice(
             {"rth_sink": rth, "t_sink": low, "loss": loss, "sink_limit": cap},
             [
                 f"the heatsink is kept at or below {written(cap, 3)} °C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, "
-                f"the connectors. The hottest junction is then at {hottest:.0f} °C, {device.ratings.tj_max - hottest:.0f} °C "
+                f"the connectors. The hottest junction is then at {hottest:.0f} °C, {device.ratings.tj_max - hottest:.0f} K "
                 f"under its {written(device.ratings.tj_max, 3)} °C rating",
                 f"it then carries {written(loss, 3)} W into {written(t_ambient, 3)} °C air: {written(rth, 2)} K/W or lower, heatsink to ambient",
             ],
@@ -85,7 +85,7 @@ def _sink_advice(
         ([set_aside] if set_aside else [])
         + [
             f"the heatsink may reach {low:.0f} °C before the hottest junction passes {limit:g} °C "
-            f"({margin:g} °C under its {device.ratings.tj_max:g} °C rating)",
+            f"({margin:g} K under its {device.ratings.tj_max:g} °C rating)",
             f"it then carries {written(loss, 3)} W into {t_ambient:g} °C air: {written(rth, 2)} K/W or lower, "
             "heatsink to ambient",
         ],
@@ -124,7 +124,7 @@ def heatsink(
             topic,
             lines=[
                 f"even with the heatsink held at the {t_ambient:g} °C ambient the hottest junction "
-                f"is above {limit:g} °C ({margin:g} °C under the rating): no heatsink is enough",
+                f"is above {limit:g} °C ({margin:g} K under the rating): no heatsink is enough",
             ],
         )
     cap, set_aside, refused = _sink_cap(t_ambient, sink_limit)

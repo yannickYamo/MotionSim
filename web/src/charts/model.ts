@@ -1,7 +1,7 @@
 // The tables of a device model against current, and a limit against one condition.
 
 import type { ModelTable } from "../api";
-import { degrees, escape, sentence, sig } from "../format";
+import { degrees, escape, sig } from "../format";
 import { between, frame, FULL, HALF, line, nothing, savable } from "./frame";
 import type { Box, Scale } from "./frame";
 import { along, extend, figures, ticks, withRoom } from "./scale";
@@ -68,7 +68,7 @@ ${frame({ box, sx, sy }, ticks(0, xMax, 4), yt, "current, A", `${title}, ${unit}
 }
 
 /** A point marked on the line of a limit, with what it is written beside it. */
-function markedPoint(box: Box, mark: { x: number; y: number; label: string }, sx: Scale, sy: Scale): string {
+export function markedPoint(box: Box, mark: { x: number; y: number; label: string }, sx: Scale, sy: Scale): string {
   // The label sits under the point, clear of the line it is measured against, and is
   // kept inside the plot; near the foot of the plot it goes above.
   const cx = sx(mark.x),
@@ -87,14 +87,14 @@ function markedPoint(box: Box, mark: { x: number; y: number; label: string }, sx
 
 /** A scale from zero that ends on a round value above `top`, so that a level limit is a
  *  line inside the plot and not one drawn over its frame. */
-function limitScale(top: number): number[] {
+export function limitScale(top: number): number[] {
   const yt = ticks(0, withRoom(top, 1.08), 4);
   extend(yt, yt.length > 1 ? yt[1] - yt[0] : top, withRoom(top, 1.04));
   return yt;
 }
 
 /** A point to mark on a limit chart. */
-type Mark = { x: number; y: number; label: string };
+export type Mark = { x: number; y: number; label: string };
 
 /** The mark, where it is at a figure: one that is not has no place on the plot. */
 const placed = (given?: Mark): Mark | undefined =>
@@ -103,7 +103,7 @@ const placed = (given?: Mark): Mark | undefined =>
 /**
  * One line of a limit against one condition, with a point marked on it where there is one.
  * `wide`: drawn for the full width of the panel, as the main chart of a tab; otherwise for
- * half of it, one of a pair.
+ * half of it, one of a pair. The drawing alone: its panel is the tab's (views/tabs/capability.ts).
  */
 export function limitChart(
   xs: number[],
@@ -131,5 +131,5 @@ export function limitChart(
   const curve = `<path class="series read-hot" d="${line(xs, ys, sx, sy)}"/>`;
   const svg = `<svg class="chart${wide ? "" : " small"}" viewBox="${view}" role="img" aria-label="${said}">
 ${frame({ box, sx, sy }, ticks(x0, x1, wide ? 5 : 4), yt, xLabel, yLabel)}${curve}${dot}</svg>`;
-  return savable(svg, sentence(what), "", !wide);
+  return svg;
 }

@@ -1,0 +1,40 @@
+/* The power's way to the inverter, on one quiet line under the scheme's drawing. Named apart
+   from the scheme's own list of blocks (.lab-chain), whose rules draw a link above each item. */
+.lab-supply {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s5);
+  padding: var(--s2) var(--s4);
+  border-top: 1px solid var(--line);
+  font-size: var(--t-small);
+}
+.lab-supply ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1) var(--s3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.lab-supply li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+.lab-supply li > svg {
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-3);
+}
+.lab-supply-name {
+  color: var(--ink);
+  font-weight: 500;
+}
+.lab-supply-more {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}

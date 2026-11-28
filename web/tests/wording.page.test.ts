@@ -45,12 +45,14 @@ describe("the words of the results", () => {
     app.state.focus = "example";
     renderPanel(true);
     const body = document.querySelector("#tab-body")!;
-    const heads = [...body.querySelectorAll("details[open] h4")].map((h) => h.textContent);
+    const heads = [...body.querySelectorAll("details[open] h3")].map((h) => h.textContent);
     expect(heads).toContain("Does not pass");
     expect(heads).not.toContain("To read");
   });
-  it("says in the open what the Standstill column is", () => {
-    expect(tab()).toContain("Standstill: the hottest junction holding the same torque with the motor stopped");
+  it("says on the Standstill head what it is, one move away", () => {
+    renderPanel(true);
+    const head = document.querySelector('#tab-body .cand-head [title^="Standstill"]')!;
+    expect(head.getAttribute("title")).toContain("the hottest junction holding the same torque with the motor stopped");
   });
   it("says why a motor with no magnets has no check of a trip at speed", () => {
     app.state.kind = "induction";
@@ -63,14 +65,14 @@ describe("the words of the results", () => {
     renderStage();
     expect(document.querySelector("#readouts")!.textContent).toContain("orange in the loss bars");
   });
-  it("gives a caution's reason beside Passes, with cautions", () => {
+  it("gives a design action's reason, in one short line, beside the verdict's short words", () => {
     app.state.compare = "devices";
     const text = new DOMParser().parseFromString(compareTable(), "text/html").body.textContent;
     const caution = (res.proposal!.candidates.find((x) => x.id === "example") as Candidate).checks.find(
       (x) => x.level === "caution",
     )!;
-    expect(text).toContain("Passes, with cautions");
-    expect(text).toContain(caution.message.slice(1, 40));
+    expect(text).toMatch(/Passes · \d actions?/);
+    expect(text).toContain(caution.message.slice(1, 30));
   });
   it("offers a datasheet PDF only where this page reads one", () => {
     vi.spyOn(api, "mode").mockReturnValue("browser");

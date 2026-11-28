@@ -146,13 +146,16 @@ async function tabResults(
       (v) => (res.grid = v),
     );
   }
-  if (state.tab === "limits" && res.advised === null) {
+  // What to build and what the part can drive are asked for as soon as the verdict's motion
+  // is in, whatever tab is open, so the Limits tab is ready when it is pressed.
+  const limits = state.tab === "limits" || (res.cycle !== null && !res.loading.size);
+  if (limits && res.advised === null) {
     const air = state.sink.t_ambient;
     const t_ambient = air === "" || Number.isNaN(Number(air)) ? 40 : Number(air);
     const ask = () => api.recommend({ ...req, t_ambient }).then((x) => x.items);
     await run("recommend", ask, (v) => (res.advised = v));
   }
-  if (state.tab === "limits" && res.capable === null) {
+  if (limits && res.capable === null) {
     await run(
       "capability",
       () => api.capability(req),

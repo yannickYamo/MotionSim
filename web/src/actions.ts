@@ -66,7 +66,7 @@ export function goTo(step: number, fromHistory = false): void {
         { opacity: 0.4, transform: `translateX(${way * 12}px)` },
         { opacity: 1, transform: "none" },
       ],
-      { duration: 200, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      { duration: 200, easing: "cubic-bezier(0.2, 0, 0, 1)" }, // --dur-2 on --ease-out,
     );
     entrance.finished?.catch(() => undefined);
   }

@@ -5,7 +5,7 @@ import { notRefused } from "./api";
 import type { Candidate, Field } from "./api";
 import { sig } from "./format";
 import { outOfRange } from "./limits";
-import { shownAs, shownText } from "./motorentry";
+import { fieldsOf, shownAs, shownText } from "./motorentry";
 import { readList } from "./parse";
 import { request } from "./state";
 import type { LoadItem, MotorItem } from "./state";
@@ -130,7 +130,9 @@ export function motorLabel(m: Pick<MotorItem, "motor" | "conditions">): string {
   const kind = setup.motors[key];
   if (!kind) return "Another motor";
   const step2 = state.motors[key] ?? {};
-  const changed = kind.fields.filter((f) => String(m.motor[f.key] ?? "") !== String(step2[f.key] ?? ""));
+  const changed = fieldsOf(key, kind.fields, m.motor).filter(
+    (f) => String(m.motor[f.key] ?? "") !== String(step2[f.key] ?? ""),
+  );
   const k = state.conditions;
   const moved = (["v_dc", "rpm", "torque"] as const).filter((p) => m.conditions[p] !== k[p]);
   const what = [

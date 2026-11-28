@@ -3,10 +3,10 @@
 
 import { api } from "../api";
 import type { Suggest } from "../api";
-import { settle } from "../follow";
+import { leaveMains, settle } from "../follow";
 import { latest, once } from "../guard";
 import { presetsFor } from "./loads";
-import { save } from "../state";
+import { save, usualLoad } from "../state";
 import { LOAD, MOTOR, SUPPLY } from "../steps";
 import { app, draw, res, ui, underTest } from "../store";
 
@@ -14,7 +14,10 @@ import { app, draw, res, ui, underTest } from "../store";
  *  once the user has seen the figures that moved. Returns whether anything did. */
 function startFrom(id: string, suggest: Suggest): boolean {
   const { state, setup } = app;
-  const changes = settle(state, setup, suggest);
+  // A part put under test while the drive is on the mains, which it cannot stand: off the mains first.
+  const left = leaveMains(state, suggest);
+  const changes = [...(left ? [left] : []), ...settle(state, setup, suggest)];
+  usualLoad.swings = suggest?.application?.swings === true;
   const start = suggest?.application?.start;
   // Sealed in its shell, a compressor's motor has no sensor: the made-up part's application
   // brings how such products start, until the user picks a load of their own.

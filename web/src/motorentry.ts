@@ -19,14 +19,67 @@ export const freshEntry = (): MotorEntry => ({ wiring: "line", constant: {} });
 
 /** The figures a three-phase model takes for one phase of the star: a datasheet's figure
  *  between two terminals is twice that, for a star and for the star a delta is equal to. */
-const PER_PHASE: Record<string, string[]> = { pmsm: ["l", "rs"], synrm: ["rs"], induction: ["rs"] };
+const PER_PHASE: Record<string, string[]> = { pmsm: ["l", "ld", "lq", "rs"], synrm: ["rs"], induction: ["rs"] };
 /** The figures the block-commutated model takes between two terminals, as two phases conduct. */
 const LINE_TO_LINE: Record<string, string[]> = { bldc: ["r", "l"] };
 const HENRY = new Set(["l", "ld", "lq", "lm", "lls", "llr"]);
 const OHM = new Set(["rs", "rr", "r"]);
 /** The name of a figure that can be given either way, without saying which way. */
 const NOUN: Record<string, string> = { l: "Inductance", rs: "Resistance", r: "Resistance" };
-const NOUN_OF: Record<string, Record<string, string>> = { induction: { rs: "Stator resistance" } };
+const NOUN_OF: Record<string, Record<string, string>> = {
+  induction: { rs: "Stator resistance" },
+  pmsm: { ld: "Inductance Ld", lq: "Inductance Lq" },
+};
+
+/** Magnets set into or under the rotor's face: the two axes differ in inductance. */
+const SALIENT = new Set(["inset", "interior"]);
+
+interface FieldLike {
+  key: string;
+  label: string;
+  help: string;
+}
+
+/** The figures a motor is asked for, as its magnets have it: a permanent-magnet motor with its
+ *  magnets set in or buried is asked for its two axis inductances, where one with them on its
+ *  face has one. Every list of a motor's figures goes through here. */
+export function fieldsOf<F extends FieldLike>(kind: string, fields: F[], values: Record<string, string | number>): F[] {
+  if (kind !== "pmsm" || !SALIENT.has(String(values.magnets ?? ""))) return fields;
+  return fields.flatMap((f) =>
+    f.key !== "l"
+      ? [f]
+      : [
+          { ...f, key: "ld", label: "Inductance Ld", help: "Along the magnet: the smaller of the two." },
+          {
+            ...f,
+            key: "lq",
+            label: "Inductance Lq",
+            help:
+              "Across the magnet: at least Ld. Lq 5 % or more above Ld lets the drive find the rotor's angle " +
+              "at standstill, with no encoder.",
+          },
+        ],
+  );
+}
+
+/** A permanent-magnet motor's figures with its magnets changed: one inductance becomes both
+ *  axes' (equal until one is given), and the two become one again, the d axis's. */
+export function remagnetised<V extends Record<string, string | number>>(values: V, magnets: string): V {
+  const v: Record<string, string | number> = { ...values, magnets };
+  const given = (k: string) => v[k] !== undefined && v[k] !== "";
+  if (SALIENT.has(magnets)) {
+    if (given("l")) {
+      if (!given("ld")) v.ld = v.l;
+      if (!given("lq")) v.lq = v.l;
+    }
+    delete v.l;
+  } else if ("ld" in v || "lq" in v) {
+    v.l = given("ld") ? v.ld : (v.lq ?? "");
+    delete v.ld;
+    delete v.lq;
+  }
+  return v as V;
+}
 
 /** Kv · Kt for each kind whose constant may be given either way, and the constant its model holds.
  *  Permanent-magnet: Kt per A rms, T = 3/2 · √2 · p · ψ and ψ = 60 / (√3 · 2π · p · Kv), so

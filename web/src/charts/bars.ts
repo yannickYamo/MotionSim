@@ -6,14 +6,43 @@ import { escape, sig } from "../format";
 /** One part of a loss: its name, its watts, and the class it is coloured by. */
 type Part = [string, number, string];
 
-/** One line of the key to the loss split: a part's name, its watts and its share of the total. */
-function lossRow([name, value, cls]: Part, total: number): string {
+/** One line of the key to the loss split: a part's name, its watts and its share of the total.
+ *  `k` ties the line to its block, so pointing at either lights both. */
+function lossRow([name, value, cls]: Part, total: number, k: number): string {
   const share = `<span class="num dim">${Math.round((value / total) * 100)} %</span>`;
   const watts = `<span class="num">${sig(value)} W</span>`;
-  return `<li><span class="key ${cls}"></span><span>${name}</span>${watts}${share}</li>`;
+  return `<li data-k="${k}"><span class="key ${cls}"></span><span>${name}</span>${watts}${share}</li>`;
 }
 
-/** Where the loss goes in the hottest position: conduction in bone, switching in orange. */
+/** One block of the bar: its share printed inside at its leading edge where it fits, and its
+ *  name, watts and share on hover. A block at nought draws nothing. */
+function lossBlock([name, value, cls]: Part, total: number, k: number): string {
+  if (!(value > 0)) return "";
+  const share = (value / total) * 100;
+  const pct = `${Math.round(share)} %`;
+  // A block too narrow for its share prints none: the key and the readout still give it.
+  const fits = share >= 7 ? `<span class="lb-in">${pct}</span>` : "";
+  const narrow = share < 16 ? " narrow" : "";
+  const said = `<span class="lb-tip" role="tooltip"><b>${name}</b> ${sig(value)} W · ${pct}</span>`;
+  return (
+    `<span class="lb-seg ${cls}${narrow}" data-k="${k}" style="flex-grow:${share.toFixed(3)}">` +
+    `${fits}${said}</span>`
+  );
+}
+
+/** A group of the bar named over it, with a bracket the width of its blocks: conduction on the
+ *  left, switching on the right (the Two Inks Rule). */
+function lossGroup(name: string, value: number, total: number, from: number, tone: string, end: boolean): string {
+  if (!(value > 0)) return "";
+  const share = (value / total) * 100;
+  const place = `left:${from.toFixed(3)}%;width:${share.toFixed(3)}%`;
+  const words = `${name} <b>${sig(value)} W</b> <span class="dim">${Math.round(share)} %</span>`;
+  const cls = `lb-group ${tone}${end ? " end" : ""}`;
+  return `<span class="${cls}" style="${place}"><span class="lb-name">${words}</span></span>`;
+}
+
+/** Where the loss goes in the hottest position: conduction in bone, switching in orange, as one
+ *  segmented bar whose blocks part on the ground, named by group over it and listed under it. */
 export function lossBar(l: Losses, hasDiode: boolean): string {
   const parts: Part[] = [
     ["Switch conduction", l.conduction, "cond"],
@@ -25,21 +54,25 @@ export function lossBar(l: Losses, hasDiode: boolean): string {
       ? ([["Diode recovery", l.recovery + l.diode_recovery, "sw c"]] as Part[])
       : []),
   ];
-  const total = Math.max(l.total, 1e-12);
-  let x = 0;
-  const bar = parts
-    .map(([name, value, cls]) => {
-      const w = (value / total) * 100;
-      const title = `<title>${name}: ${sig(value)} W</title>`;
-      const piece = `<rect class="seg ${cls}" x="${x}%" y="0" width="${Math.max(w, 0)}%" height="28">${title}</rect>`;
-      x += w;
-      return piece;
-    })
-    .join("");
-  const rows = parts.map((part) => lossRow(part, total)).join("");
-  const svg = `<svg class="lossbar" viewBox="0 0 100 28" preserveAspectRatio="none" role="img"`;
-  const said = `Loss split of one switch position: ${sig(l.total)} W in all`;
-  return `${svg} aria-label="${said}">${bar}</svg><ul class="legend">${rows}</ul>`;
+  const total = Math.max(
+    parts.reduce((a, [, v]) => a + Math.max(v, 0), 0),
+    1e-12,
+  );
+  const cond = parts.filter(([, , c]) => c.startsWith("cond")).reduce((a, [, v]) => a + Math.max(v, 0), 0);
+  const sw = parts.filter(([, , c]) => c.startsWith("sw")).reduce((a, [, v]) => a + Math.max(v, 0), 0);
+  const groups =
+    lossGroup("Conduction", cond, total, 0, "cond", false) +
+    lossGroup("Switching", sw, total, (cond / total) * 100, "sw", true);
+  const blocks = parts.map((part, k) => lossBlock(part, total, k)).join("");
+  const rows = parts.map((part, k) => lossRow(part, total, k)).join("");
+  const said =
+    `Loss split of one switch position: ${sig(l.total)} W in all; ` +
+    parts.map(([name, value]) => `${name} ${sig(value)} W`).join(", ");
+  return (
+    `<figure class="lossbar-fig"><div class="lb-groups" aria-hidden="true">${groups}</div>` +
+    `<div class="lossbar" role="img" aria-label="${escape(said)}">${blocks}</div>` +
+    `<ul class="legend">${rows}</ul></figure>`
+  );
 }
 
 /** The bar of one thing compared: its parts end to end, then their total written after them. */
@@ -47,11 +80,15 @@ function compareRow(r: { name: string; parts: { value: number; tone: string }[] 
   const w = 400;
   let x = 0;
   const total = r.parts.reduce((a, p) => a + p.value, 0);
-  const segments = r.parts
-    .map((p) => {
+  // The parts part on the ground by 2 units, the gap taken from the part before it.
+  const shown = r.parts.filter((p) => p.value > 0);
+  const segments = shown
+    .map((p, k) => {
       const width = (p.value / top) * w;
-      const size = `width="${Math.max(width, 0).toFixed(1)}" height="16"`;
-      const out = `<rect class="seg ${p.tone}" x="${x.toFixed(1)}" y="2" ${size}/>`;
+      const gap = k < shown.length - 1 && width > 4 ? 2 : 0;
+      const size = `width="${Math.max(width - gap, 0).toFixed(1)}" height="16"`;
+      const title = `<title>${sig(p.value)} ${unit}</title>`;
+      const out = `<rect class="seg ${p.tone}" x="${x.toFixed(1)}" y="2" ${size} rx="2">${title}</rect>`;
       x += width;
       return out;
     })

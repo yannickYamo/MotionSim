@@ -1,0 +1,20 @@
+# Only what the image is built from goes to the builder: pyproject.toml, the four documents
+# the wheel carries, src/ and examples/, and the two guides the agent's server offers.
+# Everything else stays out, the user's own files first.
+*
+!pyproject.toml
+!README.md
+!LICENSE
+!DISCLAIMER.md
+!THIRD_PARTY.md
+!src
+!examples
+!docs/GUIDE.md
+!docs/MCP.md
+
+# Inside what is let in: what Python leaves behind, and the hosted page's Python runtime,
+# which the installed engine never loads.
+**/__pycache__
+**/*.py[cod]
+**/*.egg-info
+src/motionsim/webui/engine/pyodide

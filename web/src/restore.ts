@@ -4,7 +4,7 @@
 // here is a page that cannot be drawn, on this visit and on every one after.
 
 import type { KeptPart, Phase, Segment, Setup } from "./api";
-import { EDGE_LIMITS, initial, KEY, POINT_KEYS, save as saveState, STALE_KEYS } from "./state";
+import { EDGE_LIMITS, initial, KEY, partsHeld, POINT_KEYS, save as saveState, STALE_KEYS } from "./state";
 import type { LoadItem, Mission, MotorItem, Point, State, Tab } from "./state";
 import type { MotorEntry } from "./motorentry";
 import { MOST } from "./steps";
@@ -237,6 +237,7 @@ function shaped(raw: unknown, setup: Setup, keepDevices = false): State | null {
   )
     return null;
   const state = drawnFrom(saved, setup, keepDevices);
+  partsHeld(state);
   return "phases" in saved ? state : asSaved(state);
 }
 
@@ -279,6 +280,9 @@ function drawnFrom(saved: Json, setup: Setup, keepDevices: boolean): State {
       cooling: oneOf(conditions.cooling, COOLINGS, fresh.conditions.cooling),
       interface: oneOf(conditions.interface, ["", "pad"] as const, ""),
       edge_limit: oneOf(conditions.edge_limit, EDGE_LIMITS, fresh.conditions.edge_limit),
+      mains_phases: oneOf(conditions.mains_phases, ["1", "3"] as const, "1"),
+      link_own: oneOf(conditions.link_own, ["", "1"] as const, ""),
+      fe_tie: oneOf(conditions.fe_tie, ["", "on", "off"] as const, ""),
       sized: oneOf(conditions.sized, ["", "rth_sink", "board_area"] as const, ""),
       sizedFor: longText(isRecord(saved.conditions) ? saved.conditions.sizedFor : "", MOST_SIZING),
     },
@@ -287,7 +291,7 @@ function drawnFrom(saved: Json, setup: Setup, keepDevices: boolean): State {
       Object.entries(isRecord(saved.typedOf) ? saved.typedOf : {}).map(([id, figures]) => [id, textsOf(figures)]),
     ),
     mission: missionOf(saved.mission),
-    supply: oneOf(saved.supply, ["one-way", "battery"] as const, fresh.supply),
+    supply: oneOf(saved.supply, ["one-way", "battery", "mains"] as const, fresh.supply),
     load: like(saved.load, fresh.load),
     sink: like(saved.sink, fresh.sink),
     start: like(saved.start, fresh.start),
@@ -373,6 +377,7 @@ export async function keptBack(state: State, setup: Setup, parts: KeptPart[], en
   state.devices = state.devices.filter((d) => have.has(d));
   state.added = state.added.filter((d) => have.has(d));
   if (state.focus && !have.has(state.focus)) state.focus = null;
-  if (state.devices.length + state.added.length !== before) (engine.save ?? saveState)(state);
+  const mended = partsHeld(state);
+  if (mended || state.devices.length + state.added.length !== before) (engine.save ?? saveState)(state);
   return now;
 }

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Setup } from "../src/api";
-import { Refused } from "../src/api";
+import { api, Refused } from "../src/api";
 import { initial } from "../src/state";
 import type { Tab } from "../src/state";
 import { setPath } from "../src/boxes";
@@ -61,6 +61,8 @@ function drawEverything(): void {
 
 beforeEach(() => {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
+  // Drawing never waits on the engine here: a cooling offer it asks for stays on its way.
+  vi.spyOn(api, "cooling").mockReturnValue(new Promise(() => {}));
   document.body.innerHTML = `<div id="app">${topBar()}${frame()}</div>`;
   connect();
   app.setup = structuredClone(setup);
@@ -207,11 +209,11 @@ describe("the verdict where the motion cannot be followed", () => {
     renderPanel();
     renderStage();
     expect(document.querySelector("#verdict-strip")!.textContent).toContain("Ruled out");
-    expect(document.querySelector(".candidate summary")!.textContent).toContain("Ruled out");
-    expect(document.querySelector(".candidate summary")!.textContent).not.toContain("Passes");
-    expect(document.querySelector("#panel .verdict-line")!.textContent).toMatch(
-      /passes at the design point, but not over the motion/,
-    );
+    // A part alone: its figures lead, and the headline says it fails, and where.
+    expect(document.querySelector(".candidate.alone")!.classList.contains("fail")).toBe(true);
+    expect(document.querySelector("#panel .verdict-line")!.classList.contains("fail")).toBe(true);
+    expect(document.querySelector("#panel .verdict-line")!.textContent).toMatch(/^Ruled out · over the motion/);
+    expect(document.querySelector("#panel .verdict-line")!.textContent).not.toContain("Passes");
     expect(document.querySelector(".cand-body")!.textContent).toContain("cannot follow part of this motion");
     expect(document.querySelector("#announce")!.textContent).toMatch(/Ruled out/);
   });

@@ -38,6 +38,10 @@ function energyRow(e: EventEdge): string {
   return `<div class="${cls}"><dt>Energy lost</dt><dd><b>${uj(e.energy)}</b>${note}</dd></div>`;
 }
 
+/** The frequency an edge rings at. The engine gives none where the trace does not swing about
+ *  its rest three times: that is said in words, never left as a dash beside the other edge's figure. */
+export const ringingSaid = (e: Pick<EventEdge, "ring">): string => (e.ring ? `${sig(e.ring / 1e6)} MHz` : "none found");
+
 /** The figures of one edge, in the order a double-pulse test reports them. */
 export function edgeFigures(e: EventEdge, which: Which, v_dc: number): string {
   const on = which === "on";
@@ -51,7 +55,7 @@ export function edgeFigures(e: EventEdge, which: Which, v_dc: number): string {
     on
       ? row("Peak current", `${sig(e.i_peak)} A`, "with what the other switch gives back")
       : row("Peak voltage", `${sig(e.v_peak)} V`, `${sig(e.v_peak - v_dc)} V over the supply`),
-    row("Ringing", e.ring ? `${sig(e.ring / 1e6)} MHz` : sig(null)),
+    row("Ringing", ringingSaid(e)),
   ];
   if (e.tail) rows.push(row("Tail current's time", `${sig(e.tail * 1e6)} µs`));
   rows.push(
@@ -61,7 +65,7 @@ export function edgeFigures(e: EventEdge, which: Which, v_dc: number): string {
     const note = "of the datasheet's, to lose the loss model's energy";
     rows.push(row("Recovery charge taken", `${sig(e.recovery, 2)} ×`, note));
   }
-  return `<dl class="ev-figures">${rows.join("")}</dl>`;
+  return `<dl class="ev-figures plot-figures">${rows.join("")}</dl>`;
 }
 
 /** The model's switching times beside the datasheet's, at the datasheet's own test. */

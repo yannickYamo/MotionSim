@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { SwitchingEvent } from "../src/api";
 import { loopInductance, MU0 } from "../src/eventplot/estimate";
-import { sharedZero, valuesAt, visible } from "../src/eventplot/plot";
+import { sharedZero, USUAL, valuesAt, visible } from "../src/eventplot/plot";
 import { CLICK_PX, DWELL_MS, isPress, partAt, readingAt, timeAtX, wheelZooms } from "../src/eventplot/pointer";
 import { edgeSvg, placed } from "../src/eventplot/svg";
 import { indicative, signatureLine } from "../src/eventplot/view";
@@ -169,12 +169,15 @@ describe("reading a trace", () => {
     );
   });
   it("finds the instant a point on the screen stands for", () => {
-    // The plot spans 56 to 504 of 560 drawing units; the drawing is shown 1120 px wide.
-    const rect = { left: 100, width: 1120 };
+    // The drawing is shown twice as wide as it is drawn; the plot starts and ends inside it.
+    const rect = { left: 100, width: 2 * USUAL.view.w };
     const v = { t0: 0, t1: 100e-9 };
-    expect(timeAtX(100 + 112, rect, v)).toEqual({ t: 0, inside: true });
-    expect(timeAtX(100 + 560, rect, v).t).toBeCloseTo(50e-9, 15);
-    expect(timeAtX(100 + 1100, rect, v).inside).toBe(false);
+    const { x, w } = USUAL.top;
+    const at = timeAtX(100 + 2 * x, rect, v);
+    expect(at.t).toBeCloseTo(0, 15);
+    expect(at.inside).toBe(true);
+    expect(timeAtX(100 + 2 * (x + w / 2), rect, v).t).toBeCloseTo(50e-9, 15);
+    expect(timeAtX(100 + 2 * (x + w) + 20, rect, v).inside).toBe(false);
   });
   it("draws the samples in the span and one either side", () => {
     expect(visible([0, 1, 2, 3, 4, 5], { t0: 1.5, t1: 3.5 })).toEqual([1, 4]);
@@ -285,10 +288,11 @@ describe("what is named on the traces", () => {
   const boxes = (svg: string) =>
     [...svg.matchAll(/<text class="mark-label[^"]*" x="([\d.]+)" y="([\d.]+)" text-anchor="(\w+)">([^<]*)</g)].map(
       (m) => {
-        const w = m[4].length * 9;
+        // The mono face at the size the plot sets it: 0.6 em a letter, a line 12 high.
+        const w = m[4].length * 6.9;
         const x = Number(m[1]);
         const x0 = m[3] === "end" ? x - w : x;
-        return { x0, x1: x0 + w, y0: Number(m[2]) - 15, y1: Number(m[2]) + 3, text: m[4] };
+        return { x0, x1: x0 + w, y0: Number(m[2]) - 10, y1: Number(m[2]) + 2, text: m[4] };
       },
     );
   it("sets labels at one point clear of each other, and drops none", () => {

@@ -45,9 +45,12 @@ class Start:
     handover_rpm: float = 0.0  # motor speed below which the drive runs open loop
     flux_time: float = 0.0  # s; induction motors: flux build-up before torque
 
-    def floor(self, rpm: float) -> float | None:
+    def floor(self, rpm: float, resting: bool = False) -> float | None:
         """The least current the stage carries at this speed, or None when the drive
-        applies what the torque needs."""
+        applies what the torque needs. A drive at rest with nothing asked of it (`resting`)
+        is off: the start's current is held while it aligns and ramps, not while it stands."""
+        if resting:
+            return None
         if self.method == "open_loop" and self.current > 0 and abs(rpm) < self.handover_rpm:
             return self.current
         return None
@@ -79,6 +82,7 @@ def with_start(samples: list[Sample], start: Start) -> list[Sample]:
                 load_acceleration=0.0,
                 motor_rpm=0.0,
                 motor_torque=0.0,
+                aligning=True,
             )
         )
     return before + samples

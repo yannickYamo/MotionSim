@@ -2,9 +2,14 @@
 
 What MotionSim does not do, or does only roughly, in order of how much it matters. Read this before trusting a result.
 
-## 1. One measured loss behind it, and it does not settle much
+## 1. Four published boards behind it, and they do not settle much
 
-The loss and temperature model is checked against closed-form solutions and an independent numerical integration, and against one vendor's simulator on one part. It has been compared with one loss measured on hardware, a published 48 V reference design: 10 to 31% below a measurement that includes the board's own resistance, with the switching estimate from charge 30% low at low current and 30% high at high current. No junction temperature has been compared with a measured one. Treat every result as an estimate to be confirmed on the bench.
+The loss and temperature model is checked against closed-form solutions and an independent numerical integration, and against one vendor's simulator on one part. It has been compared with four reference designs their makers publish ([VALIDATION.md](VALIDATION.md), Level D), and on these it reads low on loss and hot on temperature:
+
+- **Loss.** 10 to 31% below a 48 V inverter's measurement that includes the board's own resistance, with the switching estimate from charge 30% low at low current and 30% high at high current. On a six-step board the model has no figure for the 2 W the driver and the supplies take, and half of what PWM adds there.
+- **Temperature on a board with no heatsink.** With the datasheet's junction-to-air figure from its standard test board, the one the tool asks for, the hottest case's rise came out about twice the measured on one board at every point; on a second, within 6% at its lowest switching frequency and up to twice at its highest; on the third, from about the measured at 9 A to 3.8 times at 27 A, and past that loss and temperature fed each other into no steady state at a current the board carried. These boards spread the heat through copper in several layers, which that figure does not see. Where a datasheet also gives the figure on its maker's own evaluation board, it came closer on the first board (1.15 to 1.35 times) and read 19 to 26% low on the second at its lowest frequency. Few boards, two parts, all in still air: take this as the direction of the error, not its size.
+
+What was compared is the case temperature; no junction temperature has been compared with a measured one. Treat every result as an estimate to be confirmed on the bench, and on a board with no heatsink, one temperature reading at a known load in place of the datasheet's junction-to-air figure.
 
 ## 2. Junction temperature inside a module is a range
 
@@ -20,11 +25,18 @@ A datasheet gives each chip's thermal resistance with that chip heated alone. Ho
 - Where a datasheet gives no switching energy and no gate charges, switching loss is estimated from its rise and fall times and output charge: two printed times from a clean test, taken not to move with current. It is the weakest of the three footings and is named in every result that uses it.
 - A datasheet that gives too little to model a device is refused with what is missing.
 
-## 4. The control is its settled result, not a loop
+## 4. The control: settled in the five steps, simulated in the control lab
 
-A modern drive runs field-oriented control: a current loop, a speed or position loop, and an estimate of where the rotor is. MotionSim does not simulate those loops. It works out the currents they settle to, at every instant of the motion, and gives those to the loss and temperature engine. For a permanent-magnet motor that is the d- and q-axis current making the torque with least current, and field weakening where the voltage runs out. [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) says why.
+A modern drive runs field-oriented control: a current loop, a speed or position loop, and an estimate of where the rotor is. MotionSim treats it in two ways, and they are kept apart.
 
-What that covers, and how:
+- **The five steps, the comparison, the motion, the report and every command but `motionsim control`** use the settled result. No loop is simulated. The tool works out the currents the loops settle to, at every instant of the motion, and gives those to the loss and temperature engine. For a permanent-magnet motor that is the d- and q-axis current making the torque with least current, and field weakening where the voltage runs out. Every verdict, loss and temperature of the five steps is this. [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md) says why.
+- **The control lab** simulates the loop in time: a permanent-magnet motor, the stage switch by switch, and a sampled controller wired from blocks, with the run's currents and commutations handed to the same loss and thermal model. It is on the local page and in `motionsim control`, not on the hosted page. Nothing it finds changes a verdict of the five steps. Its own limits are at the end of this section; [CONTROL.md](CONTROL.md) has the model.
+
+Held at a steady point under field-oriented control, the lab ends where the settled result is: [VALIDATION.md](VALIDATION.md) has the figures.
+
+### The settled result
+
+What it covers, and how:
 
 | What a drive does | How it is represented |
 |---|---|
@@ -36,16 +48,38 @@ What that covers, and how:
 | Braking | The energy returned to the DC link and the voltage it reaches, as a worst case |
 | Ripple at the switching frequency | Worked out from the switching sequence and the motor's inductance |
 
-What it leaves out, and what each could cost you:
+What it leaves out, and what each could cost you. The control lab shows several of these for a permanent-magnet motor; the five steps still leave them out.
 
-- **The current loop's transient.** A step in torque makes the current pass its reference for about a millisecond. That is too short to move a junction temperature much, but a pulsed current rating has no moment to give. Where the motor's current limit is given, the check on that rating is made at the limit, which is where a drive's current sits in a hard acceleration or a stall. Where none is given, it is made at the settled current with 15% allowed for overshoot, and the switching ripple on top of that where it is known: a common figure and not your drive's, and a loop tuned for speed overshoots more. How far a loop really overshoots has not been worked out here.
+- **The current loop's transient.** A step in torque makes the current pass its reference for about a millisecond. That is too short to move a junction temperature much, but a pulsed current rating has no moment to give. Where the motor's current limit is given, the check on that rating is made at the limit, which is where a drive's current sits in a hard acceleration or a stall. Where none is given, it is made at the settled current with 15% allowed for overshoot, and the switching ripple on top of that where it is known: a common figure and not your drive's, and a loop tuned for speed overshoots more. The check says that the 15% is this fixed allowance. A run in the control lab holds the same rating to its own loop instead: after a torque step, to the overshoot that run's current made; after any other test, to the 15%, said as such.
 - **Whether the control holds.** That the rotor follows an open-loop ramp under the load, that an observer keeps the rotor, that the loops are stable: all taken as given. A start against full load can fail in ways this tool will not show.
-- **Low speed without a sensor.** The tool gives the speed below which the back-EMF cannot be read through the voltage this device and dead time get wrong. It is a closed-form figure for firmware that corrects for neither, with the back-EMF taken as readable at four times the error. Firmware that corrects for dead time reads lower; an observer in a noisy drive may need more, and a winding hotter than the drive was set for adds an error that is not counted. It is an estimate with nothing independent behind it yet. Permanent-magnet motors under sinusoidal control only.
+- **Low speed without a sensor.** The tool gives the speed below which the back-EMF cannot be read through the voltage this device and dead time get wrong. It is a closed-form figure for firmware that corrects for neither, with the back-EMF taken as readable at four times the error. Firmware that corrects for dead time reads lower; an observer in a noisy drive may need more, and a winding hotter than the drive was set for adds an error that is not counted. It is an estimate with nothing independent behind it yet. Permanent-magnet motors under sinusoidal control only. The control lab sets a floor of its own beside each observer, from the stage, the current samples' noise and resolution and a wrong resistance, and beside it the design speed and the slowest the motion turns; it is held to the simulated run, not to hardware.
 - **What the drive does to protect itself.** A real drive brakes more slowly to hold the link voltage and cuts its current when hot. The tool reports what happens without either, which is the harder case.
 - **Torque ripple.** From the back-EMF's harmonics, cogging and dead time. Not modelled, so neither is its heating.
 - **The d-axis current that loses least.** Advised at the design point where the motor's iron loss is given, with iron loss taken to follow the square of the flux. The results themselves stay on least current, which is what a drive runs unless it is told otherwise.
 
-Where the loop's own behaviour decides the answer (a fault, a hard reversal, an aggressive tuning), bring its currents and duty cycles from a control simulation or a drive's log: `motionsim trajectory` takes them as they are.
+Where the loop's own behaviour decides the answer (a fault, a hard reversal, an aggressive tuning), run it in the control lab if the motor is a permanent-magnet one, or bring its currents and duty cycles from a control simulation or a drive's log: `motionsim trajectory` takes them as they are.
+
+### The control lab
+
+- **Not compared with a measured drive.** It is held to closed forms, to the settled engine at steady points and to linear theory. No waveform, loss or temperature from it has been set beside hardware. Comparing two schemes on the same device and board is on firmer ground than either one's watts, since what the model gets wrong is common to both; the exception is a scheme that moves the current at the switching instant (a clamp placed on the current, a predictive cost), whose gain rests on the shape of the switching-energy curve.
+- **Permanent-magnet motors only.** Any other kind is refused.
+- **No saturation.** The simulated motor's inductances are constants.
+- **No cogging, no back-EMF harmonics, no iron loss in the simulated motor.** The torque ripple shown is the current's alone. Iron loss is counted afterwards from the motor's one figure, taken to follow the square of the stator flux; without that figure the least-loss reference is the least-current one.
+- **The averaged stage has no ripple.** It misses the ripple's share of conduction loss and the current at each commutation. It is for a loop's dynamics; a figure of loss wants the switched stage.
+- **The stage is ideal unless asked.** The dead time and the devices' drop are left out of the simulated voltage until switched on. The loss model charges the dead time either way.
+- **The Laplace view is a second lens.** It takes each axis alone, no voltage or current limit, the angle known exactly and a shaft with inertia alone (or the twisting shaft given, its play left out). It knows nothing of ripple, sensors or observers, and gives nothing for a predictive, deadbeat or direct torque controller. Where it and the run in time part, the run is the answer.
+- **Unstable gains are run, not refused.** Gains with a pole outside the unit circle run with a caution, since the voltage limit holds such a loop in an oscillation. A current that runs away ends the run as a refusal.
+- **A start with no encoder is open loop to the hand-over.** The observers read the back-EMF and cannot start from rest. The simulated rotor starts aligned, and no signal injection is modelled. A reversal through standstill is taken open loop only where the start's hand-back is set; it is off by default, and the C export refuses a scheme that sets it. The open-loop stretch holds the rotor only where the starting current covers the load and the ramp: on a fast motor with little current to spare the rotor falls behind the ramp and is lost there, and the run says so.
+- **The observer's floor is an estimate.** Four times the voltage it reads through wrong, a margin taken over from the closed form; a wrong inductance turns the angle at any speed and is not counted in it.
+- **The controller's own figures of the stage are two straight lines** (conduction and switching energy against current) with no temperature in them. The thermal supervisor, the loss-weighted predictive cost and the least-loss reference work from those, as firmware would, and are only as good.
+- **Losses are read in bins of whole sampling periods,** at each bin's mean currents. A run of more than 8192 sampling periods has several to a bin.
+- **A run is at most 5 s and 500 000 sampling instants,** a sweep at most 12 variants.
+- **Tuning rules are starting points.** Each gain comes from a stated rule, and several say they are this tool's own choice. None was tuned on a drive.
+- **The DC link, on the mains only, and one way.** For a drive fed from the mains the lab runs the front end's control on what the motor's run drew, and shows the link. The motor's run itself is made on a steady link: a link that falls under what the motor needs is said, not simulated in the current loop. On a supply or a battery the link does not move.
+- **A six-pulse rectifier's link is run with no choke.** The settled result takes a link choke and a smooth current; the link through a test has only the capacitor, so its ripple and its current pulses are larger there.
+- **The front end is sized for the drive's torque limit.** Its capacitor (where none is given), its gains and its limits come from the design point's power by the torque limit over the design torque, whatever the test. Its controller is sampled once a switching period, up to 100 kHz. In the simulation the feed-forward is exactly what the inverter draws, with no delay: a figure made in a controller holds the link a little less well.
+- **The front end's control is averaged.** Its stage is simulated over a switching period's mean (no ripple of its own, no dead time), on a stiff, balanced mains; start-up from an uncharged link and its protections are not written. Its gains come from stated rules and were tuned on no drive.
+- **Left out:** six-step and overmodulation, optimised pulse patterns, a position loop, a braking chopper.
 
 ## 5. Simplifications in the model
 
@@ -68,6 +102,15 @@ Where the loop's own behaviour decides the answer (a fault, a hard reversal, an 
 - An imported trajectory, and a load that comes and goes in a reference file, have their losses worked at each chip's mean temperature over the whole pattern. With long pauses between bursts the junction is far hotter than that while it works, and the loss reads low: about a tenth on a silicon IGBT whose junction swings 100 °C.
 - Above the last current a datasheet's table gives, an on-state voltage is drawn midway between staying where it is and rising in proportion. The result says how far off that can be, and a pass that would not survive it is reported as undecided.
 
+### The front end
+
+- A stage that shapes the current is taken to draw a sine in phase with the voltage; what its control adds is the control lab's.
+- The part under test is the front end's switch too, in every position; a diode that is not that part drops a usual figure (1.0 V in a mains bridge, 1.5 V for a fast diode).
+- The inductor is sized for a stated ripple and its copper is not sized: its core and copper loss are not counted, and the result says so.
+- The harmonic limit is IEC 61000-3-2 class A, up to 16 A a phase, stated and not enforced: a product of another class has other limits.
+- From a design file the recommendation is made before the motion is run, so it does not know whether the motion brakes: name a stage that returns energy (`totem_pole`, `active`) where it does. The page knows, and weighs it.
+- The recommendation weighs loss, the limit and braking. It does not weigh cost, size or the number of parts.
+
 ## 6. Life under thermal cycling is generic
 
 The life estimate counts each chip's own temperature swings, those of every turn of the motor included, and uses a model fitted to modules with aluminium bond wires. It is applied to discrete parts too, which it was not fitted on. A real part may last several times longer or shorter. Use the manufacturer's power-cycling data where there is any.
@@ -81,12 +124,13 @@ The life estimate counts each chip's own temperature swings, those of every turn
 - The motor opened as the starting point for a device is a template, picked by voltage and by how many switches the package holds. It is not a recommendation: the application decides the kind of motor, and nothing in a transistor's datasheet ranks motors. The loads listed for a kind of motor are the common ones, not the only ones it can drive.
 - Trying a setting holds two to five values. Once a value is added, the starting ones no longer follow the design point.
 - What the page holds is kept in your browser. Open in two tabs, the one you return to takes up what the other changed.
+- `motionsim serve` keeps one session, the one the page shares with a coding agent: two browsers on one server work on the same design, and each takes up what the other changed. It is a tool for one person on one machine.
 
 ## 8. A part typed in by hand, and cooling by air
 
 - A typed transistor (silicon, SiC or GaN) is one to a package. Its switching loss is estimated from its charges, never measured energy; its output charge is one figure carried to other voltages as a junction's charge goes; its thermal path is one resistance, and its response in time is computed for the column under its die (see [THERMAL_MODEL.md](THERMAL_MODEL.md)): the estimate is the fast, warm side of what real parts do, and the top of the range is a bound.
-- A typed IGBT and its diode are drawn from the figures printed hot: each on-state line is straight from its knee to the point printed and held at the hot temperature at every temperature, and each energy is straight through zero in current and in proportion to the voltage (D161). Typed from the made-up module's own figures it loses 1.2% more than the module's file, which draws a 25 °C line as well; with the hot figures alone, the knees taken at half the voltage and the energies held hot, 16% more. Its thermal path is one resistance for the IGBT and one for the diode, with no figure for their response in time.
-- A figure a typed part may leave empty is taken by a rule and said: the highest junction temperature by its kind (175 °C for silicon and SiC, 150 °C for GaN and an IGBT), the plateau as the threshold plus 2 V, the gate-source charge as 1.4 times the gate-drain charge, an IGBT's knees as half its voltages and its energies at 25 °C as the hot ones. Each one holds the verdict at a caution until the datasheet's figure replaces it. On the typed template a plateau a volt off moves the switching loss by −4% to +13%, and a gate-source charge half or double by −12% to +24% (D160).
+- A typed IGBT and its diode are drawn from the figures printed hot: each on-state line is straight from its knee to the point printed and held at the hot temperature at every temperature, and each energy is straight through zero in current and in proportion to the voltage. Typed from the made-up module's own figures it loses 1.2% more than the module's file, which draws a 25 °C line as well; with the hot figures alone, the knees taken at half the voltage and the energies held hot, 16% more. Its thermal path is one resistance for the IGBT and one for the diode, with no figure for their response in time.
+- A figure a typed part may leave empty is taken by a rule and said: the highest junction temperature by its kind (175 °C for silicon and SiC, 150 °C for GaN and an IGBT), the plateau as the threshold plus 2 V, the gate-source charge as 1.4 times the gate-drain charge, an IGBT's knees as half its voltages and its energies at 25 °C as the hot ones. Each one holds the verdict at a caution until the datasheet's figure replaces it. On the typed template a plateau a volt off moves the switching loss by −4% to +13%, and a gate-source charge half or double by −12% to +24%.
 - A heatsink or a board the page offers for a box left empty is worked out from the loss at the design point alone: the heatsink that holds itself at 60 °C, or the smallest board that keeps the top of the junction's range under its rating. It knows nothing of the motion, the enclosure or another limit, and a verdict on it is held at a caution and says the cooling was sized by the tool.
 - The figures are checked for slips, not for truth: nothing compares them with the datasheet.
 - An IGBT's dead time left open is worked out from its datasheet's turn-off times where it gives them, and is 1 µs where it does not; for an IGBT it costs voltage, not loss. A module with its own gate drivers sets its own, and none is assumed for it.
@@ -109,7 +153,15 @@ The life estimate counts each chip's own temperature swings, those of every turn
 
 - The event plot under the chart of power lost in the switch is a behavioural circuit, not a device model: a square-law channel, capacitances from the datasheet's charges, a diode that holds its charge until it is out, an IGBT's tail shaped by one time. Its energy is made the loss model's by one free factor on the gate-drain charge (and the tail time for an IGBT), so the energy agrees with the chart by construction; the shape, the slopes and the peaks rest on the figures assumed and are named as such.
 - Its times are held to a datasheet's only where the datasheet gives them; on the made-up IGBT sheets the turn-off delay comes within three times and the fall time within five, the fall short.
-- Board inductances are yours to give, from a layout file, a box or the estimate from the loop's size. Board files are not read. The estimate is a parallel-plane or flat-trace formula, not a field solution.
+- Board inductances are yours to give, from a layout file, a box or the estimate from the loop's size. The estimate is a parallel-plane or flat-trace formula, not a field solution.
+- On the local page a board's own design file is read for those figures (KiCad and IPC-2581; [BOARD.md](BOARD.md)). What that reading is and is not:
+  - It has not been compared with a field solver or with a measurement. It is checked against closed forms on simple shapes: a bar, a loop of track, a pair of planes.
+  - Only made-up boards have been read.
+  - The resistance is a steady current's, at 20 °C. The inductance is the current of least magnetic energy, the limit of a fast edge free to spread across the copper; there is no skin or proximity effect within the copper's thickness and nothing in between the two.
+  - Copper of other nets is ignored, a plane under the loop that is not the loop's own included, and so is copper outside the window round the loop's parts. Each leg is solved alone.
+  - A package's and a capacitor's own inductance are the usual of their kind, told from the footprint's name, to half either way.
+  - Each figure comes with a band, a quarter either way at best for the board's copper and wider where a stack-up was assumed, a pour was read from its outline or a track is thinner than the mesh. The event uses the value; the band is shown and is not carried into the event's figures.
+  - ODB++ and STEP are refused. A STEP file has no nets, so no loop can be read from it.
 - The verdict's overshoot check is the quick L·I/t_fall estimate whatever the event shows.
 - Snubbers, a second switch in parallel, the gate driver's own output stage and its supply's droop, and a diode's forward recovery are left out.
 
@@ -121,4 +173,6 @@ The applications' duties, loads and motors are those of typical products of each
 
 - Export of a device model to other simulators.
 - Reading a datasheet on the hosted page. That needs your own key and a local install.
+- The control lab and the board reader on the hosted page. Both run on a local install only.
+- Reading ODB++.
 - The hosted page runs the engine in the browser. In that mode the Python runtime is fetched once from cdn.jsdelivr.net; nothing you enter is sent anywhere. `motionsim serve` fetches nothing.

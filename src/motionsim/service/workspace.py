@@ -14,6 +14,7 @@ from motionsim.device import load_device
 from motionsim.device.schema import Device
 from motionsim.errors import Refusal
 from motionsim.files import MOST_BYTES, parse_yaml, read_text
+from motionsim.fit.typed import TYPED
 from motionsim.service.answers import reason_of
 
 PACKAGE = Path(__file__).parent.parent
@@ -26,6 +27,7 @@ EXAMPLES = {
     "example": EXAMPLE,
     "example-mosfet": PACKAGE / "example_mosfet.yaml",
     "example-mosfet-40v": PACKAGE / "example_mosfet_40v.yaml",
+    "example-mosfet-80v": PACKAGE / "example_mosfet_80v.yaml",
     "example-gan": PACKAGE / "example_gan.yaml",
     "example-sic": PACKAGE / "example_sic.yaml",
     "example-sic-module": PACKAGE / "example_sic_module.yaml",
@@ -41,6 +43,7 @@ class Use:
     said: str  # the application in a few words, as the page offers the part
     motor: str | None = None
     supply: str = "one-way"  # "battery" where such products run from one, which takes braking energy back
+    f_sw: float | None = None  # Hz, where such products switch other than the part's technology usually does
 
 
 USES = {
@@ -48,6 +51,10 @@ USES = {
     "example": Use("drum", "washing machine"),
     "example-mosfet-40v": Use("tool", "power tool", supply="battery"),
     "example-gan": Use("vacuum", "vacuum cleaner", supply="battery"),
+    # A drone's speed controller switches its low-inductance motor at 48 kHz, not the 20 kHz
+    # a silicon MOSFET's drive usually starts at: the current would ripple by more than half
+    # its peak at 20 kHz on 35 µH.
+    "example-mosfet-80v": Use("drone", "drone propulsion", supply="battery", f_sw=48_000),
     "example-sic": Use("compressor", "air conditioner"),
     # Three half-bridges on an 800 V battery drive a car: its rule would give the induction
     # motor of an industrial drive of that voltage, where a car has buried magnets.
@@ -76,11 +83,8 @@ class Workspace:
 
     def summary(self, key: str, device: Device) -> dict:
         sw = device.switch
-        tables = [sw.conduction, sw.e_on, sw.e_off, sw.reverse]
-        if device.diode is not None:
-            tables += [device.diode.conduction, device.diode.e_rr]
-        point = any(t is not None and t.basis.value == "point" for t in tables)
         measured = sw.e_on is not None and sw.e_off is not None
+        switching, support = provenance(device, self.origin(key, device))
         return {
             "id": key,
             # A copy carrying the user's own measurements is named as one, to be told from the part it came from.
@@ -95,17 +99,27 @@ class Workspace:
             "integrated_driver": device.package.integrated_driver,
             "example": key in EXAMPLES,
             "use": USES[key].said if key in USES else None,
-            "switching": "estimated from the datasheet's rise and fall times"
-            if sw.e_on is not None and sw.e_off is not None and sw.e_on.footing == "times"
-            else "measured energy from the datasheet"
-            if measured
-            else "estimated from gate and output charge",
-            "support": "table points and assumed shapes" if point else "curves",
+            "switching": switching,
+            "support": support,
             "needs_gate_drive": not measured,
             # What kind of chip switches, and whether its own diode's recovery is counted.
             "kind": sw.kind.value,
             "recovery": (sw if device.diode is None else device.diode).e_rr is not None,
         }
+
+    def origin(self, key: str, device: Device) -> str:
+        """How a part came: made up with the tool, typed from its datasheet's figures, read
+        from its datasheet's PDF, or a device file as it was given. A copy carrying the
+        user's own measurements came as the part it was made from did."""
+        sources = [t.source for t in _tables(device)] + [device.switch.thermal.source]
+        if key in EXAMPLES or any(x.kind.value == "synthetic" for x in sources):
+            return "made-up"
+        if any(x.document == TYPED for x in sources):  # fit.typed's own word for where they came from
+            return "typed"
+        base = key.removesuffix("-measured")
+        if (self.folder / f"{base}.observations.yaml").is_file():
+            return "read"
+        return "file"
 
     def listing(self) -> list[dict]:
         out = []
@@ -117,7 +131,87 @@ class Workspace:
         return out
 
 
-NOT_A_DEVICE = "choose a .device.yaml file written by `motionsim build`"
+def _tables(device: Device) -> list:
+    """Every table of a part's model that is there: its switch's and its diode's, and its
+    gate and output charges."""
+    sw = device.switch
+    tables = [sw.conduction, sw.e_on, sw.e_off, sw.reverse, getattr(sw, "charge", None)]
+    if device.diode is not None:
+        tables += [device.diode.conduction, device.diode.e_rr]
+    return [t for t in tables if t is not None]
+
+
+# What a part's switching loss comes from, and whose its figures are, as each way a part
+# arrives says it: switching energy, rise and fall times, gate and output charges, and where
+# its tables came from.
+_SAID = {
+    "made-up": (
+        "made-up switching energy",
+        "estimated from made-up rise and fall times",
+        "estimated from made-up gate and output charges",
+        "made-up {}",
+    ),
+    "read": (
+        "measured energy from the datasheet",
+        "estimated from the datasheet's rise and fall times",
+        "estimated from the datasheet's gate and output charges",
+        "the datasheet's {}",
+    ),
+    "file": (
+        "switching energy from the device file",
+        "estimated from the device file's rise and fall times",
+        "estimated from the device file's gate and output charges",
+        "the device file's {}",
+    ),
+    "typed": (
+        "switching energy typed from the datasheet's table",
+        "estimated from the rise and fall times typed from the datasheet",
+        "estimated from the gate and output charges typed from the datasheet",
+        "{}",
+    ),
+}
+
+
+def provenance(device: Device, origin: str) -> tuple[str, str]:
+    """Where a part's switching loss comes from, and what its model is built from, in words
+    true of the way it came: the user's own double-pulse measurements, switching energy, or
+    an estimate from rise and fall times or from gate and output charges; and curves, or a
+    few figures with shapes assumed between them. A typed part is built from the figures
+    typed from the datasheet's tables, never from curves, whatever form the tool keeps
+    its on-resistance in."""
+    sw = device.switch
+    energy, times, charges, whose = _SAID[origin]
+    if sw.e_on is not None and sw.e_on.source.kind.value == "measured":
+        switching = "measured in your own double-pulse tests"
+    elif sw.e_on is not None and sw.e_off is not None:
+        switching = times if sw.e_on.footing == "times" else energy
+    else:
+        switching = charges
+    if origin == "typed":
+        return switching, "the figures typed from the datasheet's tables, with shapes assumed between them"
+    bases = {t.basis.value for t in _tables(device) if hasattr(t, "basis")}
+    what = (
+        "curves and table points, with shapes assumed between the points"
+        if bases >= {"curve", "point"}
+        else "table points, with shapes assumed between them"
+        if "point" in bases
+        else "curves"
+    )
+    return switching, whose.format(what)
+
+
+NOT_A_DEVICE = "choose a .device.yaml file, as the motionsim build command writes one"
+
+
+def _unread(reason: str) -> str:
+    """Why a device file's text could not be read, once: the parser's own words left out but
+    for the line it stopped on."""
+    import re
+
+    if "nested deeper" in reason:
+        return "it is nested deeper than any part's figures are"
+    line = re.search(r"line (\d+)", reason)
+    return "it is not YAML that can be read" + (f" (line {line.group(1)})" if line else "")
 
 
 def add_device(name: str, text: str, workspace: Workspace) -> dict:
@@ -138,7 +232,8 @@ def add_device(name: str, text: str, workspace: Workspace) -> dict:
     try:
         device = Device.model_validate(parse_yaml(text, name, "device file"))
     except Refusal as exc:
-        raise Refusal(f"that file is not a device model: {exc.reason[:160]}", NOT_A_DEVICE) from None
+        said = _unread(exc.reason) if exc.reason.startswith("the device file ") else exc.reason[:160]
+        raise Refusal(f"that file is not a device model: {said}", NOT_A_DEVICE) from None
     except ValidationError as exc:
         raise Refusal(f"that file is not a device model: {reason_of(exc)[:160]}", NOT_A_DEVICE) from None
     # The same file dropped again replaces what it held; another part under a name that

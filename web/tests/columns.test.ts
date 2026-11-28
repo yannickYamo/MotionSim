@@ -12,6 +12,13 @@ vi.mock("../src/api", async (original) => {
   return { ...real, api: { ...api, ...more, mode: () => "server", keeps: () => true } };
 });
 
+// The lab's scheme for the design: never answered, unless a test sets the answer first.
+const presetsAnswer: { next: unknown } = vi.hoisted(() => ({ next: null }));
+// (The page's tests take the question from tests/control.quiet.ts, by the alias in vite.config.)
+vi.mock("./control.quiet", () => ({
+  askPresets: vi.fn(() => (presetsAnswer.next ? Promise.resolve(presetsAnswer.next) : new Promise(() => undefined))),
+}));
+
 import { api } from "../src/api";
 import type { Setup } from "../src/api";
 import { addTyped } from "../src/actions/parts";
@@ -75,7 +82,7 @@ describe("the results, in order", () => {
     );
     const h2 = order.indexOf("h2");
     expect($("#panel > h2")!.textContent).toBe("Results");
-    expect(order.slice(h2, h2 + 5)).toEqual(["h2", "verdict-line", "tabs", "tab-body", "compare-area"]);
+    expect(order.slice(h2, h2 + 5)).toEqual(["h2", "verdict-head", "tabs", "tab-body", "compare-area"]);
     expect(words(".tabs [role=tab]")).toEqual(["Verdict", "Losses", "Motion", "Limits"]);
   });
   it("show one part alone flat, with no rank", () => {
@@ -115,7 +122,10 @@ describe("the + Add menu", () => {
     press('#add-menu [data-adding="device"]');
     expect($<HTMLDialogElement>("#device-dialog")!.open).toBe(true);
     expect($("#device-dialog .device-routes")).not.toBeNull();
-    expect($("#device-dialog [data-example]")).not.toBeNull();
+    // The made-up parts are one list and one press, not a button each.
+    expect($("#device-dialog #example-pick[role=combobox]")).not.toBeNull();
+    expect($("#device-dialog #example-pick-list [role=option]")).not.toBeNull();
+    expect($("#device-dialog [data-example-go]")).not.toBeNull();
   });
   it("draws in the dialog the ways to bring a part, without step 1's heading, lead or way on", () => {
     app.state.added = ["example-mosfet", "example"];
@@ -350,6 +360,201 @@ describe("the rail", () => {
     renderRail();
     expect(document.querySelector("#rail .station .step-number, #rail .station-number")).toBeNull();
     expect(document.querySelector("#rail .step-name .step-number")!.textContent).toBe("1");
+  });
+});
+
+describe("the control lab on the rail", () => {
+  const panel = () => document.querySelector("#rail .rail-lab")!;
+  it("stands apart from the five numbered steps, as a panel named Control lab", () => {
+    renderRail();
+    expect(document.querySelectorAll("#rail li").length).toBe(5);
+    // Not a station of the route: outside its list, not numbered, its own name.
+    expect(document.querySelector("#rail ol [data-control-rail]")).toBeNull();
+    expect(panel().querySelector("[data-control-rail]")).not.toBeNull();
+    expect(panel().querySelector(".step-number")).toBeNull();
+    expect(panel().querySelector(".lab-entry-name")!.textContent).toBe("Control lab");
+  });
+  it("is greyed and says it needs a part while none is chosen", () => {
+    Object.assign(app.state, { devices: [] });
+    renderRail();
+    expect(panel().classList.contains("is-idle")).toBe(true);
+    expect(panel().querySelector(".lab-entry-state")!.textContent).toBe("Needs a part first");
+  });
+  it("leads to step 1 when pressed with no part chosen", () => {
+    Object.assign(app.state, { devices: [], step: RESULTS });
+    renderRail();
+    press("[data-control-rail]");
+    expect(app.state.step).toBe(DEVICE);
+  });
+  it("says what a press does while no scheme is chosen yet: it opens the lab", () => {
+    renderRail();
+    expect(panel().classList.contains("is-idle")).toBe(false);
+    // Before the results, or while the scheme for the design is being asked for.
+    expect(panel().querySelector(".lab-entry-state")!.textContent).toMatch(/^(Press to open|Choosing…)$/);
+  });
+  it("says only Ready once the scheme is chosen, the scheme in its tooltip and description", async () => {
+    const presets = fixture("control-presets") as { chosen: string; schemes: { id: string; label: string }[] };
+    const label = presets.schemes.find((s) => s.id === presets.chosen)!.label;
+    presetsAnswer.next = presets;
+    // Another design than any asked before, so the scheme is asked for afresh and answered.
+    Object.assign(app.state, { loadPicked: "rail-ready" });
+    renderPanel();
+    for (let k = 0; k < 5; k++) await Promise.resolve();
+    presetsAnswer.next = null;
+    renderRail();
+    expect(panel().classList.contains("is-ready")).toBe(true);
+    expect(panel().querySelector(".lab-entry-state")!.textContent).toBe("Ready");
+    const button = panel().querySelector<HTMLElement>("[data-control-rail]")!;
+    expect(button.textContent).toBe("Control labReady");
+    expect(button.title).toBe(`Control lab: ${label}`);
+    const said = document.getElementById(button.getAttribute("aria-describedby")!)!;
+    expect(said.textContent).toContain(label);
+  });
+  it("leads to the results when pressed from an earlier step", () => {
+    Object.assign(app.state, { step: DEVICE });
+    renderRail();
+    press("[data-control-rail]");
+    expect(app.state.step).toBe(RESULTS);
+  });
+  it("asks for the control lab's scheme when pressed from step 1 with a part chosen", () => {
+    // From step 1 the results are not reached yet: the press reaches them, and the design
+    // is then complete enough for the lab's scheme to be asked for.
+    Object.assign(app.state, { step: DEVICE, reached: DEVICE });
+    renderRail();
+    press("[data-control-rail]");
+    expect(app.state.reached).toBe(RESULTS);
+    expect(document.querySelector(".control-entry")).not.toBeNull();
+  });
+});
+
+describe("the first visit's made-up parts", () => {
+  beforeEach(() => {
+    Object.assign(app.state, { step: DEVICE, devices: [], added: [], reached: DEVICE });
+    Object.assign(ui, { firstRun: true, yourPart: false });
+    renderPanel();
+  });
+  it("are a list on the first screen itself: Try it brings the part chosen onto step 1, never past it", () => {
+    const options = [...document.querySelectorAll<HTMLElement>("#panel #example-pick-list [role=option]")];
+    expect(options.length).toBe(setup.devices.filter((d) => d.example).length);
+    const last = options[options.length - 1].dataset.exampleChoose!;
+    press("#example-pick");
+    press(`[data-example-choose="${last}"]`);
+    // Chosen, not yet brought: the first screen stays, showing the part chosen.
+    expect(app.state.devices).toEqual([]);
+    expect($("#panel .first-title")).not.toBeNull();
+    expect($<HTMLButtonElement>("#example-pick")!.dataset.value).toBe(last);
+    expect(document.body.textContent).not.toContain("See the verdict");
+    press("[data-first-try]");
+    expect(app.state.devices).toEqual([last]);
+    // Still step 1, the part on it, and the way on is the motor's step: every step in turn.
+    expect(app.state.step).toBe(DEVICE);
+    renderPanel();
+    const next = $<HTMLButtonElement>("#panel .actions .primary[data-step]")!;
+    expect(next.disabled).toBe(false);
+    expect(next.textContent).toContain("motor");
+    press("#panel .actions .primary[data-step]");
+    expect(app.state.step).toBe(DEVICE + 1);
+  });
+  it("bring the first part when none is chosen, and stay on step 1", () => {
+    const first = $<HTMLButtonElement>("#example-pick")!.dataset.value!;
+    press("[data-first-try]");
+    expect(app.state.devices).toEqual([first]);
+    expect(app.state.step).toBe(DEVICE);
+  });
+});
+
+describe("the made-up parts on step 1", () => {
+  beforeEach(() => {
+    Object.assign(app.state, { step: DEVICE, devices: [], added: [], reached: DEVICE });
+    renderPanel();
+  });
+  it("are offered as one list and one press, not a button each", () => {
+    expect(document.querySelectorAll("#panel [data-example]").length).toBe(0);
+    const options = document.querySelectorAll("#panel #example-pick-list [role=option]");
+    expect(options.length).toBe(setup.devices.filter((d) => d.example).length);
+    expect($("#panel [data-example-go]")).not.toBeNull();
+  });
+  it("show each part with its rating and the application it opens on", () => {
+    for (const made of setup.devices.filter((d) => d.example)) {
+      const option = $(`#example-pick-list [data-example-choose="${made.id}"]`)!;
+      expect(option.querySelector(".pick-name")!.textContent).toBe(made.name.replace(/^made-up /, ""));
+      expect(option.querySelector(".pick-rating")!.textContent).toContain(made.technology);
+      const use = option.querySelector(".pick-use")?.textContent?.toLowerCase();
+      expect(use).toBe(made.use ? made.use.toLowerCase() : undefined);
+    }
+  });
+  it("bring the part chosen in the list at once while none is on the page, so the way on opens", () => {
+    const options = [...document.querySelectorAll<HTMLElement>("#example-pick-list [role=option]")];
+    const last = options[options.length - 1].dataset.exampleChoose!;
+    press("#example-pick");
+    expect($("#example-pick")!.getAttribute("aria-expanded")).toBe("true");
+    press(`[data-example-choose="${last}"]`);
+    expect(app.state.devices).toEqual([last]);
+    expect(app.state.added).toEqual([last]);
+    renderPanel();
+    const next = $<HTMLButtonElement>("#panel .actions .primary[data-step]")!;
+    expect(next.disabled).toBe(false);
+    // Try it then adds nothing more: the part shown has left the list, and is on the page once.
+    expect($("[data-example-go]")!.textContent).toBe("Add to compare");
+    expect(app.state.devices).toEqual([last]);
+  });
+  it("only select in the list once a part is on the page: Add to compare brings exactly that one", () => {
+    const [first, second] = setup.devices.filter((d) => d.example).map((d) => d.id);
+    Object.assign(app.state, { devices: [first], added: [first] });
+    renderPanel();
+    press("#example-pick");
+    press(`[data-example-choose="${second}"]`);
+    expect(app.state.devices).toEqual([first]);
+    press("[data-example-go]");
+    expect(app.state.devices).toEqual([first, second]);
+  });
+  it("never shut the way on from step 1 while a made-up part is offered: Next brings the part shown", () => {
+    // The state a Reset leaves: no part on the page, the list showing its first part.
+    const shown = $<HTMLButtonElement>("#example-pick")!.dataset.value!;
+    const next = $<HTMLButtonElement>("#panel .actions .primary[data-step]")!;
+    expect(next.disabled).toBe(false);
+    expect($("#need-device")).toBeNull();
+    press("#panel .actions .primary[data-step]");
+    expect(app.state.devices).toEqual([shown]);
+    expect(app.state.step).toBe(DEVICE + 1);
+  });
+  it("say why the way on is shut only when no made-up part is left to bring", () => {
+    const all = setup.devices.filter((d) => d.example).map((d) => d.id);
+    Object.assign(app.state, { devices: [], added: all });
+    renderPanel();
+    expect($<HTMLButtonElement>("#panel .actions .primary[data-step]")!.disabled).toBe(true);
+    expect($("#need-device")!.textContent).toContain("Bring a part");
+  });
+  it("bring the part shown in the box with Try it", () => {
+    const shown = $<HTMLButtonElement>("#example-pick")!.dataset.value!;
+    press("[data-example-go]");
+    expect(app.state.devices).toEqual([shown]);
+  });
+  it("are chosen from the keyboard as a list box is", () => {
+    const box = $<HTMLButtonElement>("#example-pick")!;
+    const options = [...document.querySelectorAll<HTMLElement>("#example-pick-list [role=option]")];
+    const key = (k: string) => box.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true }));
+    key("ArrowDown");
+    expect(box.getAttribute("aria-expanded")).toBe("true");
+    // The list opens on the part shown in the box.
+    const shown = options.find((o) => o.getAttribute("aria-selected") === "true")!;
+    expect(shown.dataset.exampleChoose).toBe(box.dataset.value);
+    expect(box.getAttribute("aria-activedescendant")).toBe(shown.id);
+    key("End");
+    expect(box.getAttribute("aria-activedescendant")).toBe(options[options.length - 1].id);
+    key("Enter");
+    expect(box.getAttribute("aria-expanded")).toBe("false");
+    expect(box.dataset.value).toBe(options[options.length - 1].dataset.exampleChoose);
+    expect(options[options.length - 1].getAttribute("aria-selected")).toBe("true");
+    key("ArrowDown");
+    key("Escape");
+    expect(box.getAttribute("aria-expanded")).toBe("false");
+  });
+  it("leave the datasheet's drop as the step's one orange action while no part is chosen", () => {
+    expect($("#drop")!.className).toContain("is-next");
+    // The drop comes before the made-up list, where the eye goes first.
+    const order = $("#drop")!.compareDocumentPosition($("#example-pick")!);
+    expect(order & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 

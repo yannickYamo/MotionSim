@@ -16,7 +16,7 @@ from motionsim.engine.point import EDGE_LIMITS
 from motionsim.errors import Refusal
 from motionsim.motor.machines import ADAPTER
 from motionsim.service.catalogue import FIELDS
-from motionsim.text import written
+from motionsim.text import whole, written
 
 Refused = Refusal  # the name this was first written under
 
@@ -78,7 +78,7 @@ def _number(
     if low is not None and x < low:
         raise Refused(f"{name} cannot be below {written(low, 6)}{said}", f"raise {name}", field)
     if high is not None and x > high:
-        most = f"{high:,.0f}" if high >= 1e6 and high == int(high) else written(high, 6)
+        most = f"{whole(high)}" if high >= 1e6 and high == int(high) else written(high, 6)
         raise Refused(f"{name} cannot be above {most}{said}", f"lower {name}", field)
     return x
 
@@ -99,6 +99,7 @@ NEEDS = {
     "/api/map": ("motor", "conditions", "device"),
     "/api/capability": ("motor", "conditions", "device"),
     "/api/largest": ("motor", "conditions", "device"),
+    "/api/load-proposal": ("motor", "conditions", "device"),
     "/api/recommend": ("motor", "conditions", "device"),
     "/api/fit": ("motor", "device"),
     "/api/suggest": ("device",),
@@ -108,6 +109,12 @@ NEEDS = {
     "/api/point": ("motor", "conditions", "device"),
     "/api/trajectory": ("conditions", "device"),
     "/api/cooling": ("motor", "conditions", "device"),
+    "/api/control/presets": ("motor", "conditions"),
+    "/api/control/loops": ("motor", "conditions"),
+    "/api/control/run": ("motor", "conditions", "device"),
+    "/api/control/explorations": ("motor", "conditions"),
+    "/api/control/sweep": ("motor", "conditions", "device"),
+    "/api/control/export_c": ("motor", "conditions", "device"),
 }
 
 
@@ -451,8 +458,14 @@ MOST_TORQUE = 1e6  # N·m
 def supply(data: dict) -> str:
     """Whether the supply takes braking energy back: one-way (it cannot) or battery."""
     kind = data.get("supply") or "one-way"
+    if kind == "mains":
+        # A front end that can give energy back to the mains takes braking as a battery does.
+        from motionsim.front_end import TOPOLOGIES
+
+        stage = TOPOLOGIES.get((data.get("front_end") or {}).get("topology") or "")
+        return "battery" if stage is not None and stage.returns else "one-way"
     if kind not in ("one-way", "battery"):
-        raise Refusal(f"there is no supply called {kind}", "one-way (a power supply) or battery", "supply")
+        raise Refusal(f"there is no supply called {kind}", "one-way (a power supply), battery or mains", "supply")
     return kind
 
 

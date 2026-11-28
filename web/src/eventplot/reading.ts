@@ -5,15 +5,29 @@ import { names, valuesAt } from "./plot";
 import { timeUnit } from "./zoom";
 import type { Span } from "./zoom";
 
+/** A trace at rest reads 0, not what the arithmetic left of it (1.89e-59 W): a value under a
+ *  millionth of the trace's own largest is nothing. */
+const largest = (x: number[]) => x.reduce((m, y) => Math.max(m, Math.abs(y)), 0);
+const read = (value: number, of: number) => sig(Math.abs(value) < 1e-6 * of ? 0 : value);
+
+/** Each trace's value at an instant with its unit, as the cursor's flags say it: the voltage,
+ *  the current, the gate, the power. */
+export function flagsAt(e: Parameters<typeof valuesAt>[0], t: number): [string, string, string, string] {
+  const at = valuesAt(e, t);
+  return [
+    `${read(at.v_ds, largest(e.v_ds))} V`,
+    `${read(at.i, largest(e.i))} A`,
+    `${read(at.v_gs, largest(e.v_gs))} V`,
+    `${read(at.p, largest(e.p))} W`,
+  ];
+}
+
 /** What the traces read at an instant, as the line under the plot says it. */
 export function readingAt(kind: string, e: Parameters<typeof valuesAt>[0], t: number, v: Span): string {
   const at = valuesAt(e, t);
   const n = names(kind);
   const { unit, scale } = timeUnit(v);
-  // A trace at rest reads 0, not what the arithmetic left of it (1.89e-59 W): a value under a
-  // millionth of the trace's own largest is nothing. The time likewise, against the span.
-  const largest = (x: number[]) => x.reduce((m, y) => Math.max(m, Math.abs(y)), 0);
-  const read = (value: number, of: number) => sig(Math.abs(value) < 1e-6 * of ? 0 : value);
+  // The time reads 0 where it is nothing against the span, as a trace at rest does.
   const when = Math.abs(t) < 1e-6 * Math.max(Math.abs(v.t0), Math.abs(v.t1)) ? 0 : t * scale;
   return (
     `At ${sig(when, 4)} ${unit}: ${n.v_ds} ${read(at.v_ds, largest(e.v_ds))} V, ` +

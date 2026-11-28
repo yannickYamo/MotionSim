@@ -10,7 +10,7 @@ const node = { process: "readonly", console: "readonly", URL: "readonly", setTim
 export default tseslint.config(
   { ignores: ["node_modules", "public", "dist", "../src/motionsim/webui"] },
   {
-    files: ["src/**/*.ts", "tests/**/*.ts", "vite.config.ts"],
+    files: ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "tests/**/*.tsx", "vite.config.ts"],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
     languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },
     rules: {
@@ -21,7 +21,7 @@ export default tseslint.config(
   {
     // The page's own code: a function does one thing a reader can hold, nested no deeper than
     // a reader can follow, and a file is one responsibility. No figure is typed as anything.
-    files: ["src/**/*.ts"],
+    files: ["src/**/*.ts", "src/**/*.tsx"],
     rules: {
       complexity: ["error", 15],
       "max-depth": ["error", 3],
@@ -33,7 +33,7 @@ export default tseslint.config(
   {
     // A test is a list of cases under one heading: the heading is not a function too long.
     // Stand-ins for the engine's answers are built loosely on purpose.
-    files: ["tests/**/*.ts"],
+    files: ["tests/**/*.ts", "tests/**/*.tsx"],
     rules: {
       "max-lines-per-function": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",

@@ -1,0 +1,134 @@
+/* The agent's notice: one quiet line at the foot of the screen, in the tone of the page's other
+   floating surfaces, with Undo as a ghost button. It never takes the keyboard. */
+.agent-notice {
+  position: fixed;
+  left: 50%;
+  /* Lifted clear of the step's own actions where it would lie over them (clear.ts). */
+  bottom: max(var(--s5), calc(var(--foot-clear, 0px) + var(--s3)));
+  z-index: 30;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: var(--s2) var(--s2) var(--s2) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  /* The popover's shadow: it floats over the page, as the popover does. */
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  color: var(--ink-2);
+}
+.agent-notice[hidden] {
+  display: none;
+}
+.agent-notice p {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.agent-notice b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.agent-notice > .icon {
+  flex: none;
+  color: var(--ink-3);
+}
+.agent-notice button.notice-undo {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--s3);
+  gap: var(--s2);
+}
+.agent-notice button.notice-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--r);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.agent-notice button.notice-close:hover {
+  color: var(--ink);
+}
+body:has(.newer-build) .agent-notice {
+  bottom: calc(var(--newer-top, 64px) + var(--s2));
+}
+@media (prefers-reduced-motion: no-preference) {
+  .agent-notice:not([hidden]) {
+    transition:
+      opacity var(--dur-1) var(--ease-out),
+      translate var(--dur-1) var(--ease-out);
+    @starting-style {
+      opacity: 0;
+      translate: 0 8px;
+    }
+  }
+}
+@media (max-width: 600px) {
+  .agent-notice {
+    left: var(--s4);
+    right: var(--s4);
+    bottom: max(calc(var(--s4) + env(safe-area-inset-bottom, 0px)), calc(var(--foot-clear, 0px) + var(--s2)));
+    transform: none;
+    width: auto;
+    max-width: none;
+  }
+}
+
+/* A newer build serves this address: one quiet bar where the agent's notice sits, in its tone,
+   with Reload as a ghost button. Not a dialog: it takes no keyboard and stays until the reload.
+   The agent's notice, should one come, goes above it. */
+.newer-build {
+  position: fixed;
+  /* Lifted clear of the step's own actions where it would lie over them (clear.ts). */
+  bottom: max(var(--s5), calc(var(--foot-clear, 0px) + var(--s3)));
+  left: 50%;
+  z-index: 31;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: max-content;
+  max-width: min(640px, calc(100vw - 32px));
+  padding: var(--s2) var(--s2) var(--s2) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5);
+  color: var(--ink-2);
+}
+.newer-build p {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.newer-build b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.newer-build button {
+  flex: none;
+  min-height: 36px;
+  padding: 0 var(--s3);
+}
+@media (max-width: 600px) {
+  .newer-build {
+    left: var(--s4);
+    right: var(--s4);
+    bottom: max(calc(var(--s4) + env(safe-area-inset-bottom, 0px)), calc(var(--foot-clear, 0px) + var(--s2)));
+    transform: none;
+    width: auto;
+    max-width: none;
+  }
+}

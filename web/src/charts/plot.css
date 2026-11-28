@@ -1,0 +1,578 @@
+/* The one language every graph of the page is drawn in, on the main page and in the control
+   lab alike: a thin panel with a header line (a short path in the mono face, the panel's actions
+   as quiet buttons at its right end), figures in the mono face tight to their axes, a faint
+   dotted grid on round values inside a quiet frame, a square swatch beside each series' name
+   (words never wear a series' colour), a hairline cursor with a small flag of each value, and a
+   named window as a faintly shaded band. The words, buttons and headings around a graph stay
+   in the page's own face. */
+
+:root {
+  /* What a graph stands on: the ground, or the panel's own tone once it is in a panel. The
+     halo round a word laid over a trace is cut from it. */
+  --plot-ground: var(--ground);
+  --plot-grid: color-mix(in oklab, var(--line-strong) 78%, var(--ground));
+  --plot-window: color-mix(in oklab, var(--ink) 6%, transparent);
+}
+
+/* ---------- The panel and its header line ---------- */
+
+.plot-panel {
+  --plot-ground: var(--surface);
+  min-width: 0;
+  margin: var(--s4) 0 0;
+  background: var(--plot-ground);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+.plot-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s3);
+  min-height: 36px;
+  padding: 0 var(--s1) 0 var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+/* The path: where the graph belongs, then what it is, as an instrument names its channels. */
+.plot-path {
+  display: block;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink-3);
+  font:
+    500 var(--t-data) / 36px var(--mono),
+    monospace;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.plot-head .plot-path {
+  margin: 0;
+}
+.plot-what {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.plot-sep {
+  margin: 0 var(--s2);
+  color: var(--ink-3);
+}
+.plot-acts,
+.plot-acts > [role="group"] {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.plot-acts {
+  margin-left: auto;
+}
+/* A panel's action: no box until it is pointed at, so the header reads as one quiet line. */
+.plot-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  min-width: 28px;
+  height: 28px;
+  padding: 0 var(--s2);
+  background: none;
+  border: 0;
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  font: inherit;
+  font-size: var(--t-small);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.plot-act.is-icon {
+  width: 28px;
+  padding: 0;
+}
+.plot-act .icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
+.plot-act:hover {
+  background: var(--raised);
+  color: var(--ink);
+}
+.plot-act:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  color: var(--ink);
+}
+.plot-act:active {
+  transform: scale(0.96);
+}
+.plot-act[aria-busy],
+.plot-act:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+/* A finger needs more of a target than a pointer does. */
+@media (pointer: coarse) {
+  .plot-head {
+    min-height: 44px;
+  }
+  .plot-path {
+    line-height: 44px;
+  }
+  .plot-act {
+    min-width: 40px;
+    height: 40px;
+  }
+  .plot-act.is-icon {
+    width: 40px;
+  }
+}
+.plot-body {
+  position: relative;
+  min-width: 0;
+  padding: var(--s3) var(--s3) var(--s2);
+}
+.plot-body > .chart,
+.plot-body > .chart-box > .chart,
+.plot-body .mo-plot > .chart {
+  margin-top: 0;
+}
+/* What a panel says under its drawing: its key, the line read at the pointer. */
+.plot-foot {
+  padding: var(--s2) var(--s3) var(--s3);
+  border-top: 1px solid var(--line);
+}
+.plot-foot > :first-child {
+  margin-top: 0;
+}
+
+/* ---------- Inside a drawing ---------- */
+
+/* Dots a few units apart, on round values: the grid is read when looked for and not before. */
+.chart .grid {
+  stroke: var(--plot-grid);
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+}
+.chart .plot {
+  stroke: var(--line);
+}
+.chart .zero,
+.chart .grid.zero {
+  stroke: var(--line-strong);
+  stroke-dasharray: none;
+}
+.chart .axis {
+  fill: var(--ink-2);
+  letter-spacing: 0.01em;
+}
+/* A word laid over a trace: in ink, on a halo of what the graph stands on. */
+.chart .mark-label,
+.chart .plot-note {
+  fill: var(--ink-2);
+  paint-order: stroke;
+  stroke: var(--plot-ground);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.chart .plot-note.warn {
+  fill: var(--fail);
+}
+.chart .plot-note.is-caution,
+.chart .mark-label.is-caution {
+  fill: var(--caution);
+}
+/* The short line from a mark to its words, which are written clear of the traces. */
+.chart .plot-leader {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+}
+/* A window of time that is read as one: shaded faintly, a hairline at each end, its name by it. */
+.chart .plot-window {
+  fill: var(--plot-window);
+  stroke: none;
+}
+.chart .plot-window-name {
+  fill: var(--ink-3);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+/* A square of the series' colour beside its name, in a drawing and in a key. */
+.chart .plot-sw {
+  stroke: none;
+}
+
+/* The cursor: a hairline up the plot, a dot on each series, and each value on a small flag. */
+.chart .plot-flag rect {
+  fill: var(--raised);
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+.chart .plot-flag text {
+  fill: var(--ink);
+  font-weight: 500;
+}
+.chart .plot-flag {
+  pointer-events: none;
+}
+
+/* ---------- The key ---------- */
+
+.legend.inline .key,
+.legend.inline .key.line {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: var(--r-mark);
+}
+.legend.inline li {
+  gap: var(--s2);
+  color: var(--ink-2);
+}
+.legend.inline .key.line {
+  background: var(--ink);
+}
+.legend.inline .key.line.s0,
+.legend.inline .key.line.hot {
+  background: var(--orange);
+}
+.legend.inline .key.line.sink {
+  background: var(--ink-2);
+}
+.legend.inline .key.line.lab-closed {
+  background: var(--trace-current);
+}
+.legend.inline .key.line.lab-s5 {
+  background: var(--ink-3);
+}
+/* A dashed series (what was asked for, or predicted) is the square's outline alone. */
+.legend.inline .key.ghost,
+.legend.inline .key.line:is(.s2, .s3, .s4, .lab-s6, .ghost) {
+  box-sizing: border-box;
+  background: none;
+  border: 1.5px solid var(--ink-2);
+}
+.legend.inline .key.line.s2 {
+  border-color: var(--orange);
+}
+.legend.inline .key.ghost,
+.legend.inline .key.line:is(.lab-s6, .ghost) {
+  border-color: var(--ink-3);
+}
+.legend.inline .key.line.s3.lab-closed {
+  border-color: var(--trace-current);
+}
+
+/* ---------- What is read at the pointer ---------- */
+
+.readout-card {
+  font-family: var(--mono), monospace;
+  font-size: var(--t-data);
+  border-radius: var(--r-sm);
+}
+.readout-card p {
+  letter-spacing: 0.04em;
+}
+.readout-card .key.line {
+  width: 8px;
+  height: 8px;
+  border: 0;
+  border-radius: var(--r-mark);
+  background: var(--ink);
+}
+.readout-card .key.line.hot {
+  background: var(--orange);
+}
+.readout-card .key.line.sink {
+  background: var(--ink-2);
+}
+.readout-card .key.line.ghost {
+  box-sizing: border-box;
+  background: none;
+  border: 1.5px solid var(--ink-3);
+}
+/* The line a plot is read by, under it: figures, in the face of figures. */
+.plot-read {
+  display: block;
+  color: var(--ink-2);
+  font:
+    400 var(--t-data) / 1.55 var(--mono),
+    monospace;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- A grid of figures under a graph ---------- */
+
+.plot-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 0;
+  margin: 0;
+  /* The rules between the cells are the grid's own ground showing through its gaps. */
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+}
+.plot-figures > div {
+  min-width: 0;
+  padding: var(--s3) var(--s3) var(--s3);
+  /* A rule under each cell and left of it, drawn outside the cell so that the last row and the
+     first column show none (the grid cuts what leaves it). */
+  box-shadow:
+    0 1px 0 var(--line),
+    -1px 0 0 var(--line);
+}
+.plot-figures dt {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1.3;
+}
+.plot-figures dd {
+  margin: var(--s1) 0 0;
+}
+.plot-figures b {
+  display: block;
+  color: var(--ink);
+  font:
+    500 var(--t-small) / 1.4 var(--mono),
+    monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.plot-figures .note {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1.35;
+  text-wrap: pretty;
+}
+
+/* ---------- The switching event's two panels ---------- */
+
+.ev-edges {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s5);
+  margin-top: var(--s4);
+}
+/* Side by side only where each still has 520 px to be read in; else one above the other.
+   Side by side they are read against each other, so their parts share their rows: a note
+   that one edge alone carries leaves its room in the other, and the two plots, the lines read
+   at the pointer and the figures start level. */
+@container (min-width: 1064px) {
+  .ev-edges {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(5, auto);
+    row-gap: 0;
+  }
+  .ev-edges > .ev-edge {
+    display: grid;
+    grid-row: span 5;
+    grid-template-rows: subgrid;
+  }
+  .ev-edges > .ev-edge > * {
+    min-width: 0;
+  }
+  .ev-edges > .ev-edge > .plot-head {
+    grid-row: 1;
+  }
+  .ev-edges > .ev-edge > .ev-indicative {
+    grid-row: 2;
+  }
+  .ev-edges > .ev-edge > .ev-plot {
+    grid-row: 3;
+  }
+  .ev-edges > .ev-edge > .ev-read {
+    grid-row: 4;
+  }
+  .ev-edges > .ev-edge > .ev-figures {
+    grid-row: 5;
+  }
+}
+.ev-edges > .ev-edge {
+  margin: 0;
+}
+.ev-edge > .ev-indicative {
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-bottom: 1px solid var(--line);
+}
+.ev-edge > .ev-plot {
+  margin: 0;
+  padding: var(--s3) var(--s2) 0;
+  border-radius: 0;
+}
+/* Room for the two lines it takes once it reads the traces, so nothing under it moves. */
+.ev-edge > .ev-read {
+  min-height: calc(3.1em + var(--s1) + var(--s3));
+  margin: 0;
+  padding: var(--s1) var(--s3) var(--s3);
+}
+/* The edge pressed on the loss chart is told in ink, by an underline, as a selected tab is. */
+.ev-edge.is-marked .plot-what {
+  color: var(--ink);
+  text-decoration: underline 2px var(--ink);
+  text-underline-offset: 6px;
+}
+.chart.ev-svg .plot-sw.ev-v,
+.chart.ev-svg .plot-flag.ev-v .plot-sw {
+  fill: var(--ink);
+}
+.chart.ev-svg .plot-sw.ev-i {
+  fill: var(--trace-current);
+}
+.chart.ev-svg .plot-sw.ev-g {
+  fill: var(--trace-gate);
+}
+.chart.ev-svg .plot-sw.ev-p,
+.chart .plot-sw.hot {
+  fill: var(--orange);
+}
+.chart .plot-sw.sink {
+  fill: var(--ink-2);
+}
+.chart .plot-sw.ghost {
+  fill: var(--ink-3);
+}
+.chart .plot-sw.speed {
+  fill: var(--ink);
+}
+/* Words in a drawing are in ink: the dot beside a name carries the trace's colour. */
+.chart.ev-svg :is(.axis, .mark-label):is(.ev-v, .ev-i, .ev-g, .ev-p) {
+  fill: var(--ink-2);
+}
+.chart.ev-svg .mark-label.is-caution {
+  fill: var(--caution);
+}
+.chart.ev-svg .ev-cross path {
+  stroke: var(--ink-2);
+}
+
+/* ---------- The full-screen plot ---------- */
+
+.ev-full-read {
+  font:
+    400 var(--t-data) / 1.55 var(--mono),
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.ev-full-plot {
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+/* ---------- The graphs of the main page in their panels ---------- */
+
+.plot-panel .legend.inline {
+  margin-top: 0;
+}
+/* A graph drawn at the width it is shown at (charts/fit.ts): its words stand at their own
+   size, whatever was set for a drawing scaled to its place. */
+[data-fit] > .chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+[data-fit] .chart text,
+[data-fit] .chart.pwm text {
+  font-size: var(--t-data);
+}
+.plot-fit {
+  min-width: 0;
+}
+#tab-body .plot-panel + .plot-panel,
+#tab-body .plot-panel + .legend,
+#tab-body .legend + .plot-panel {
+  margin-top: var(--s4);
+}
+.plot-panel .mo-plot {
+  border-radius: 0;
+}
+@media (forced-colors: active) {
+  .chart .plot-sw,
+  .legend.inline .key.line {
+    fill: CanvasText;
+    background: CanvasText;
+  }
+}
+@media print {
+  .plot-act {
+    display: none !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plot-act {
+    transition: none;
+  }
+  .plot-act:active {
+    transform: none;
+  }
+}
+
+/* ---- The control lab's graphs: the same language on the scope's strips, the Bode plots and
+   the lens's plots. Only what is drawn and its nearest frame; each rule is named from the
+   lab's dialog, so that it holds over the lab's own sheet, which is loaded after this one. ---- */
+.control-lab .chart .grid:not(.zero),
+.control-lab .scope-svg .grid:not(.zero) {
+  stroke: var(--plot-grid);
+  stroke-dasharray: 1 4;
+  stroke-linecap: round;
+}
+.control-lab .chart text,
+.control-lab .scope-svg .tick,
+.control-lab .scope-svg .scope-when-text,
+.control-lab .scope-svg .scope-note-label {
+  font-family: var(--mono), monospace;
+  font-size: var(--t-data);
+  font-variant-numeric: tabular-nums;
+}
+.control-lab .scope-svg .scope-note-label,
+.control-lab .scope-svg .scope-when-text {
+  font-weight: 500;
+}
+/* A strip's name and a plot's title, as the header line of its panel. */
+.control-lab .scope-strips .scope-strip-head h4,
+.control-lab .lab-plot .lab-plot-title {
+  color: var(--ink-3);
+  font:
+    500 var(--t-data) / 20px var(--mono),
+    monospace;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+/* What a series reads at the cursor: a figure, in the figures' face. */
+.control-lab .scope-legend .scope-value {
+  font:
+    500 var(--t-data) var(--mono),
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+/* A plot's head is a line across its panel, as on the page's graphs. */
+.control-lab .lab-plot > .lab-plot-head,
+.control-lab .lab-plot > .lab-plot-title {
+  margin: calc(-1 * var(--s3)) calc(-1 * var(--s4)) var(--s3);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.control-lab .lab-plot > .lab-plot-head {
+  align-items: center;
+}
+.control-lab .lab-plot .series-legend {
+  color: var(--ink);
+  font-size: var(--t-small);
+}
+.control-lab .lab-plot > .lab-plot-head .series-legend {
+  margin: 0;
+}

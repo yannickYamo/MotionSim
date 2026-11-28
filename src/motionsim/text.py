@@ -21,6 +21,19 @@ def written(value: float, digits: int = 3) -> str:
     return f"{x:.10g}"
 
 
+def said(value: float, digits: int = 3) -> str:
+    """`written`, for a sentence the control lab shows: its sign a true minus, as the page writes
+    a figure (web/src/format.ts, minus). Not for a figure that is read back as a number."""
+    text = written(value, digits)
+    return "\u2212" + text[1:] if text.startswith("-") else text
+
+
+def whole(value: float) -> str:
+    """A whole number with its thousands set apart by a thin space, as the page writes them
+    (web/src/format.ts, whole): 20\u202f000, never 20,000, which half the world reads as twenty."""
+    return f"{round(float(value)):,}".replace(",", "\u202f")
+
+
 def rounded(value: float, digits: int = 3) -> float:
     """A number to a few significant figures, kept a number: what `written` writes, read back."""
     return float(written(value, digits))

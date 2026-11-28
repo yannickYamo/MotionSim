@@ -154,7 +154,7 @@ def test_a_heatsink_or_link_figure_left_out_is_taken(ws, motion, given) -> None:
         ({"current": -5}, "current", "start current cannot be below 0"),
         ({"current": 1e12}, "current", "start current cannot be above 100000"),
         ({"handover_rpm": -5}, "handover_rpm", "handover speed cannot be below 0"),
-        ({"handover_rpm": 1e12}, "handover_rpm", "handover speed cannot be above 1,000,000"),
+        ({"handover_rpm": 1e12}, "handover_rpm", "handover speed cannot be above 1 000 000"),
         ({"align_time": -1}, "align_time", "alignment time cannot be below 0"),
         ({"align_time": 1e12}, "align_time", "alignment time cannot be above 30"),
     ],

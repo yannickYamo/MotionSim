@@ -85,6 +85,9 @@ export interface TypedFigure {
   required: boolean;
   help: string;
   main?: boolean;
+  /** The range the engine holds the figure to, in the unit it is typed in. */
+  low?: number;
+  high?: number;
 }
 
 export interface Role {
@@ -289,6 +292,39 @@ export interface Probe {
   tj_max: number | null;
   low: number;
   high: number;
+  /** In the search for the proposed load: the limit a load that does not pass ran into. */
+  limit?: string;
+}
+
+/** What a proposed load asks of the motor and the part, read from its motion. */
+export interface ProposedFigures {
+  peak_torque: number;
+  rms_torque: number;
+  top_rpm: number;
+  i_peak: number | null;
+  tj_peak: number;
+  tj_top: number;
+  tj_max: number;
+  points: { name: string; rpm: number; torque: number }[];
+}
+
+/** The load the part under test can carry: the application's own load made as heavy as it
+ *  can be with every check of the motion passing and the junction a margin under its rating,
+ *  what stops it going further, and the figures. */
+export interface LoadProposal {
+  application: string;
+  label: string;
+  /** Times the usual load of the application, sized to the design point. */
+  scale: number;
+  /** Still passing at the heaviest tried: something other than this drive limits it. */
+  open: boolean;
+  preset: LoadPreset;
+  binding: { limit: string; words: string; check: string; level: string; scale: number | null };
+  margin: { wanted: number; junction: number };
+  figures: ProposedFigures;
+  usual: ProposedFigures | null;
+  checks: Check[];
+  why: string;
 }
 
 /** A load as the engine takes it: what turns, what rubs, and what gravity or a road adds. */
@@ -331,7 +367,7 @@ export interface Suggest {
   v_supply: number;
   /** A made-up part's application: the load it opens on, how such products start their
    *  motor, and what they run from. Null for any other part. */
-  application?: { id: string; label: string; start: string; supply: "one-way" | "battery" } | null;
+  application?: { id: string; label: string; start: string; supply: "one-way" | "battery"; swings?: boolean } | null;
   /** Why the part starts on the kind it does: its rating and the drives of its class. */
   why?: string;
   motors: Record<

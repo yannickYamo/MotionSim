@@ -23,12 +23,13 @@ OPENS_ON = {
     "example-mosfet": ("joint", 48, "one-way"),
     "example-mosfet-40v": ("tool", 24, "battery"),
     "example-gan": ("vacuum", 25.2, "battery"),
+    "example-mosfet-80v": ("drone", 44.4, "battery"),
     "example-sic": ("compressor", 325, "one-way"),
     "example-sic-module": ("vehicle", 800, "battery"),
 }
 
 
-def test_six_made_up_parts_cover_each_technology_and_a_use_each() -> None:
+def test_the_made_up_parts_cover_each_technology_and_a_use_each() -> None:
     assert set(EXAMPLES) == set(USES) == set(OPENS_ON)
     technologies = {load_device(path).technology for path in EXAMPLES.values()}
     assert technologies == {"Si IGBT", "Si MOSFET", "GaN HEMT", "SiC MOSFET"}

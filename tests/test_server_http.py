@@ -102,6 +102,16 @@ def test_the_addresses_of_the_page(running) -> None:
     assert post(running, "/api/nothing", {})[0] == 404
 
 
+def test_an_address_longer_than_a_file_name_may_be_is_answered_as_any_unknown_one(running) -> None:
+    # A segment of 300 characters is more than a file system takes as one name: looking it up
+    # is an error of the system's, and the answer is still the one any unknown address gets.
+    unknown = ask(running, "GET", "/no-such-step")
+    status, headers, body = ask(running, "GET", "/" + "a" * 300)
+    assert (status, body) == (unknown[0], unknown[2])
+    assert headers["Content-Type"] == unknown[1]["Content-Type"]
+    assert ask(running, "GET", "/")[0] == unknown[0]  # and the server goes on answering
+
+
 def test_a_body_that_cannot_be_taken_is_said_with_its_status(running) -> None:
     assert ask(running, "POST", "/api/stage", b"{not json")[0] == 400
     assert ask(running, "POST", "/api/stage", b"[1, 2]")[0] == 400

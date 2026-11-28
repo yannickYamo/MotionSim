@@ -2,7 +2,7 @@
 
 import { api, storedParts } from "../api";
 import { partsMoved } from "../actions/reports";
-import { save } from "../state";
+import { partsHeld, save } from "../state";
 import { app, draw, ui } from "../store";
 import { at } from "../views/html";
 import { partsChanged } from "./redraw";
@@ -36,6 +36,7 @@ export function forgetDevice(el: HTMLElement): void {
   }, UNDO_MS);
   state.added = state.added.filter((d) => d !== id);
   state.devices = state.devices.filter((d) => d !== id);
+  partsHeld(state); // the part ticked taken off: one left on the page is ticked in its place
   api.forget(id);
   partsMoved();
   if (ui.review?.id === id) ui.review = null;

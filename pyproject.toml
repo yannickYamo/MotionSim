@@ -51,10 +51,24 @@ reader = [
     "pillow>=10.0.0",
     "pypdfium2>=4.18.0",
 ]
-all = ["motionsim[reader]"]
-# Working on the code: the reader's libraries, since its tests need them, and the tools CI runs.
+# The page on an ASGI server, with the settings and the local store the page is given there:
+# pip install ".[app]". Without it `motionsim serve` runs on Python's own HTTP server. wsproto
+# is what uvicorn speaks WebSocket with. Each floor is the oldest release the app's tests
+# pass on with Python 3.11; uvicorn's is also the first that holds a WebSocket message over
+# wsproto to the size the app sets, where an older one takes a message of any size whole.
+# mcp is the official Model Context Protocol SDK, for the coding agent's /mcp (2.3.0 is the
+# first release with the MCPServer and streamable HTTP manager the app mounts).
+app = [
+    "fastapi>=0.115.0",
+    "mcp>=2.3.0",
+    "uvicorn>=0.46.0",
+    "wsproto>=1.2.0",
+]
+all = ["motionsim[app,reader]"]
+# Working on the code: the reader's and the app's libraries, since their tests need them, and
+# the tools CI runs.
 dev = [
-    "motionsim[reader]",
+    "motionsim[app,reader]",
     "build",
     "check-wheel-contents",
     "hypothesis",
@@ -102,6 +116,7 @@ include = [
     "/docs/DESIGN_DECISIONS.md",
     "/docs/GUIDE.md",
     "/docs/LIMITS.md",
+    "/docs/MCP.md",
     "/docs/ROADMAP.md",
     "/docs/THERMAL_MODEL.md",
     "/docs/VALIDATION.md",

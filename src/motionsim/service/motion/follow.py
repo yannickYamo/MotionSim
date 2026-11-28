@@ -248,7 +248,11 @@ def cycle(data: dict, workspace: Workspace) -> dict:
         m.device.ratings.v_max,
         capacitance=_number(c_link, "DC-link capacitance", low=1e-9, field="c_link") if c_link else None,
     )
-    checks = motion_checks(m, run, reached, link, _supply(data))
+    kind = _supply(data)
+    # A mains front end that returns energy takes it as a battery does, and is said as what it is.
+    checks = motion_checks(
+        m, run, reached, link, "front-end" if kind == "battery" and data.get("supply") == "mains" else kind
+    )
     first, offset = told.first_of(trace, run)
     traces = _traces(m, run, trace, first)
     phases = told.phases_of(run.steps, traces["time"])

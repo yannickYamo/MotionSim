@@ -33,7 +33,11 @@ KNOWN = {
     "t_ambient",
     "follow",
     "start",
+    "mains",
+    "front_end",
 }
+MAINS = ("v", "f", "phases")
+FRONT_END = ("topology", "f_sw", "v_dc", "device", "feed_forward")
 CONDITIONS = {
     "v_dc", "rpm", "torque", "f_sw", "parallel", "pwm", "cooling", "t_sink", "t_ambient", "rth_sink", "rth_ja", "board_area",
     "copper", "copper_ref", "rth_case_sink", "interface", "t_sink_max", "v_drive", "rg_on", "rg_off", "t_dead", "l_loop", "t_min_pulse", "t_motor",
@@ -150,7 +154,28 @@ def _validate_parts(setup: dict) -> None:
         )
 
 
-FIGURES = ("motor", "motors", "conditions", "load", "profile", "heatsink", "c_link", "repeats", "t_ambient")
+def _validate_mains(setup: dict, strict: bool) -> None:
+    """A drive fed from the mains names its mains; the stage in front of the link is optional
+    (the one recommended is taken). Neither belongs to another kind of supply."""
+    fed = setup.get("supply") == "mains"
+    for key, known in (("mains", MAINS), ("front_end", FRONT_END)):
+        given = setup.get(key)
+        if given is None:
+            continue
+        if not fed:
+            raise Refusal(
+                f"`{key}` is given and the supply is not the mains", "set supply: mains, or leave it out", key
+            )
+        if not isinstance(given, dict):
+            raise Refusal(f"`{key}` is not a set of named figures", f"{key} holds {', '.join(known)}", key)
+        _stray(given, known, strict, f"{key} has", f"{key} holds {', '.join(known)}", key)
+    if fed and not (setup.get("mains") or {}).get("v"):
+        raise Refusal(
+            "the supply is the mains and its voltage is not given", "give mains: {v: 230, f: 50, phases: 1}", "mains.v"
+        )
+
+
+FIGURES = ("motor", "motors", "conditions", "load", "profile", "heatsink", "c_link", "repeats", "t_ambient", "mains")
 
 
 def validate_setup(setup, strict: bool = True) -> None:
@@ -166,6 +191,7 @@ def validate_setup(setup, strict: bool = True) -> None:
     supply(setup)
     _stray(setup, KNOWN, strict, "design has", f"a design holds {', '.join(sorted(KNOWN))}")
     _validate_parts(setup)
+    _validate_mains(setup, strict)
     _stray(
         setup.get("heatsink") or {},
         ("rth", "capacity", "t_ambient"),

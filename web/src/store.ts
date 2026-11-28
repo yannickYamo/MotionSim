@@ -5,13 +5,24 @@
 import { NotWorkedOut, Refused } from "./api";
 import type { Advice, Candidate, Capability, Cycle, DeviceSummary, KeptPart, Largest, Level, LoadPreset } from "./api";
 import type { MapGrid, Probe, Proposal, Reading, ReadOutcome, Recommendation, Setup, Stage, Suggest } from "./api";
-import type { CoolingOffer } from "./api";
+import type { CoolingOffer, FrontEndAnswer } from "./api";
 import type { Change } from "./follow";
+import { fieldsOf } from "./motorentry";
 import type { State } from "./state";
 import { LOAD, MOTOR, SUPPLY } from "./steps";
 
 /** The engine's first answer and what the user has entered. Set once the page starts. */
 export const app = { setup: null as unknown as Setup, state: null as unknown as State };
+
+/** The made-up part chosen in step 1's list, kept while the panel is drawn again. */
+export const picked = { id: "", open: false };
+
+/** The made-up part step 1's list shows: the one chosen, else the first not yet on the page;
+ *  "" where none is left. Next on step 1 brings it, so the way on is never shut while one is. */
+export function shownMadeUp(): string {
+  const spare = app.setup.devices.filter((d) => d.example && !app.state.added.includes(d.id));
+  return (spare.find((d) => d.id === picked.id) ?? spare[0])?.id ?? "";
+}
 
 export interface BoxNote {
   raw: string;
@@ -53,6 +64,8 @@ export const res = {
   /** The cooling figure the tool offers where the chosen cooling's own is left empty, for
    *  the inputs it was worked out for. */
   offer: null as { key: string; answer: CoolingOffer | Refused | "asking" } | null,
+  /** The front end of a drive fed from the mains, for the inputs it was worked out for. */
+  frontEnd: null as { key: string; answer: FrontEndAnswer | Refused | "asking" } | null,
   /** Whether the motor as described fits the part: asked of the engine at the motor step. */
   fit: null as FitNote | Refused | null,
   /** What suits the device under test: the supply, and how each kind of motor fits it. */
@@ -155,6 +168,16 @@ export const ui = {
   unsaved: false,
   /** What is said once to a screen reader: the verdict when it changes, and little else. */
   announced: "",
+  /** A first visit: step 1 asks one question, your part or a made-up one, until a part is brought. */
+  firstRun: false,
+  /** On the first visit the user chose their own part: the ways to bring it, and the compact table. */
+  yourPart: false,
+  /** The part came by the first visit's fast path: the verdict is the next press, the motor,
+   *  the point and the load taken from the part's usual application and said to be. */
+  /** What was pasted into the compact table, kept through redraws. */
+  pasted: "",
+  /** The recommendation among the parts on the page is open on the verdict. */
+  recommend: false,
 };
 
 export type Scope = "all" | "deep" | "compared" | "motion";
@@ -251,7 +274,8 @@ export const pending = (): boolean => res.stale && conditionsGiven();
 /** The step whose form holds the input that was refused. */
 export function blockedStep(): number {
   if (!res.blocked || app.state.reached < SUPPLY) return -1;
-  const motorKeys = app.setup.motors[app.state.kind].fields.map((f) => f.key);
+  const { kind, motors } = app.state;
+  const motorKeys = fieldsOf(kind, app.setup.motors[kind].fields, motors[kind]).map((f) => f.key);
   return motorKeys.includes(res.blocked.field) ? MOTOR : SUPPLY;
 }
 

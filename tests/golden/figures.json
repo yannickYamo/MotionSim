@@ -45,9 +45,9 @@
    },
    {
     "lines": [
-     "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 113 \u00b0C, 62 \u00b0C under its 175 \u00b0C rating",
+     "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 113 \u00b0C, 62 K under its 175 \u00b0C rating",
      "it then carries 25.5 W into 40 \u00b0C air: 2.3 K/W or lower, heatsink to ambient",
-     "With no heatsink at all, a package may have up to 10 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 \u00b0C under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
+     "With no heatsink at all, a package may have up to 10 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 K under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
     ],
     "topic": "heatsink",
     "value": {
@@ -107,9 +107,9 @@
     },
     {
      "lines": [
-      "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 113 \u00b0C, 62 \u00b0C under its 175 \u00b0C rating",
+      "the heatsink is kept at or below 100 \u00b0C, a design target and not a rating, for what is usually mounted on it: the board, the capacitors, the connectors. The hottest junction is then at 113 \u00b0C, 62 K under its 175 \u00b0C rating",
       "it then carries 25.5 W into 40 \u00b0C air: 2.3 K/W or lower, heatsink to ambient",
-      "With no heatsink at all, a package may have up to 10 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 \u00b0C under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
+      "With no heatsink at all, a package may have up to 10 K/W from junction to air (RthJA on the datasheet) for its hottest junction to stay 25 K under its rating, counting the hardest-worked one, running and held still. A TO-220 standing free has about 62, a TO-247 about 40, a surface-mount part on its copper 40 to 60"
      ],
      "topic": "heatsink",
      "value": {
@@ -134,8 +134,8 @@
     "needs_gate_drive": false,
     "positions": 6,
     "recovery": true,
-    "support": "curves",
-    "switching": "measured energy from the datasheet",
+    "support": "made-up curves",
+    "switching": "made-up switching energy",
     "t_sc": null,
     "technology": "Si IGBT",
     "tj_max": 150.0,
@@ -153,8 +153,8 @@
     "needs_gate_drive": true,
     "positions": 1,
     "recovery": false,
-    "support": "table points and assumed shapes",
-    "switching": "estimated from gate and output charge",
+    "support": "made-up curves and table points, with shapes assumed between the points",
+    "switching": "estimated from made-up gate and output charges",
     "t_sc": null,
     "technology": "Si MOSFET",
     "tj_max": 175.0,
@@ -319,7 +319,7 @@
    "lines": [
     {
      "level": "ok",
-     "text": "from 48 V this motor reaches the 3,000 rpm of the design point"
+     "text": "from 48 V this motor reaches the 3\u202f000 rpm of the design point"
     },
     {
      "level": "ok",
@@ -347,7 +347,7 @@
     },
     {
      "level": "ok",
-     "message": "junction peaks at 62 \u00b0C (61 to 63 \u00b0C across the thermal assumptions), 112 \u00b0C below its rating",
+     "message": "junction peaks at 62 \u00b0C (61 to 63 \u00b0C across the thermal assumptions), 112 K below its 175 \u00b0C rating",
      "topic": "temperature"
     },
     {
@@ -429,7 +429,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 95 \u00b0C (82 to 123 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 27 \u00b0C below its rating",
+      "message": "junction peaks at 95 \u00b0C (82 to 123 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 27 K below its 150 \u00b0C rating",
       "topic": "temperature"
      },
      {
@@ -510,7 +510,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 62 \u00b0C (61 to 63 \u00b0C across the thermal assumptions), 112 \u00b0C below its rating",
+      "message": "junction peaks at 62 \u00b0C (61 to 63 \u00b0C across the thermal assumptions), 112 K below its 175 \u00b0C rating",
       "topic": "temperature"
      },
      {
@@ -742,7 +742,7 @@
       },
       {
        "level": "ok",
-       "message": "junction peaks at 66 \u00b0C (63 to 71 \u00b0C across the thermal assumptions, the largest part of it from the swing within one turn of the output, assumed for want of a transient thermal curve), 104 \u00b0C below its rating",
+       "message": "junction peaks at 66 \u00b0C (63 to 71 \u00b0C across the thermal assumptions, the largest part of it from the swing within one turn of the output, assumed for want of a transient thermal curve), 104 K below its 175 \u00b0C rating",
        "topic": "temperature"
       },
       {
@@ -1278,7 +1278,7 @@
   "lines": [
    {
     "level": "ok",
-    "text": "from 48 V this motor reaches the 3,000 rpm of the design point"
+    "text": "from 48 V this motor reaches the 3\u202f000 rpm of the design point"
    },
    {
     "level": "ok",
@@ -1299,7 +1299,7 @@
     },
     {
      "level": "ok",
-     "message": "junction peaks at 60 \u00b0C, 115 \u00b0C below its rating",
+     "message": "junction peaks at 60 \u00b0C, 115 K below its 175 \u00b0C rating",
      "topic": "temperature"
     },
     {
@@ -1372,7 +1372,7 @@
     },
     {
      "level": "ok",
-     "message": "junction peaks at 60 \u00b0C, 115 \u00b0C below its rating",
+     "message": "junction peaks at 60 \u00b0C, 115 K below its 175 \u00b0C rating",
      "topic": "temperature"
     },
     {
@@ -1448,7 +1448,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 78 \u00b0C (73 to 87 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 88 \u00b0C below its rating",
+      "message": "junction peaks at 78 \u00b0C (73 to 87 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 88 K below its 175 \u00b0C rating",
       "topic": "temperature"
      },
      {
@@ -1624,7 +1624,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 85 \u00b0C (81 to 94 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 81 \u00b0C below its rating",
+      "message": "junction peaks at 85 \u00b0C (81 to 94 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 81 K below its 175 \u00b0C rating",
       "topic": "temperature"
      },
      {
@@ -1800,7 +1800,7 @@
      },
      {
       "level": "ok",
-      "message": "junction peaks at 90 \u00b0C (83 to 106 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 44 \u00b0C below its rating",
+      "message": "junction peaks at 90 \u00b0C (83 to 106 \u00b0C across the thermal assumptions, the largest part of it from how the chips of the package heat each other, which the datasheet does not give), 44 K below its 150 \u00b0C rating",
       "topic": "temperature"
      },
      {

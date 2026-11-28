@@ -9,10 +9,14 @@ type the part's figures in instead.
 It is an exploratory tool. Its results are estimates, not measurements. When you report
 them to a person, carry the cautions and the "what this rests on" section with them.
 
+If the person has MotionSim open in the local app, connect to its MCP server instead
+(`http://localhost:4310/mcp`, with the access code from Settings; see docs/MCP.md): you
+then read and change the design their page shows, and they see and can undo each change.
+
 ## The loop
 
 1. **Describe the part.** One of:
-   - a made-up part to try things with, each opening on the application such a part is found in: `example-mosfet` (100 V, 100 A, a robot joint), `example` (600 V, 30 A IGBT module, a direct-drive washer), `example-mosfet-40v` (40 V, 120 A, a power tool), `example-gan` (100 V GaN, a vacuum cleaner), `example-sic` (650 V SiC, an air-conditioner compressor) or `example-sic-module` (1200 V SiC half-bridge, a car on 800 V);
+   - a made-up part to try things with, each opening on the application such a part is found in: `example-mosfet` (100 V, 100 A, a robot joint), `example` (600 V, 30 A IGBT module, a direct-drive washer), `example-mosfet-40v` (40 V, 120 A, a power tool), `example-mosfet-80v` (80 V, 80 A, drone propulsion at 50 000 rpm), `example-gan` (100 V GaN, a vacuum cleaner), `example-sic` (650 V SiC, an air-conditioner compressor) or `example-sic-module` (1200 V SiC half-bridge, a car on 800 V);
    - a device file the user already has (`*.device.yaml`);
    - a transistor typed from its datasheet: `motionsim template device -o part.yaml` (`template igbt` for an IGBT and its diode),
      fill in the figures (units are the datasheet's: mΩ, nC, pF, V, A, K/W), and name
@@ -78,7 +82,13 @@ conditions:
   #   t_ambient (°C, the air a heatsink is sized for: 40),
   #   pwm: sine | third-harmonic | space-vector | discontinuous | discontinuous-high | discontinuous-low,
   #   edge_limit: cable (5 V/ns, the default) | close (20 V/ns) | none: how fast an edge chosen gate resistors allow
-supply: one-way               # one-way (a power supply) | battery (takes braking energy back)
+supply: one-way               # one-way (a power supply) | battery (takes braking energy back) | mains
+# fed from the mains (supply: mains), the stage in front of the DC link is worked out first:
+#   mains: {v: 230, f: 50, phases: 1}   # V rms (line to line on three phases), Hz, 1 or 3
+#   front_end:                # optional: left out, the stage recommended is taken and named in the answer
+#     topology: boost         # one phase: rectifier | boost | interleaved | totem_pole; three: six_pulse | vienna | active
+#     f_sw: 65000             # Hz, the front end's own; feed_forward: off unties its control from the motor's
+#   leave conditions.v_dc out and the link is the stage's (390 V from 230 V); given, it is the stage's set point
 # optional, with a load and profile:
 #   repeats: 1                # the motion run this many times back to back, 1 to 50
 #   start:                    # how the drive starts the motor: left out, with a position sensor

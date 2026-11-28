@@ -11,7 +11,7 @@ Everyone taking part is asked to follow the [code of conduct](CODE_OF_CONDUCT.md
 
 ## Setup
 
-You need Python 3.11 or later, and Node 22 for the page.
+You need Python 3.11 or later, and Node 22 for the page. Docker is needed only to try the container.
 
 ```
 git clone https://github.com/yannickYamo/MotionSim.git
@@ -62,6 +62,43 @@ make page          # cd web && npm run build
 ```
 
 Commit the built files with the change that caused them. The build also packs the engine for the hosted page, so a change to anything under `src/motionsim/` needs a rebuild too: CI fails when the committed page is not what the sources build.
+
+## The control lab
+
+The engine's side is `src/motionsim/control/` (the motor, the blocks, the schemes, the kernel, the hand-off to the loss engine, the linear analysis) and `src/motionsim/service/control/` (the five addresses; the docstring of its `__init__.py` is the API's reference, so a change to a shape is a change to that docstring). `docs/CONTROL.md` describes the model.
+
+```
+.venv/bin/pytest -q tests/test_control_*.py      # the lab's tests
+.venv/bin/motionsim control presets design.yaml  # the same engine from a terminal
+```
+
+- A new kind of block is a class against `motionsim.control.Block`, registered with `register`. It says what it is in words and in mathematics, gives every parameter a unit and bounds, and a test holds it to what can be worked out by hand.
+- A scheme sets no figure without the rule it came from (`sources`). Where the rule is this tool's own choice and not a published one, its text says so.
+- A field-oriented drive held at a steady point has to end where the settled engine is: `tests/test_control_engine.py` holds that on the six made-up parts. A change that moves it is a change to the loss hand-off, and is said.
+- A new exploration has its headline in `tests/test_control_explore.py`, written from the physics and not read from the library, and runs inside the test's budget.
+- No loss formula is written in the lab. Losses come from the engine.
+
+The lab's page is the one part of the page written in React (`web/src/control/`, TSX, with React Flow for the diagram and KaTeX for the mathematics). The five steps are not, and stay so.
+
+```
+motionsim serve --no-browser     # the engine, on 127.0.0.1:4310
+cd web && npm run dev            # the page on 127.0.0.1:4311, asking that engine
+cd web && npm test               # the page's tests, the lab's among them
+cd web && npm run lint && npx tsc --noEmit
+```
+
+`MOTIONSIM_ENGINE` names another engine for `npm run dev`. The lab is fetched when it is first opened: `web/tests/control.build.test.ts` builds the page and fails if React, the diagram or the mathematics come with the first load. The page has no model of its own, here as elsewhere: every figure the lab shows is the engine's.
+
+## The local app and the board reader
+
+`src/motionsim/app/` serves the page with FastAPI on uvicorn where the `app` extra is installed (`make setup` installs it). It works nothing out: every address goes through the service's one dispatch, as on the standard library's server, and `tests/test_app_http.py` holds the two to the same statuses, bodies and headers. An address added to the service is answered by both with no change there. The reader's key is never put in an answer, a log, the store or the words of a refusal.
+
+`src/motionsim/board/` reads a board's design file; `docs/BOARD.md` describes the method. A board in the tests or the examples is made up, and says so in the file. Every figure it gives carries a band and what it rests on. A file that cannot be read is refused in a line: never a fault, never a hang.
+
+```
+.venv/bin/pytest -q tests/test_app_*.py tests/test_board_*.py
+docker compose up                # the container, as a user starts it
+```
 
 ## Style
 

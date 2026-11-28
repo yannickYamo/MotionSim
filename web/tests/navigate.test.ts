@@ -19,6 +19,7 @@ import { shown } from "../src/shown";
 import { initial } from "../src/state";
 import { DEVICE, MOTOR, RESULTS, SUPPLY } from "../src/steps";
 import { app, draw, res, ui } from "../src/store";
+import { pinNow, unpin } from "../src/pin";
 import { barStatus, renderRail } from "../src/views/rail";
 import { connect, frame, renderPanel, topBar } from "../src/views/render";
 
@@ -67,20 +68,12 @@ describe("the rail", () => {
 });
 
 describe("step 1, once a part is chosen", () => {
-  it("offers the results beside Next, as a second action", () => {
+  it("leads on to the motor alone: no way from the part straight to the results", () => {
     renderPanel();
-    const skip = document.querySelector<HTMLButtonElement>("#panel .actions [data-skip]")!;
-    // Said in full, and written in full where there is room; on a phone, "See the results".
-    expect(skip.getAttribute("aria-label")).toBe("See the results with these settings");
-    expect(skip.querySelector(".long")!.textContent).toBe("See the results with these settings");
-    expect(skip.dataset.step).toBe(String(RESULTS));
-    expect(skip.className).toBe("ghost");
-    expect(document.querySelectorAll("#panel .actions .primary").length).toBe(1);
-  });
-  it("does not offer it with no part chosen", () => {
-    app.state.devices = [];
-    renderPanel();
-    expect(document.querySelector("#panel [data-skip]")).toBeNull();
+    const forward = [...document.querySelectorAll<HTMLButtonElement>("#panel .actions button[data-step]")];
+    expect(forward.map((b) => b.dataset.step)).toEqual([String(MOTOR)]);
+    expect(forward[0].className).toBe("primary");
+    expect(document.querySelector(`#panel .actions [data-step="${RESULTS}"]`)).toBeNull();
   });
 });
 
@@ -93,15 +86,26 @@ describe("the results", () => {
     expect(primary.map((b) => b.textContent)).toEqual(["Choose a device"]);
     expect(primary[0].dataset.step).toBe(String(DEVICE));
   });
-  it("with a verdict that passes, has the PDF as the one primary action, the .md beside it", () => {
+  it("with a final verdict, has pinning as A as the one primary action, the reports in one Export menu", () => {
     Object.assign(app.state, { step: RESULTS, reached: RESULTS, focus: "example-mosfet", tab: "proposal" });
     res.cycle = answers.cycle as never;
     renderPanel();
     const primary = [...document.querySelectorAll<HTMLButtonElement>("#panel .primary")];
-    expect(primary.map((b) => b.textContent)).toEqual(["Print or save as PDF"]);
-    expect(document.querySelector("#panel [data-report-md]")!.className).toBe("ghost");
-    expect(document.querySelector(`#panel .ways button.link[data-step="3"]`)).not.toBeNull();
-    expect(document.querySelector("#panel .ways [data-save-setup]")).not.toBeNull();
+    expect(primary.map((b) => b.textContent)).toEqual(["Pin as A, then change one input"]);
+    expect(primary[0].hasAttribute("data-pin-a")).toBe(true);
+    const menu = document.querySelector("#panel #export-menu")!;
+    expect([...menu.querySelectorAll("[role=menuitem]")].map((b) => b.textContent)).toEqual([
+      ".md report",
+      "PDF",
+      "Setup file",
+    ]);
+    expect(document.querySelector("#export-button")!.className).toBe("ghost");
+    expect(document.querySelector(`#panel .results-actions button.link[data-step="3"]`)).not.toBeNull();
+    // Once a result is pinned, nothing at the foot is orange.
+    pinNow();
+    renderPanel(true);
+    expect(document.querySelectorAll("#panel .results-actions .primary").length).toBe(0);
+    unpin();
   });
   it("on a refusal, has the way to the step at fault as the one primary action", () => {
     Object.assign(app.state, { step: RESULTS, reached: RESULTS, focus: "example-mosfet", tab: "proposal" });
@@ -222,7 +226,10 @@ describe("the bar at the foot of a phone's screen", () => {
     renderPanel();
     const bar = document.querySelector("#panel .actions .bar-status")!;
     expect(bar.getAttribute("aria-hidden")).toBe("true");
-    expect(bar.textContent).toBe(barStatus());
+    // The same words, a figure held to its unit and a dot to the words before it: on a phone's
+    // one row the line turns only between two of its parts.
+    expect(bar.textContent.replace(/\u00a0/g, " ")).toBe(barStatus());
+    expect(bar.textContent).toMatch(/^[^\u00a0·]+(\u00a0· \S+(\u00a0\S+)?)+$/);
     app.state.reached = SUPPLY; // the load not yet given: nothing is worked out, nothing said
     expect(barStatus()).toBe("");
   });
@@ -235,9 +242,9 @@ describe("small marks on the results", () => {
     expect([...document.querySelectorAll("#panel .candidate .rank")].map((r) => r.textContent)).toEqual(["1", "2"]);
     res.proposal = { ...res.proposal!, candidates: res.proposal!.candidates.slice(0, 1) };
     renderPanel();
-    const ranks = [...document.querySelectorAll("#panel .candidate .rank")];
-    expect(ranks.map((r) => r.textContent)).toEqual([""]);
-    expect(ranks[0].getAttribute("aria-hidden")).toBe("true");
+    // Alone, it has no rank at all: its three figures lead.
+    expect(document.querySelectorAll("#panel .candidate .rank").length).toBe(0);
+    expect(document.querySelectorAll("#panel .candidate.alone .key-figures .figure").length).toBe(3);
   });
   it("marks the usual choice of what the map shows and of what is tried first", () => {
     Object.assign(app.state, { step: RESULTS, reached: RESULTS, focus: "example-mosfet", tab: "losses" });
@@ -304,20 +311,31 @@ describe("a supply above the part's rating", () => {
 describe("the verdict of the results", () => {
   it("is the loudest line, said first above the tabs on every tab, in its state's colour, and comes in once", () => {
     Object.assign(app.state, { step: RESULTS, reached: RESULTS, focus: "example-mosfet", tab: "proposal" });
+    // While the motion is still followed no verdict word is given: the line says it is working.
     renderPanel();
-    const line = document.querySelector("#panel h2 + .verdict-line")!;
+    expect(document.querySelector("#panel h2 + .verdict-head > .verdict-line")!.classList.contains("working")).toBe(
+      true,
+    );
+    expect(document.querySelector("#panel .verdict-line")!.textContent).not.toMatch(/Passes|Fails/);
+    res.cycle = answers.cycle as never;
+    renderPanel(true);
+    const line = document.querySelector("#panel h2 + .verdict-head > .verdict-line")!;
     expect(line).not.toBeNull();
-    expect(line.nextElementSibling?.matches(".tabs")).toBe(true);
+    expect(line.parentElement!.nextElementSibling?.matches(".tabs")).toBe(true);
     expect(line.classList.contains("ok")).toBe(true);
     expect(line.querySelector("svg")).not.toBeNull();
-    expect(line.textContent).toBe(res.proposal!.explain[0]);
+    // The first in the ranking, in a few words; the ranking's own sentence opens the tab.
+    expect(line.textContent).toBe("made-up 100 V MOSFET: Passes · on an assumed drive");
+    expect(document.querySelector("#tab-body .explain")!.textContent).toContain(res.proposal!.explain[0]);
     renderPanel(true);
     // Drawn again, it does not come in again.
     expect(document.querySelector("#panel .verdict-line")!.classList.contains("enters")).toBe(false);
     for (const tab of ["losses", "motion", "limits"] as const) {
       app.state.tab = tab;
       renderPanel(true);
-      expect(document.querySelector("#panel h2 + .verdict-line")?.textContent, tab).toBe(line.textContent);
+      expect(document.querySelector("#panel h2 + .verdict-head > .verdict-line")?.textContent, tab).toBe(
+        line.textContent,
+      );
     }
   });
   it("leaves the drawing its size: the panel's width is not eased when the results open", async () => {

@@ -17,14 +17,24 @@ from motionsim.files import write_text
 def serve(args: argparse.Namespace) -> int:
     import logging
 
-    from motionsim.server import serve as serve_page
+    from motionsim.app.run import logs
+    from motionsim.app.run import serve as serve_page
 
     logging.basicConfig(level=getattr(logging, args.log_level.upper()), format="%(asctime)s %(levelname)s %(message)s")
+    logs(args.log_level)
     try:
-        serve_page(port=args.port, folder=args.devices, open_browser=not args.no_browser)
-    except OSError as exc:  # the port is taken, or may not be opened
+        serve_page(
+            host=args.host,
+            port=args.port,
+            folder=args.devices,
+            open_browser=not args.no_browser,
+            log_level=args.log_level,
+        )
+    except OSError as exc:  # the port is taken, or the address is not this machine's to open
         raise Refusal(
-            f"the page cannot be served on port {args.port}: {exc.strerror or exc}", "give another with --port", "port"
+            f"the page cannot be served at {args.host}, port {args.port}: {exc.strerror or exc}",
+            "give another port with --port, or leave --host as it is",
+            "port",
         ) from None
     return 0
 

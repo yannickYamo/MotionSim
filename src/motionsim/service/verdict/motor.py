@@ -12,7 +12,7 @@ from motionsim.service.validate import _conditions, _motor, _number, point
 from motionsim.service.validate import supply as _supply
 from motionsim.service.verdict.common import _unreachable
 from motionsim.service.workspace import Workspace
-from motionsim.text import rounded, written
+from motionsim.text import rounded, whole, written
 
 
 def _reach(motor, v_dc: float, *, rpm: float | None = None, torque: float | None = None) -> tuple[float, Any]:
@@ -50,12 +50,14 @@ def _speed_lines(asked, top_rpm: float, v_dc: float) -> list[dict]:
         return []
     asked = abs(_number(asked, "speed", field="rpm"))
     if top_rpm >= asked:
-        return [{"level": "ok", "text": f"from {v_dc:g} V this motor reaches the {asked:,.0f} rpm of the design point"}]
+        return [
+            {"level": "ok", "text": f"from {v_dc:g} V this motor reaches the {whole(asked)} rpm of the design point"}
+        ]
     return [
         {
             "level": "caution",
-            "text": f"from {v_dc:g} V this motor reaches about {rounded(top_rpm, 2):,.0f} rpm with no load, short of the "
-            f"{asked:,.0f} rpm of the design point: it is wound for a higher voltage than this part suits. Lower the "
+            "text": f"from {v_dc:g} V this motor reaches about {whole(rounded(top_rpm, 2))} rpm with no load, short of the "
+            f"{whole(asked)} rpm of the design point: it is wound for a higher voltage than this part suits. Lower the "
             "speed in the next step, or use a motor wound for this voltage",
         }
     ]

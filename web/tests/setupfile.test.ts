@@ -39,7 +39,7 @@ vi.mock("../src/api", async (original) => {
 
 import type { Setup } from "../src/api";
 import { api } from "../src/api";
-import { openSetup, saveSetup, startOver } from "../src/actions/setup";
+import { clearEverything, keepEverything, openSetup, saveSetup, startOver } from "../src/actions/setup";
 import { initial } from "../src/state";
 import { app, res, ui } from "../src/store";
 import { connect, frame, renderEngineStatus, renderPanel, topBar } from "../src/views/render";
@@ -198,16 +198,24 @@ describe("a setup file", () => {
 
 describe("Reset", () => {
   it("clears everything entered in place, with step 1 open, and does not reload the page", () => {
-    vi.stubGlobal("confirm", () => true);
     startOver();
+    clearEverything(); // what Clear everything does
     expect(reloads).toBe(0);
     expect(app.state).toEqual(initial(app.setup));
     expect(document.body.dataset.at).toBe("0");
   });
-  it("asked and not confirmed, changes nothing", () => {
-    vi.stubGlobal("confirm", () => false);
+  it("asks in the page's own dialog, with Keep on the keyboard, and kept changes nothing", () => {
+    const confirm = vi.fn(() => true);
+    vi.stubGlobal("confirm", confirm);
     const before = structuredClone(app.state);
     startOver();
+    expect(confirm).not.toHaveBeenCalled();
+    const ask = document.querySelector("#reset-confirm")!;
+    expect(ask.getAttribute("role")).toBe("alertdialog");
+    expect(ask.textContent).toContain("Clear the parts, motor, load and every figure?");
+    expect(document.activeElement).toBe(ask.querySelector("[data-reset-keep]"));
+    expect(app.state).toEqual(before);
+    keepEverything(); // what Keep does
     expect(app.state).toEqual(before);
   });
 });
@@ -239,8 +247,11 @@ describe("the bar at the top", () => {
       expect(document.querySelector("header.top [data-save-setup]"), `step ${step}`).not.toBeNull();
       expect(document.querySelector("header.top input[data-setup-file]"), `step ${step}`).not.toBeNull();
     }
-    expect(document.querySelector("header.top .reset")!.textContent).toBe("Reset");
-    expect(document.querySelector("#top-more [data-start-over]")!.textContent).toBe("Reset: clear everything entered");
+    // Reset is in the bar's menu alone, set apart as the one that clears.
+    expect(document.querySelectorAll("header.top > button[data-start-over]").length).toBe(0);
+    const reset = document.querySelector("#top-more [data-start-over]")!;
+    expect(reset.textContent).toBe("Reset: clear everything entered");
+    expect(reset.classList.contains("danger")).toBe(true);
   });
   it("opens what the tool is as a popover that closes by itself, under its own label", () => {
     const opener = document.querySelector<HTMLButtonElement>("header.top .about-button")!;

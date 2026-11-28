@@ -4,6 +4,10 @@
 // carried inside it, and it is drawn at twice its size or more so that it stays sharp in a
 // report. Nothing leaves the machine. This code is fetched only when a save is asked for.
 
+// The page's typeface, at the address the build gave it: the stylesheet loads the same file.
+import funnelSans from "../fonts/funnel-sans-latin.woff2?url";
+import geistMono from "../fonts/geist-mono-latin.woff2?url";
+
 /** What a mark is drawn with: read from the page, written onto the copy. */
 const DRAWN_WITH = [
   "display",
@@ -90,20 +94,28 @@ function copyOf(svg: SVGSVGElement, w: number, h: number, top: number): SVGSVGEl
   return copy;
 }
 
-/** The page's typeface as text to carry inside an image, fetched once; none where it cannot be. */
-let face: Promise<string> | null = null;
-function typeface(): Promise<string> {
-  face ??= fetch(new URL("./fonts/funnel-sans-latin.woff2", document.baseURI))
+/** One typeface file as a face to carry inside an image; nothing where it cannot be fetched. */
+const carried = (url: string, family: string, weights: string): Promise<string> =>
+  fetch(new URL(url, document.baseURI))
     .then((r) => (r.ok ? r.arrayBuffer() : Promise.reject(new Error(String(r.status)))))
     .then((bytes) => {
       let binary = "";
       new Uint8Array(bytes).forEach((b) => (binary += String.fromCharCode(b)));
       return (
-        `@font-face{font-family:"Funnel Sans";font-weight:300 800;` +
+        `@font-face{font-family:"${family}";font-weight:${weights};` +
         `src:url(data:font/woff2;base64,${btoa(binary)}) format("woff2")}`
       );
     })
     .catch(() => "");
+
+/** The page's typefaces as text to carry inside an image, fetched once: the one its words are
+ *  set in and the one a graph's figures are set in. */
+let face: Promise<string> | null = null;
+function typeface(): Promise<string> {
+  face ??= Promise.all([
+    carried(funnelSans, "Funnel Sans", "300 800"),
+    carried(geistMono, "Geist Mono", "100 900"),
+  ]).then((faces) => faces.join(""));
   return face;
 }
 
@@ -204,8 +216,26 @@ function hand(blob: Blob, name: string): string {
   return name;
 }
 
+/** A drawing to save: the drawing itself, or where to find it once the image is about to be made. */
+export type Drawing = SVGSVGElement | (() => SVGSVGElement | null | undefined);
+
+/** The drawing as it stands on the page now. A page may draw its chart again while the
+ *  typeface is fetched (a status line said under it changes its room): the one held from before
+ *  is then off the page, where no mark has a style to read, and its image would be black
+ *  shapes in a fallback face. So it is found again, and one that is not on the page is refused. */
+export function standing(drawing: Drawing): SVGSVGElement {
+  const svg = typeof drawing === "function" ? drawing() : drawing;
+  if (!svg || !svg.isConnected) throw new Error("the chart was drawn again while its image was made");
+  return svg;
+}
+
 /** Save a drawing of the page as a PNG named for it; the file's name comes back. */
-export async function savePng(svg: SVGSVGElement, title: string, under = ""): Promise<string> {
-  const made = sheet(svg, title, under, await typeface());
+export async function savePng(drawing: Drawing, title: string, under = ""): Promise<string> {
+  const fontFace = await typeface();
+  // A frame, so that anything the press itself changed on the page has been laid out and drawn.
+  await new Promise<void>((done) =>
+    typeof requestAnimationFrame === "function" ? requestAnimationFrame(() => done()) : done(),
+  );
+  const made = sheet(standing(drawing), title, under, fontFace);
   return hand(await raster(made), pngName(title));
 }

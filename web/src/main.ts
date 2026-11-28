@@ -1,4 +1,5 @@
 import "./style.css";
+import "./charts/plot.css";
 import { api, boot, storedParts } from "./api";
 import { compute } from "./engine";
 import { fitFor } from "./engine/fit";
@@ -15,6 +16,8 @@ import { renderRail } from "./views/rail";
 import { connect, frame, renderEngineStatus, renderPanel, topBar } from "./views/render";
 import { loadResults } from "./views/resultsload";
 import { renderStage } from "./views/stage";
+import { startShared } from "./session";
+import { tooltips } from "./tips";
 
 /** The engine in the browser has started: take its list of parts, and drop from the saved
  *  choice any part it does not hold. */
@@ -90,9 +93,13 @@ async function start(): Promise<void> {
     renderEngineStatus();
   }
   app.state = restore(app.setup, inBrowser);
+  // A first visit (nothing brought, nothing typed) opens on one question: your part, or a made-up one.
+  const s0 = app.state;
+  ui.firstRun = s0.step === 0 && !s0.devices.length && !s0.added.length && !Object.keys(s0.typed).length;
   page.insertAdjacentHTML("beforeend", frame());
   connect();
   wire();
+  tooltips();
   firstDraw();
   // The results' code is fetched once the first screen is up, so it is there by the time
   // they are opened; a first visit does not wait for it.
@@ -102,6 +109,8 @@ async function start(): Promise<void> {
   void suggestFor();
   if (app.state.step >= LOAD) void presetsFor();
   history.replaceState({ step: app.state.step }, "");
+  // On a page served on this machine, the design is the one shared with a coding agent.
+  if (!inBrowser) await startShared();
   if (inBrowser && !(await engineReady(engine.ready))) return;
   if (app.state.step === MOTOR) fitFor(true);
   await compute();

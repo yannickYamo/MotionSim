@@ -441,5 +441,5 @@ def test_the_best_device_is_said_to_pass_with_cautions_when_it_does() -> None:
     assert candidate.level is guard.Level.caution
     assert any(c.topic == "voltage" and "supply is 83% of the 600 V rating" in c.message for c in candidate.checks)
     assert explain([candidate])[1] == (
-        "synthetic NEAR passes with cautions, listed below; read them before relying on it."
+        "synthetic NEAR passes, with findings listed below; read them before relying on it."
     )

@@ -67,7 +67,8 @@ export function onInput(e: Event): void {
   if (el.dataset.typed) return typedInput(el);
   if (el.dataset.geo) return geometryTyped(el);
   const bind = el.dataset.bind;
-  if (!bind || el.tagName === "SELECT") return;
+  // A list or a set of choices is taken when it changes: see the change handler.
+  if (!bind || el.tagName === "SELECT" || el.type === "radio") return;
   if (bind.startsWith("sweep.")) return; // taken when the field is left: see the change handler
   // A figure only the switching event uses: the design is not worked out again for it.
   if (bind.startsWith("event.")) return eventTyped(el, focused());

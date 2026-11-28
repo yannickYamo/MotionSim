@@ -85,21 +85,21 @@ async function journey(width, height) {
   await page.reload({ waitUntil: "load" });
   await page.waitForSelector("#panel h2");
   // A first visit is offered what a newcomer can do at once, before any file is asked for.
-  await page.waitForSelector("#panel [data-example]", { timeout: 240000 });
-  const first = await page.evaluate(() =>
-    [...document.querySelectorAll("#panel .path > h3")].map((h) => h.textContent),
-  );
-  hold(
-    first.length === 3 && /See what it does/.test(first[0]),
-    `${at}: a first visit is offered three ways to bring a part, the made-up one first`,
-  );
+  await page.waitForSelector("#panel #example-pick", { timeout: 240000 });
+  const first = await page.evaluate(() => ({
+    own: !!document.querySelector("#panel [data-your-part]"),
+    madeUp: !!document.querySelector("#panel [data-first-try]"),
+  }));
+  hold(first.own && first.madeUp, `${at}: a first visit is offered its own part or a made-up one to try`);
   hold(
     await text("#readouts").then((t) => /Start here/.test(t) && !/Power-stage loss/.test(t)),
     `${at}: nothing is worked out before a part is chosen`,
   );
   hold(await fits(), `${at}: the first step fits the width`);
 
-  await page.click('#panel [data-example*="mosfet"]');
+  await page.click("#panel #example-pick");
+  await page.click("#example-pick-example-mosfet");
+  await page.click("#panel [data-first-try]");
   await page.waitForSelector("#panel .devices .device.is-on", { timeout: 240000 });
   for (const k of [1, 2, 3, 4]) {
     await page.click(`#panel .actions [data-step="${k}"]`);
@@ -110,31 +110,21 @@ async function journey(width, height) {
     );
   }
   await settled();
-  await page.waitForSelector("#panel .verdict", { timeout: 240000 });
-  const verdict = await text("#panel .verdict");
+  await page.waitForSelector("#panel .verdict-line .v-word", { timeout: 240000 });
+  const verdict = await text("#panel .verdict-line .v-word");
   // The made-up part on its own starting design is one the tool passes: any other word is a change to look at.
   hold(/^Passes$/.test(verdict), `${at}: the made-up part passes on its starting design ("${verdict}")`);
   const loss = await text("#readouts");
-  hold(/Power-stage loss\s*[\d.]+ ?W/.test(loss), `${at}: a loss is shown`);
+  hold(/Power-stage loss[\s\S]*?[\d.]+ ?W/.test(loss), `${at}: a loss is shown`);
   hold(await fits(), `${at}: the results fit the width`);
   // On a narrow screen the verdict's word is in the first screenful, not below the drawing.
   if (width <= 900) {
     const top = await page.evaluate(() => {
       window.scrollTo(0, 0);
-      const r = document.querySelector("#verdict-strip .verdict")?.getBoundingClientRect();
+      const r = document.querySelector("#panel .verdict-line .v-word")?.getBoundingClientRect();
       return r && r.width > 0 ? r.bottom : null;
     });
     hold(top !== null && top < height, `${at}: the verdict is said in the first screenful`);
-    await page.click("#verdict-strip a");
-    const reached = await page
-      .waitForFunction((half) => document.querySelector("#panel").getBoundingClientRect().top < half, height / 2, {
-        timeout: 5000,
-      })
-      .then(
-        () => true,
-        () => false,
-      );
-    hold(reached, `${at}: its link goes down to the reasons`);
   } else {
     hold(
       await page.evaluate(() => getComputedStyle(document.querySelector("#verdict-strip")).display === "none"),
@@ -157,7 +147,7 @@ async function journey(width, height) {
   );
   await settled();
   const changed = await text("#readouts");
-  const watts = (said) => Number(/Power-stage loss\s*([\d.]+) ?W/.exec(said)?.[1]);
+  const watts = (said) => Number(/Power-stage loss[\s\S]*?(\d+(?:\.\d+)?)\s?W/.exec(said)?.[1]);
   hold(
     watts(changed) > watts(loss),
     `${at}: a higher switching frequency loses more (${watts(loss)} W, then ${watts(changed)} W)`,

@@ -113,3 +113,18 @@ def test_the_form_marks_the_three_as_optional_and_keeps_them_with_the_required_o
         assert by_key[key]["required"] is False and by_key[key]["main"] is True
         assert "Left empty" in by_key[key]["help"]
     assert by_key["q_rr"]["main"] is False and by_key["v_th"]["main"] is True
+
+
+def test_the_form_gives_each_figure_the_range_it_is_held_to_so_the_page_says_every_wrong_box_at_once() -> None:
+    from motionsim.fit import typed, typed_igbt
+
+    form = page.typed_form()
+    by_key = {f["key"]: f for f in form["fields"]}
+    assert (by_key["rds_on"]["low"], by_key["rds_on"]["high"]) == typed._BOUNDS["rds_on"]
+    assert (by_key["v_rated"]["low"], by_key["v_rated"]["high"]) == typed._BOUNDS["v_rated"]
+    igbt = {f["key"]: f for f in form["igbt"]["fields"]}
+    for key, (low, high) in typed_igbt._BOUNDS.items():
+        if key in igbt:
+            assert (igbt[key]["low"], igbt[key]["high"]) == (low, high)
+    # A figure with no range of its own carries none.
+    assert all(("low" in f) == ("high" in f) for f in form["fields"])

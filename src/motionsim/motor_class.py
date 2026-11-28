@@ -197,6 +197,11 @@ APPLICATION_MOTORS: dict[str, MotorClass] = {
     # A cordless vacuum's two-pole motor: 100 000 rpm from a 25 V, seven-cell battery, about
     # 400 W at its top speed; a few tens of microhenries and milliohms, as such motors have.
     "vacuum": MotorClass("pmsm", 1, 100_000, 25.2, 1.5, {"magnets": "surface", "l": 2e-5, "rs": 0.012, "i_max": 25}),
+    # A drone's four-pole inrunner on a 12-cell battery (44.4 V): 50 000 rpm, about 1 kW, its
+    # figures those of such a motor: a dozen milliohms and 35 microhenries a phase, which keeps
+    # the winding's own drop at the top speed and the rated current under two thirds of the
+    # back-EMF, and the ripple of a 48 kHz carrier to about a fifth of the current's peak.
+    "drone": MotorClass("pmsm", 2, 50_000, 44.4, 1.5, {"magnets": "surface", "l": 3.5e-5, "rs": 0.012, "i_max": 41}),
     # A ceiling fan's outer-rotor brushless motor: 16 poles, 350 rpm at its top step from
     # rectified mains, tens of watts; a few hundred milliamps and tens of ohms.
     "ceiling": MotorClass("bldc", 8, 350, 325, 1.5, {"r": 24.0, "l": 0.048, "i_max": 0.45}),

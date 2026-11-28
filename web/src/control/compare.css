@@ -1,0 +1,362 @@
+/* The schemes compared: the decision first, as a line on the raised tone; then one table, a
+   column a scheme, the column chosen lifted one tone and edged in bone (Von Restorff), the best
+   figure of each row in weight and a word, never by colour alone. */
+
+.lab-compare {
+  display: grid;
+  gap: var(--s4);
+}
+.lab-cmp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3) var(--s4);
+  flex-wrap: wrap;
+}
+.lab-cmp-what {
+  margin: 0;
+  color: var(--ink-2);
+  text-wrap: pretty;
+}
+.lab-cmp-what b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lab-cmp-again {
+  flex: none;
+}
+
+/* The decision: what to choose and why, in figures, with the one press that takes it. */
+.lab-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3) var(--s4);
+  min-height: 64px;
+  padding: var(--s3) var(--s4) var(--s3) var(--s5);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-raised);
+}
+.lab-choice p {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 500;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.lab-choice > .lab-icon .icon {
+  width: 24px;
+  height: 24px;
+  color: var(--ink);
+}
+.lab-choice.is-none > .lab-icon .icon {
+  color: var(--caution);
+}
+.lab-choice.is-ready {
+  border-color: color-mix(in oklab, var(--ink) 40%, var(--raised));
+  animation: lab-choice-in var(--dur-3) var(--ease-out);
+}
+@keyframes lab-choice-in {
+  from {
+    opacity: 0.4;
+    transform: translateY(4px);
+  }
+}
+.lab-choice .lab-live {
+  color: var(--ink-3);
+}
+.lab-choice-use,
+.lab-cmp-use.is-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 42px;
+  padding: 0 var(--s4);
+  background: var(--ink);
+  border: 1px solid var(--ink);
+  border-radius: var(--r);
+  color: var(--ground);
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.lab-choice-use .icon {
+  transition: transform var(--dur-2) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab-choice-use:hover,
+  .lab-cmp-use.is-choice:hover {
+    background: color-mix(in oklab, var(--ink) 86%, var(--ground));
+  }
+  .lab-choice-use:hover .icon {
+    transform: translateX(3px);
+  }
+}
+.lab-choice-use:active,
+.lab-cmp-use:active {
+  transform: scale(0.97);
+}
+.lab-choice-use:focus-visible,
+.lab-cmp-use:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* The table. */
+.lab-cmp-scroll {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+}
+.lab-cmp-table {
+  width: 100%;
+  min-width: calc(200px + var(--cols, 4) * 168px);
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+.lab-cmp-table th,
+.lab-cmp-table td {
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: middle;
+}
+.lab-cmp-table tbody tr:last-child th,
+.lab-cmp-table tbody tr:last-child td {
+  border-bottom: 1px solid var(--line);
+}
+.lab-cmp-table tfoot th,
+.lab-cmp-table tfoot td {
+  border-bottom: 0;
+}
+/* The first column stays at the edge while the table slides on a narrow screen. */
+.lab-cmp-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  width: 200px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+}
+.lab-cmp-table thead th {
+  position: relative;
+  vertical-align: top;
+  padding-top: var(--s4);
+  padding-right: var(--s7);
+}
+.lab-cmp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+  min-height: 24px;
+  margin-bottom: var(--s2);
+}
+.lab-cmp-tags .tag.is-choice {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ground);
+  font-weight: 600;
+}
+.lab-cmp-name {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.35;
+  text-wrap: balance;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.lab-cmp-drop {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s2);
+  width: 32px;
+  height: 32px;
+  opacity: 0.6;
+}
+.lab-cmp-drop:hover,
+.lab-cmp-drop:focus-visible {
+  opacity: 1;
+}
+.lab-cmp-table tbody th {
+  font-weight: 400;
+}
+.lab-cmp-row {
+  display: grid;
+  gap: 2px;
+}
+.lab-cmp-table tbody th .scope-name {
+  font-size: 17px;
+}
+.lab-cmp-word {
+  color: var(--ink);
+  font-weight: 600;
+}
+.lab-cmp-words {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1.3;
+}
+.lab-cmp-figure {
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  font-weight: 500;
+}
+.lab-cmp-table td.is-best .lab-cmp-figure {
+  color: var(--ink);
+  font-weight: 700;
+}
+.lab-cmp-best {
+  display: inline-block;
+  margin-left: var(--s2);
+  padding: 0 var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  vertical-align: 1px;
+}
+/* Words in a figure's row are set at the figures' size: only their tone says they are words. */
+.lab-cmp-text {
+  color: var(--ink-2);
+  line-height: 1.35;
+}
+/* The column chosen: one tone up, edged in bone down its length. */
+.lab-cmp-table .is-choice {
+  background: color-mix(in oklab, var(--ink) 5%, var(--surface));
+  box-shadow:
+    inset 1px 0 0 color-mix(in oklab, var(--ink) 45%, var(--surface)),
+    inset -1px 0 0 color-mix(in oklab, var(--ink) 45%, var(--surface));
+  transition: background-color var(--dur-3) var(--ease-out);
+}
+.lab-cmp-standing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.lab-cmp-standing .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-cmp-standing.tone-good {
+  color: var(--ok);
+}
+.lab-cmp-standing.tone-improve {
+  color: var(--caution);
+}
+.lab-cmp-standing.tone-fail {
+  color: var(--fail);
+}
+.lab-cmp-use {
+  width: 100%;
+  justify-content: center;
+}
+.lab-cmp-add {
+  margin: 0;
+}
+/* The adder is the scope's "Add a signal", filling its cell. */
+.lab-cmp-add .scope-add {
+  width: 100%;
+  margin: 0;
+}
+/* A figure on its way: its shape at once (Doherty), shimmering until the run comes. */
+.lab-cmp-skel {
+  display: block;
+  width: 72%;
+  height: 14px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(
+    90deg,
+    var(--raised) 0%,
+    color-mix(in oklab, var(--ink) 9%, var(--raised)) 50%,
+    var(--raised) 100%
+  );
+  background-size: 200% 100%;
+  animation: lab-cmp-shimmer 1.4s linear infinite;
+}
+@keyframes lab-cmp-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.lab-cmp-table td > .lab-cmp-figure,
+.lab-cmp-table td > .lab-cmp-standing {
+  animation: lab-cmp-in var(--dur-3) var(--ease-out);
+}
+@keyframes lab-cmp-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+/* "Choose for me" in the lab's head, beside the scheme it may replace. */
+.lab-choose-open {
+  flex: none;
+}
+/* With an edit to undo beside it, the head keeps the scheme's name readable: the button keeps
+   its icon and its name for the screen reader. */
+@media (max-width: 1600px) {
+  .lab-switcher:has(.lab-edited) .lab-choose-words {
+    display: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .lab-choice {
+    grid-template-columns: auto minmax(0, 1fr);
+    padding: var(--s3) var(--s4);
+  }
+  .lab-choice-use,
+  .lab-choice > .tag {
+    grid-column: 1 / -1;
+    justify-content: center;
+  }
+  .lab-choice > .tag {
+    justify-self: start;
+  }
+  .lab-cmp-table tr > :first-child {
+    width: 132px;
+  }
+  .lab-cmp-table {
+    min-width: calc(132px + var(--cols, 4) * 152px);
+  }
+  .lab-choose-words {
+    display: none;
+  }
+  .lab-edited {
+    order: 4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lab-choice.is-ready,
+  .lab-cmp-table td > .lab-cmp-figure,
+  .lab-cmp-table td > .lab-cmp-standing {
+    animation: none;
+  }
+  .lab-cmp-skel {
+    animation: none;
+  }
+}
+/* In the table's first column the adder's marks sit closer in, so its words are whole. */
+.lab-cmp-add .scope-add select {
+  padding: 0 26px 0 32px;
+  background-position:
+    left 10px center,
+    right 8px center;
+}

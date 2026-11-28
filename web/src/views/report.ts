@@ -5,12 +5,21 @@ import { notRefused } from "../api";
 import type { Candidate, Cycle, Result } from "../api";
 import { comparing } from "../compare";
 import { equationsPage } from "../equations";
-import { degrees, escape, percent, sentence, sig, watts } from "../format";
+import { degrees, eng, escape, num, percent, sentence, watts } from "../format";
+import { fieldsOf } from "../motorentry";
 import { app, res } from "../store";
 import { compareTable } from "./comparison";
 import { coolingWords, packaging } from "./html";
 import { EDGE_CHOICES } from "./supply";
 import { lifeBlock } from "./tabs/motion";
+import { verdictSaid } from "./verdictline";
+
+/** What the stage runs from, in the report's own words. */
+const SUPPLIED: Record<string, (mains: string) => string> = {
+  battery: () => "battery",
+  "one-way": () => "power supply",
+  mains: (v) => `link fed from a ${v} V mains`,
+};
 
 const rows = (pairs: [string, string][]) =>
   `<table>${pairs.map(([a, b]) => `<tr><th>${escape(a)}</th><td>${b}</td></tr>`).join("")}</table>`;
@@ -18,30 +27,23 @@ const rows = (pairs: [string, string][]) =>
 const list = (items: string[]) =>
   items.length ? `<ul>${items.map((x) => `<li>${escape(sentence(x))}.</li>`).join("")}</ul>` : "<p>None.</p>";
 
-const VERDICTS: Record<string, string> = {
-  ok: "Passes every check",
-  caution: "Passes, with cautions",
-  undecided: "Undecided on this data",
-  fail: "Does not pass",
-};
-
 /** What was tested: the device, the motor, the supply, the point, the switching, the cooling. */
 function tested(c: Candidate): string {
   const { state, setup } = app;
   const k = state.conditions;
   const m = setup.motors[state.kind];
   const device = setup.devices.find((d) => d.id === c.id);
-  const rated = device ? `, ${sig(device.v_max)} V, ${sig(device.i_nominal)} A. ${packaging(device)}` : "";
-  const figures = m.fields
+  const rated = device ? `, ${num(device.v_max)} V, ${num(device.i_nominal)} A. ${packaging(device)}` : "";
+  const figures = fieldsOf(state.kind, m.fields, state.motors[state.kind])
     .map((f) => `${escape(f.label)} ${escape(String(state.motors[state.kind][f.key] ?? ""))} ${escape(f.unit)}`.trim())
     .join("; ");
   return rows([
     ["Device", `${escape(c.name)}, ${escape(c.technology)}${rated}`],
     ["Devices in parallel", escape(String(k.parallel || 1))],
     ["Motor", `${escape(m.label)}: ${figures}`],
-    ["Supply", `${sig(k.v_dc)} V, ${state.supply === "battery" ? "battery" : "power supply"}`],
-    ["Design point", `${sig(k.rpm)} rpm, ${sig(k.torque)} N·m`],
-    ["Switching", `${sig(k.f_khz)} kHz, ${escape(res.stage?.scheme ?? "")}`],
+    ["Supply", `${num(k.v_dc)} V, ${SUPPLIED[state.supply](k.mains_v)}`],
+    ["Design point", `${num(k.rpm)} rpm, ${num(k.torque)} N·m`],
+    ["Switching", `${num(k.f_khz)} kHz, ${escape(res.stage?.scheme ?? "")}`],
     ["Edge speed limit", escape(EDGE_CHOICES.find(([v]) => v === k.edge_limit)?.[1] ?? EDGE_CHOICES[0][1])],
     ["Cooling", sentence(coolingWords())],
     ["Gate drive", escape(c.gate.lines.map(sentence).join(". "))],
@@ -56,7 +58,7 @@ function atPoint(c: Candidate, r: Result): string {
     ? `, ${Math.round(r.tj_range![0])} to ${Math.round(r.tj_range![1])} °C across the thermal assumptions`
     : "";
   return rows([
-    ["Verdict", Object.hasOwn(VERDICTS, c.level) ? VERDICTS[c.level] : escape(String(c.level))],
+    ["Verdict", escape(verdictSaid(c))],
     ["Power-stage loss", watts(r.loss)],
     ["Conduction", `${watts(r.conduction)} (${share(r.conduction)})`],
     ["Switching", `${watts(r.switching)} (${share(r.switching)})`],
@@ -75,11 +77,11 @@ function throughMotion(cycle: Cycle): string {
   const s = cycle.summary;
   const facts = rows([
     ["Load", load],
-    ["Lasts", `${sig(s.duration)} s`],
-    ["Mean loss", watts(s.mean_loss)],
+    ["Lasts", `${num(s.duration)} s`],
+    ["Mean loss, power stage", watts(s.mean_loss)],
     ["Hottest junction reached", degrees(s.peak)],
-    ["Energy lost", `${sig(s.loss_energy)} J`],
-    ["Peak motor current", `${sig(Math.max(...cycle.i_peak.map((v) => v ?? 0)))} A`],
+    ["Energy lost, power stage and motor", eng(s.loss_energy, "J")],
+    ["Peak motor current", `${num(Math.max(...cycle.i_peak.map((v) => v ?? 0)))} A`],
   ]);
   const checks = list(cycle.checks.map((x) => `${x.topic}: ${x.message}`));
   return (

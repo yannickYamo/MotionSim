@@ -1,0 +1,264 @@
+/* Learning on the diagram: a switch in the canvas's corner, a card over the block pointed at,
+   and in the inspector the loop a regulator closes, live as its gains are dragged. */
+
+.lab-learn-toggle {
+  position: absolute;
+  top: var(--s3);
+  right: var(--s3);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 36px;
+  padding: 0 var(--s2) 0 var(--s3);
+  background: color-mix(in oklab, var(--raised) 88%, transparent);
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition:
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out);
+}
+.lab-learn-toggle .icon {
+  width: 18px;
+  height: 18px;
+}
+.lab-learn-toggle:hover {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.lab-learn-toggle:active {
+  transform: scale(0.97);
+}
+.lab-learn-toggle:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The switch itself: a track and a knob that slides, bone when on. */
+.lab-learn-switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--line);
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+.lab-learn-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--ink-2);
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    background-color var(--dur-2) var(--ease-out);
+}
+.lab-learn-toggle.is-on {
+  color: var(--ink);
+  border-color: var(--ink-2);
+}
+.lab-learn-toggle.is-on .lab-learn-switch {
+  background: var(--ink);
+}
+.lab-learn-toggle.is-on .lab-learn-switch::after {
+  background: var(--ground);
+  transform: translateX(12px);
+}
+/* Learning, each block carries a small corner in its top right, as a page with a card behind
+   it: Bone 3, brightening to Bone when the block is pointed at or has the keyboard. The names
+   stay as they are, so the diagram reads as calmly as it does without Learn. */
+.lab-diagram.is-learning .lab-node-head {
+  position: relative;
+  cursor: help;
+}
+.lab-diagram.is-learning .lab-node-head::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-top: 1px solid var(--ink-3);
+  border-right: 1px solid var(--ink-3);
+  border-top-right-radius: var(--r-mark);
+  pointer-events: none;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.lab-diagram.is-learning .lab-node-head:hover::after,
+.lab-diagram.is-learning .lab-node-head:focus-visible::after {
+  border-color: var(--ink);
+}
+@media (forced-colors: active) {
+  .lab-diagram.is-learning .lab-node-head::after {
+    border-color: CanvasText;
+  }
+}
+
+.lab-learn-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 8;
+  display: grid;
+  gap: var(--s2);
+  width: min(320px, calc(100% - 16px));
+  padding: var(--s3) var(--s4);
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  animation: lab-learn-in var(--dur-2) var(--ease-out);
+  /* Kept on while Learn is on, it glides to the next block pointed at rather than jumping. */
+  transition: transform var(--dur-1) var(--ease-out);
+}
+@keyframes lab-learn-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+}
+.lab-learn-card p {
+  margin: 0;
+}
+.lab-learn-title {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* The block's law in one line, as the engineer writes it: its transfer function or equation. */
+.lab-learn-math {
+  overflow-x: auto;
+  color: var(--ink);
+  font-size: var(--t-small);
+}
+.lab-learn-math .katex-display {
+  margin: 0;
+  text-align: left;
+}
+.lab-learn-about {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.lab-learn-keys {
+  color: var(--ink);
+  font-size: var(--t-small);
+}
+.lab-learn-more {
+  display: inline-flex;
+  white-space: nowrap;
+  align-items: center;
+  gap: var(--s1);
+  justify-self: start;
+  min-height: 32px;
+  font-size: var(--t-small);
+}
+.lab-learn-more .icon {
+  width: 16px;
+  height: 16px;
+}
+
+/* The loop, live: its figures with their change since the block was opened, and its gain and
+   step, redrawn in place as the analysis answers. */
+.lab-liveloop {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s4);
+  padding: var(--s3) var(--s4) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.lab-liveloop h5 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--t-body);
+  font-weight: 600;
+}
+.lab-liveloop > .quiet {
+  margin: 0;
+  font-size: var(--t-small);
+}
+/* A dot that lights while the analysis is asked, so a drag is seen to be heard. */
+.lab-liveloop-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+  transition: background-color var(--dur-1) var(--ease-out);
+}
+.lab-liveloop.is-asking .lab-liveloop-dot {
+  background: var(--ink);
+}
+.lab-liveloop-figs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s2) var(--s4);
+  margin: 0;
+}
+.lab-liveloop-figs div {
+  display: grid;
+  gap: 2px;
+}
+.lab-liveloop-figs dt {
+  color: var(--ink-3);
+  font-size: var(--t-small);
+}
+.lab-liveloop-figs dd {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.lab-liveloop-delta {
+  color: var(--ink-2);
+  font-size: var(--t-small);
+  font-weight: 600;
+}
+.lab-liveloop-plots {
+  display: grid;
+  gap: var(--s2);
+}
+.lab-liveloop-plots figure {
+  margin: 0;
+}
+.lab-liveloop-plots svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.lab-liveloop.is-asking .lab-liveloop-plots svg {
+  opacity: 0.85;
+}
+
+@media (max-width: 700px) {
+  .lab-learn-toggle {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lab-learn-card {
+    animation: none;
+    transition: none;
+  }
+  .lab-learn-switch,
+  .lab-learn-switch::after {
+    transition: none;
+  }
+}

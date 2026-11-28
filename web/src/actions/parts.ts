@@ -11,6 +11,7 @@ import { typedFigures } from "../parse";
 import { DEVICE, MOST, RESULTS } from "../steps";
 import { fieldsOf, kindOf, sentFigures } from "../typedkind";
 import { app, draw, ownDevices, res, ui } from "../store";
+import { wrongWords } from "../views/typed";
 import { refusalOf } from "../wording";
 import { partsMoved } from "./reports";
 
@@ -49,6 +50,7 @@ function takeIn(id: string, replaceMadeUp: boolean): void {
 function toFirstWrong(): void {
   const to =
     document.querySelector<HTMLElement>("details.typed .field.is-wrong input, details.typed .field.is-wrong select") ??
+    document.querySelector<HTMLElement>("table.quick tr.is-wrong input") ??
     document.querySelector<HTMLElement>("details.typed .refusal");
   if (!to) return;
   // A wrong box among the optional figures is inside a fold: it is opened to be seen.
@@ -108,7 +110,12 @@ export async function addTyped(): Promise<void> {
     void suggestFor();
     schedule();
   } catch (e) {
-    ui.typedRefused = refusalOf(e, (message) => new Refused(message, "check the figures and try again", ""));
+    const refused = refusalOf(e, (message) => new Refused(message, "check the figures and try again", ""));
+    ui.typedRefused = refused;
+    // A figure the engine refused is said at its box, as one the page refused itself is: on the
+    // first-run table too, which reads the page's own list alone.
+    const words = refused.field && fieldsOf(kind, app.setup.typed).some((f) => f.key === refused.field);
+    if (words) ui.typedWrong = { ...ui.typedWrong, [refused.field]: wrongWords(refused.field) ?? refused.reason };
   }
   ui.typedBusy = false;
   draw.panel(true);
@@ -163,6 +170,14 @@ async function readPart(file: File): Promise<ReadOutcome> {
   return api.read(file);
 }
 
+/** A part brought on the first visit's own screen leaves it for step 1, where the part is said
+ *  and the steps lead on from it. */
+function leaveFirstVisit(): void {
+  if (!ui.yourPart || !ui.reading?.outcome) return;
+  ui.firstRun = false;
+  ui.yourPart = false;
+}
+
 /** Take in whatever the user dropped: a datasheet, a device file, or their own measurements. */
 export async function addPart(file: File): Promise<void> {
   const { state } = app;
@@ -192,6 +207,7 @@ export async function addPart(file: File): Promise<void> {
       refused: refusalOf(e, (message) => new Refused(message, fix, "")),
     };
   }
+  leaveFirstVisit();
   draw.panel(true);
   draw.rail();
   draw.stage();

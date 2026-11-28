@@ -1,0 +1,324 @@
+/* The lab's menus and its frame: the list of schemes as a command menu, the panels that open
+   from the head, the head itself and the strip of tabs. Read after lab.css, whose rules for
+   the same things these refine; every size, tone and time is one of the page's tokens. */
+
+/* ---------- 1. What opens from the head ---------- */
+
+/* A panel grows out of the press that opened it (its corner is the origin lab.css gives it)
+   and goes back into it, quickly: it floats, so it takes the large radius, a strong hairline
+   and the float shadow. Under reduced motion lab.css stills every transition of the lab. */
+.lab-picker-panel,
+.lab-test-panel,
+.lab-why-panel {
+  border-color: var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-float);
+  animation: none;
+  transition:
+    opacity var(--dur-1) var(--ease-out),
+    transform var(--dur-1) var(--ease-out),
+    display var(--dur-1) allow-discrete;
+}
+.lab-picker-panel[hidden],
+.lab-test-panel[hidden],
+.lab-why-panel[hidden] {
+  display: none;
+  opacity: 0;
+  transform: scale(0.97);
+}
+@starting-style {
+  .lab-picker-panel:not([hidden]),
+  .lab-test-panel:not([hidden]),
+  .lab-why-panel:not([hidden]) {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.lab-picker-panel,
+.lab-test-panel {
+  top: calc(100% + var(--s1));
+}
+.lab-why-panel {
+  top: calc(100% + var(--s1));
+  transform-origin: var(--s4) top;
+}
+/* On a phone the account spans the scheme's row and opens under it: hung from the info press
+   alone, it ran off the screen's left edge. */
+@media (max-width: 700px) {
+  .lab-switcher {
+    position: relative;
+  }
+  .lab-why {
+    position: static;
+  }
+  .lab-why-panel {
+    right: 0;
+    left: 0;
+    width: auto;
+    transform-origin: 60% top;
+  }
+}
+
+/* The chevron of a press turns over while its panel is open. */
+.lab-picker-open > .lab-icon:last-child,
+.lab-test-open > .lab-icon:last-child {
+  flex: none;
+  transition: transform var(--dur-2) var(--ease-out);
+}
+.lab-picker-open[aria-expanded="true"] > .lab-icon:last-child,
+.lab-test-open[aria-expanded="true"] > .lab-icon:last-child {
+  transform: rotate(180deg);
+}
+.lab-picker-open {
+  transition:
+    border-color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out);
+}
+.lab-picker-open[aria-expanded="true"] {
+  background: var(--raised);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .lab-picker-open:active {
+    transform: translateY(1px);
+  }
+}
+/* The info press is not a deletion: pointed at, it brightens, and stays lit while open. */
+.lab .lab-why-open {
+  transition:
+    color var(--dur-1) var(--ease-out),
+    background-color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.lab .lab-why-open:hover:not(:disabled),
+.lab .lab-why-open[aria-expanded="true"] {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--ink);
+}
+
+/* ---------- 2. The list of schemes ---------- */
+
+/* A command menu: the search keeps the keyboard, each scheme is one line (its name, and what
+   its brackets add set quieter after it), the families are named small in the data face, and
+   the keys it answers to are said once at its foot. */
+.lab-picker-panel {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(72dvh, 600px);
+  overflow: hidden;
+}
+.lab-picker-search {
+  gap: var(--s2);
+  padding: 0 var(--s3);
+}
+.lab-picker-search .icon {
+  width: 16px;
+  height: 16px;
+}
+.lab-picker-search input {
+  height: 40px;
+}
+/* Where a box under 16px would make a phone zoom, the page's own rule keeps it at 16. */
+@media (pointer: fine) and (min-width: 861px) {
+  .lab-picker-search input {
+    font-size: var(--t-small);
+  }
+}
+.lab-picker-search input::-webkit-search-cancel-button {
+  appearance: none;
+}
+.lab-picker-list {
+  padding: var(--s1) var(--s1) var(--s2);
+  scrollbar-width: thin;
+  scroll-padding-block: var(--s6) var(--s1);
+}
+.lab-picker-group {
+  padding: var(--s3) var(--s2) var(--s1);
+  font-family: var(--mono);
+  font-size: var(--t-data);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+.lab-picker-list > [role="group"]:first-child > .lab-picker-group {
+  padding-top: var(--s2);
+}
+.lab-picker-option {
+  grid-template-columns: minmax(0, 1fr) 18px;
+  column-gap: var(--s2);
+  row-gap: 0;
+  align-content: center;
+  min-height: 32px;
+  padding: var(--s1) var(--s2);
+  border-radius: var(--r-sm);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  scroll-margin-block: var(--s1);
+}
+.lab-picker-option.is-active {
+  background: var(--line);
+}
+.lab-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-picker-name {
+  font-weight: 500;
+}
+.lab-picker-more {
+  color: var(--ink-3);
+}
+/* On the lit row the quiet part steps up an ink, to keep its contrast on the lighter tone. */
+.lab-picker-option.is-active .lab-picker-more,
+.lab-picker-option.is-active .lab-picker-note {
+  color: var(--ink-2);
+}
+/* The brackets are the label's own; set quieter after the name, the words need none. */
+.lab-picker-paren {
+  display: none;
+}
+.lab-picker-option > .lab-icon {
+  color: var(--ink);
+}
+.lab-picker-option .icon {
+  width: 16px;
+  height: 16px;
+}
+/* Why the recommended one, under its name (the row itself is given room further down). */
+.lab-picker-note {
+  display: block;
+  grid-column: 1 / -1;
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.lab-picker-option:has(.lab-picker-note) {
+  padding-bottom: var(--s2);
+}
+/* The recommended row is given the room it needs: its name is read whole, on as many lines as
+   it takes, and its reason on two (cut beyond them, and then read whole in its tip). */
+.lab-picker-option:has(.lab-picker-note) .lab-picker-label {
+  white-space: normal;
+  text-wrap: pretty;
+}
+.lab-picker-option:has(.lab-picker-note) .lab-picker-note {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
+  text-wrap: pretty;
+}
+.lab-picker-none {
+  padding: var(--s3) var(--s2);
+  font-size: var(--t-small);
+}
+.lab-picker-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: var(--t-small);
+  line-height: 1;
+}
+.lab-picker-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s1);
+}
+.lab-picker-foot .kbd {
+  background: var(--ground);
+}
+/* No keys on a phone, and no tip to read a cut name in: the foot goes, and a name wraps. */
+@media (pointer: coarse), (max-width: 700px) {
+  .lab-picker-foot {
+    display: none;
+  }
+  .lab-picker-option {
+    min-height: 40px;
+  }
+  .lab-picker-label,
+  .lab-picker-note {
+    white-space: normal;
+    text-wrap: pretty;
+  }
+  .lab-picker-option:has(.lab-picker-note) .lab-picker-note {
+    display: block;
+    -webkit-line-clamp: none;
+    line-clamp: none;
+  }
+}
+/* A box under 16px makes a phone zoom the page as it takes the keyboard. */
+@media (pointer: coarse), (max-width: 860px) {
+  .lab-picker-search input {
+    font-size: 16px;
+  }
+}
+
+/* ---------- 3. The head and the tabs ---------- */
+
+.lab-test-panel {
+  padding: var(--s4);
+}
+
+/* The lab's frame never scrolls: each part of it scrolls within itself. Words kept for a
+   screen reader far down the page (out of the flow, so outside its scroller) made the frame
+   itself taller than the screen, and bringing a tab into view could slide the head away. */
+dialog.control-lab {
+  overflow: clip;
+}
+
+/* The tabs' underline is one mark that slides from the tab left to the tab taken (tabink.ts
+   says where). Until it is measured, and where it cannot be, each tab keeps its own. */
+.lab .tabs {
+  position: relative;
+}
+.lab-tab-ink {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--ink-w, 0);
+  height: 2px;
+  background: var(--ink);
+  transform: translate(var(--ink-x, 0), var(--ink-y, 0));
+  pointer-events: none;
+}
+.lab .tabs:not(.has-ink) .lab-tab-ink {
+  display: none;
+}
+.lab .tabs.has-ink button[aria-selected="true"]::after {
+  display: none;
+}
+.lab .tabs.is-live .lab-tab-ink {
+  transition:
+    transform var(--dur-2) var(--ease-out),
+    width var(--dur-2) var(--ease-out);
+}
+@media (forced-colors: active) {
+  .lab-tab-ink {
+    background: CanvasText;
+  }
+}
+
+/* A choice between views (which loop, how the inverter is simulated) answers the pointer as
+   the lab's other presses do: a tone under the one pointed at, quickly. */
+.lab .segmented button {
+  transition:
+    background-color var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .lab .segmented button:not(.is-on):hover {
+    background: var(--surface);
+  }
+  .lab-test-panel .segmented button:not(.is-on):hover {
+    background: color-mix(in oklab, var(--line) 50%, transparent);
+  }
+}

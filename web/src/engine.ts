@@ -3,11 +3,14 @@
 
 import { api, Refused, Unreachable } from "./api";
 import { deep, newState } from "./engine/deep";
+import { proposeAgain } from "./engine/loads";
+import { feedbackFor, forgetProposal } from "./engine/proposed";
 import { stopFit } from "./engine/fit";
 import { suggestFor } from "./engine/suggest";
 import { latest } from "./guard";
 import { request, save } from "./state";
-import { app, chosenDevices, conditionsGiven, draw, invalidate, res, ui } from "./store";
+import { app, chosenDevices, conditionsGiven, draw, invalidate, res, ui, underTest } from "./store";
+import { LOAD } from "./steps";
 import { plainRefusal } from "./wording";
 
 let pending: AbortController | null = null;
@@ -96,14 +99,16 @@ async function askPoint(signal: AbortSignal): Promise<PointAnswer> {
 }
 
 /** Take the answer for the design point, and put on the drawing the device the user chose
- *  where it was run, else the first that was. */
+ *  where it was run, else the part under test (the design's own, which a part added to compare
+ *  never moves), else the first that was run. */
 function keepPoint(answer: PointAnswer): void {
   const { state } = app;
   Object.assign(res, answer);
   const run = answer.proposal?.candidates ?? [];
   if (!answer.proposal) return;
   const stillThere = run.some((c) => c.id === state.focus && c.result);
-  if (!state.focusPicked || !stillThere) state.focus = run.find((c) => c.result)?.id ?? null;
+  const lead = run.find((c) => c.id === underTest() && c.result);
+  if (!state.focusPicked || !stillThere) state.focus = (lead ?? run.find((c) => c.result))?.id ?? null;
 }
 
 /**
@@ -145,9 +150,18 @@ export async function compute(): Promise<void> {
   res.stale = false;
   invalidate("all");
   draw.outputs();
+  loadAgainstDesign();
   if (res.fault) draw.panel(true);
   // With no engine answering, nothing more is asked of it until it answers again.
   else void deep();
+}
+
+/** The design may have moved: the load the part can carry is asked for it, and the user's own
+ *  load is set against it. */
+function loadAgainstDesign(): void {
+  if (res.fault || app.state.step < LOAD) return;
+  proposeAgain();
+  void feedbackFor();
 }
 
 /** How long to wait before asking a server that did not answer again: doubled each time
@@ -178,6 +192,7 @@ function askAgain(): void {
  *  when it comes, and what was about to be asked is not asked. */
 export function dropInFlight(): void {
   newState();
+  forgetProposal();
   pending?.abort();
   pending = null;
   clearTimeout(timer);

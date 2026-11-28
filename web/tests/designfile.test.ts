@@ -61,6 +61,25 @@ describe("a design file from the page", () => {
     expect(text).toContain("\n  inertia: 5.0e-7\n");
     expect(text).toMatch(/\nc_link: 5\.0e-7(\n|$)/);
   });
+  it("carries the mains and the stage chosen, and leaves the link to the stage unless it was typed", () => {
+    const state = { ...initial(setup), devices: ["example"] };
+    state.supply = "mains";
+    state.conditions.v_dc = 390;
+    const recommended = designFile(state, new Set(["example"]), "example");
+    expect(recommended).toContain('\nsupply: "mains"\n');
+    expect(recommended).toMatch(/\nmains:\n {2}v: 230\n {2}f: 50\n {2}phases: 1\n/);
+    expect(recommended).not.toMatch(/\n {2}v_dc:/);
+    expect(recommended).not.toContain("front_end:");
+    state.conditions.front_end = "boost";
+    state.conditions.fe_f_khz = "100";
+    state.conditions.fe_tie = "off";
+    state.conditions.link_own = "1";
+    const own = designFile(state, new Set(["example"]), "example");
+    expect(own).toMatch(/\nfront_end:\n {2}topology: "boost"\n {2}f_sw: 100000\n {2}feed_forward: "off"\n/);
+    expect(own).toMatch(/\n {2}v_dc: 390\n/);
+    state.supply = "battery";
+    expect(designFile(state, new Set(["example"]), "example")).not.toContain("mains:");
+  });
   it("names the part the design started from first, and a made-up part by its name", () => {
     const state = { ...initial(setup), devices: ["example", "example-mosfet"] };
     const text = designFile(state, new Set(["example", "example-mosfet"]), "example-mosfet");

@@ -645,7 +645,7 @@ def test_a_motor_with_no_limit_of_its_own_is_judged_on_what_its_winding_lets_thr
 def test_a_motor_wound_for_another_voltage_is_said_at_the_motor_step(tmp_path) -> None:
     out = _fit(tmp_path, kv=5)  # 5 rpm/V on 48 V: 240 rpm with no load, against 3000 asked
     said = next(x["text"] for x in out["lines"] if x["level"] == "caution")
-    assert "short of the 3,000 rpm" in said and "wound for a higher voltage" in said
+    assert "short of the 3\u202f000 rpm" in said and "wound for a higher voltage" in said
     assert out["top_rpm"] == pytest.approx(5 * 48, rel=0.2)
 
 

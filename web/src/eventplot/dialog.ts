@@ -4,6 +4,7 @@
 // a PDF or a PNG image. What is plotted is handed in (Plottable): a switching event's edge, or a motion
 // through minutes. Escape or Close shut it, and the keyboard goes back to where it was opened.
 
+import { setFlags } from "../charts/flag";
 import { escape } from "../format";
 import { icon } from "../icons";
 import { timeAt } from "./reading";
@@ -29,8 +30,9 @@ export interface Plottable<D extends Placed = Placed> {
   set(v: Span): void;
   reset(): void;
   draw(v: Span, w: number, h: number): { svg: string; drawn: D };
-  /** Where each dot of the crosshair sits up the drawing at t, and the line read beside it. */
-  read(t: number, v: Span, drawn: D): { ys: number[]; text: string };
+  /** Where each dot of the crosshair sits up the drawing at t, the line read beside it, and
+   *  what each dot's flag says (its value with its unit) where the plot flags its values. */
+  read(t: number, v: Span, drawn: D): { ys: number[]; text: string; flags?: string[] };
   pdf(v: Span): Promise<string>;
   /** Where the keyboard goes back to once it is shut. */
   back(): HTMLElement | null;
@@ -169,10 +171,14 @@ function cross(t: number): void {
   const x = box.x + ((t - s.v.t0) / (s.v.t1 - s.v.t0)) * box.w;
   g.setAttribute("transform", `translate(${x.toFixed(1)} 0)`);
   g.setAttribute("visibility", "visible");
-  const { ys, text } = open.p.read(t, s.v, open.drawn);
+  const { ys, text, flags } = open.p.read(t, s.v, open.drawn);
   g.querySelectorAll("circle").forEach((dot, k) => {
     if (ys[k] !== undefined && Number.isFinite(ys[k])) dot.setAttribute("cy", ys[k].toFixed(1));
   });
+  if (flags) {
+    const at = flags.map((said, k) => ({ y: Number.isFinite(ys[k]) ? ys[k] : null, text: said, box }));
+    setFlags([...g.querySelectorAll(".plot-flag")], at, x);
+  }
   out.textContent = text;
 }
 
@@ -309,7 +315,10 @@ async function saveAsPng(button: HTMLButtonElement): Promise<void> {
   status.textContent = "Making the image…";
   try {
     const { savePng } = await import("../charts/png");
-    status.textContent = `Saved as ${await savePng(svg, title, said)}.`;
+    // Saying so under the plot changes the plot's room, and it is drawn again: the image is
+    // made of the drawing that stands there then, not of the one held from before the press.
+    const drawn = () => plotEl()?.querySelector<SVGSVGElement>("svg");
+    status.textContent = `Saved as ${await savePng(drawn, title, said)}.`;
   } catch (err) {
     status.textContent = `The image could not be made: ${String((err as Error)?.message ?? err)}. Try again.`;
   } finally {

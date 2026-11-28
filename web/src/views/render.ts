@@ -8,55 +8,77 @@ import { since, tick } from "../elapsed";
 import { DEVICE, LOAD, MOTOR, RESULTS, STEPS, SUPPLY, TABS } from "../steps";
 import { unusedEntries } from "../boxes";
 import { app, draw, focused, pending, res, ui, verdictOf } from "../store";
+import { refitPick } from "../events/picker";
 import { renderDialogs, DIALOGS } from "./adding";
 import { devicesPanel } from "./device";
-import { $, followedNote, reduced, refusal, say, spinner, verdictWord, waiting } from "./html";
+import { $, followedNote, reduced, refusal, say, spinner, waiting } from "./html";
 import { loadPanel, renderPreview } from "./load";
 import { put } from "./morph";
 import { fitBlock, motorPanel } from "./motor";
 import { nextButton, renderRail } from "./rail";
 import { notReady } from "./tabs/ready";
 import { loadResults, resultsNow } from "./resultsload";
+import { controlEntry } from "../control/entry";
 import { renderStage } from "./stage";
 import { landOnColumn } from "./oncolumn";
 import { supplyPanel } from "./supply";
-import { verdictHead } from "./verdictline";
+import { verdictHead, verdictSaid as saidOf } from "./verdictline";
+import { pin } from "../pin";
+import { heroSkeleton, whatIfBar } from "./whatif";
+import { firstRunPanel, firstRunShown } from "./firstrun";
+import { CHAT_BUTTON, CHAT_PANEL } from "../chat/chat";
+import { SETTINGS_DIALOG, SETTINGS_ITEM } from "../settings/view";
+import { drawProposal } from "../engine/proposed";
+import { redrawProposal } from "./proposed";
 
-/** The ways to keep the results. The PDF is the one primary action once there is a verdict
- *  that passes or passes with a caution; the .md file sits beside it. */
-function reportButtons(primary: boolean): string {
+/** One item of the Export menu. */
+const exportItem = (attrs: string, words: string, off: string) =>
+  `<button type="button" role="menuitem" tabindex="-1" ${attrs} ${off}>${words}</button>`;
+
+/** The ways to keep the results, in one menu: the .md report, the PDF, the setup file. A way
+ *  that writes the results waits until they are final. */
+function exportMenu(): string {
   // With no answer from the engine the figures on screen are from before: a report would set
   // them beside the inputs as they now stand, so none is written, and the notice says why.
   const off = res.fault ? 'disabled aria-describedby="fault"' : focused()?.result && !pending() ? "" : "disabled";
   const writing = ui.savingMd > 0;
-  const md =
-    `<button type="button" class="ghost" data-report-md ${writing ? 'disabled aria-busy="true"' : off} ` +
-    `title="The whole design as a Markdown file: for your notes, or to hand to a coding agent">` +
-    (writing ? `${spinner}Writing the .md report, ${since(ui.savingMd)}` : `${icon("file-text")}Save as .md`) +
-    `</button>`;
-  const pdf =
-    `<button type="button" class="${primary ? "primary" : "ghost"}" data-report ${off} ` +
-    `title="Opens the print dialog: choose Save as PDF">${icon("printer")}Print or save as PDF</button>`;
-  return `<span class="save-as">${md}${pdf}</span>`;
+  const items = [
+    exportItem(
+      "data-report-md",
+      writing ? `${spinner}Writing the .md report, ${since(ui.savingMd)}` : `${icon("file-text")}.md report`,
+      writing ? 'disabled aria-busy="true"' : off,
+    ),
+    exportItem('data-report title="Opens the print dialog: choose Save as PDF"', `${icon("printer")}PDF`, off),
+    exportItem("data-save-setup", `${icon("device-floppy")}Setup file`, ""),
+  ].join("");
+  return (
+    `<button type="button" class="ghost" id="export-button" popovertarget="export-menu" aria-haspopup="menu" ` +
+    `aria-expanded="false">${icon("download")}Export${icon("chevron-down")}</button>` +
+    `<div id="export-menu" class="menu" popover="auto" role="menu" aria-labelledby="export-button">${items}</div>`
+  );
 }
 
-/** The foot of the results: one primary action, the way back as a link, and the setup file. */
+/** The foot of the results: the way back as a link, Export, and the next action: pinning the
+ *  result as A to change one input against it, the one orange press, until a result is pinned. */
 function resultsActions(): string {
   const { state } = app;
   const c = focused();
-  const keep = `<button type="button" class="link" data-save-setup>${icon("device-floppy")}Save setup</button>`;
   if (!state.devices.length) {
     const choose = `<button type="button" class="primary" data-step="${DEVICE}">${icon("cpu")}Choose a device</button>`;
     return `<div class="actions results-actions"><span></span>${choose}</div>`;
   }
   const back = `<button type="button" class="link" data-step="${LOAD}">${icon("arrow-left")}Back to the load</button>`;
   // On a refusal the way to the step at fault is the primary action, in the tab above.
-  const level = c?.result && !pending() && !res.blocked && !res.fault ? verdictOf(c).level : null;
-  const primary = level === "ok" || level === "caution";
+  const final = !!c?.result && !pending() && !res.blocked && !res.fault && verdictOf(c).motion !== "pending";
+  const pinNext =
+    final && !pin.a
+      ? `<button type="button" class="primary" data-pin-a title="Keep these figures as A; every key figure ` +
+        `then shows its change from A">${icon("pin")}Pin as A, then change one input</button>`
+      : "";
   const saved = ui.savedMd ? `<p class="quiet saved">${icon("circle-check")}Saved ${escape(ui.savedMd)}</p>` : "";
-  // The way back and the setup file sit above the bar that holds the reports.
-  const ways = `<p class="ways">${back}${keep}</p>`;
-  return `${ways}<div class="actions results-actions">${reportButtons(primary)}</div>${saved}`;
+  return (
+    `<div class="actions results-actions">${back}<span class="save-as">${exportMenu()}${pinNext}</span></div>` + saved
+  );
 }
 
 const tryAgain = `${icon("rotate-clockwise")}Try again`;
@@ -91,11 +113,13 @@ function resultsPanel(): string {
   // An answer for inputs that have since moved is not shown under them, on any tab.
   // With no answer from the engine, no verdict stands: the figures from before stay beside
   // the drawing, dimmed, and the tabs wait for an answer.
+  // While the answer is on its way the figures' shapes hold their places; the what-if bar
+  // heads every tab once there is a result to pin or to set against A.
   const body = pending()
-    ? waiting("Working out the results for the inputs as they now stand.", res.staleSince)
+    ? `${heroSkeleton()}${waiting("Working out the results for the inputs as they now stand.", res.staleSince)}`
     : res.fault
       ? notReady()
-      : results.TAB_BODY[state.tab]();
+      : `${whatIfBar()}${results.TAB_BODY[state.tab]()}`;
   const tab = ([t, name]: (typeof TABS)[number]) =>
     `<button type="button" role="tab" id="tab-${t}" aria-selected="${state.tab === t}" aria-controls="tab-body" ` +
     `tabindex="${state.tab === t ? 0 : -1}" data-tab="${t}">${name}</button>`;
@@ -104,7 +128,7 @@ function resultsPanel(): string {
   // The verdict first, then the tabs that say why, then what is set beside the design.
   return `<h2 tabindex="-1">Results</h2>${verdictHead()}${tabs}
 <div id="tab-body" role="tabpanel" aria-labelledby="tab-${state.tab}" tabindex="0">${body}</div>
-${results.compareArea()}${resultsActions()}${fault}`;
+${results.compareArea()}${controlEntry()}${resultsActions()}${fault}`;
 }
 
 /** A step whose starting figures come from the part, while the engine that works them out is
@@ -121,7 +145,10 @@ function startingPanel(k: number): string {
   );
 }
 
-const PANELS = [devicesPanel, motorPanel, supplyPanel, loadPanel, resultsPanel];
+/** Step 1 asks the first visit's one question until a part is brought. */
+const firstStep = (): string => (firstRunShown() ? firstRunPanel() : devicesPanel());
+
+const PANELS = [firstStep, motorPanel, supplyPanel, loadPanel, resultsPanel];
 
 /** The refusal is said above the form of any step that could hold the input at fault. */
 const refusedHere = (): boolean =>
@@ -248,7 +275,10 @@ export function renderPanel(keepFocus = false): void {
   const waitingForEngine = !!ui.starting && state.step >= MOTOR && state.step <= LOAD;
   const body = waitingForEngine ? startingPanel(state.step) : PANELS[state.step]();
   put(panel, `<div id="banner">${banner()}</div>${body}`, view);
+  refitPick();
   document.body.dataset.at = String(state.step);
+  // On a phone the first visit's question comes before the drawing, as the verdict does.
+  document.body.toggleAttribute("data-first", firstRunShown());
   const tab = panel.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
   if (!keepFocus) tab?.scrollIntoView({ block: "nearest", inline: "nearest" });
   renderPreview();
@@ -289,7 +319,7 @@ function speak(): void {
   if (!settled) return;
   const v = verdictOf(c);
   if (v.motion === "pending") return;
-  announce(`${c.name}: ${verdictWord(v.level)}${v.motion === "unworked" ? " at the design point" : ""}.`);
+  announce(`${c.name}: ${saidOf(c)}.`);
   verdictSaid = true;
 }
 
@@ -310,7 +340,10 @@ export function markStale(): void {
     renderRail();
   }
   document.body.toggleAttribute("data-pending", now);
-  const stale = res.stale || res.loading.size > 0;
+  // What the Limits tab asks for is worked out ahead while another tab is open: that is not
+  // the open tab waiting, and dims nothing.
+  const ahead = app.state.tab === "limits" ? [] : ["recommend", "capability"];
+  const stale = res.stale || [...res.loading].some((key) => !ahead.includes(key));
   // Said on the page itself too, for whatever watches it from outside to know it has settled.
   document.body.toggleAttribute("data-stale", stale);
   for (const id of ["readouts", "compare-table", "verdict-strip", "tab-body", "pwm", "switcher"]) {
@@ -359,7 +392,9 @@ export function renderEngineStatus(): void {
   tick();
 }
 
-/** The bar across the top and the dialog of equations, there from the first moment. */
+/** The bar across the top and the dialog of equations, there from the first moment. Two things
+ *  are done from it often and stay in sight: saving the setup and opening one. Everything else
+ *  (the equations, what kind of tool this is, the settings and Reset) is in one menu, "⋯". */
 export function topBar(): string {
   const about =
     "Results are estimates from what you bring (a datasheet, a device file or your own measurements), stated " +
@@ -368,35 +403,40 @@ export function topBar(): string {
   const lead =
     "Every figure on this page comes from these equations and from the values read from your device. " +
     "Nothing else is fitted or tuned.";
+  const open = (cls: string, words: string) =>
+    `<label class="${cls}" title="Open a setup file saved from this page">${icon("folder-open")}${words}` +
+    `<input type="file" class="sr" data-setup-file accept=".json,application/json"/></label>`;
   // The setup file is kept and opened from the bar, on every step.
   const files =
     `<div class="top-files">` +
     `<button type="button" class="top-button" data-save-setup aria-label="Save setup" ` +
-    `title="Save everything entered as a file (Ctrl+S)">${icon("device-floppy")}<span>Save setup</span></button>` +
-    `<label class="top-button" title="Open a setup file saved from this page">${icon("folder-open")}` +
-    `<span class="top-label">Open setup</span>` +
-    `<input type="file" class="sr" data-setup-file accept=".json,application/json"/></label></div>`;
+    `title="Save everything entered as a file (Ctrl+S)">${icon("device-floppy")}<span>Save</span></button>` +
+    open("top-button", '<span class="top-label">Open</span>') +
+    `</div>`;
+  // The menu: on a phone it holds the setup file too, with its words.
+  const menu =
+    `<div id="top-more" class="top-menu" popover="auto">` +
+    `<button type="button" class="on-phone" data-save-setup>${icon("device-floppy")}Save setup</button>` +
+    open("on-phone", "Open setup") +
+    `<button type="button" data-equations>${icon("math-function")}The equations</button>` +
+    `<button type="button" class="about-button" popovertarget="about">${icon("info-circle")}Exploratory tool</button>` +
+    SETTINGS_ITEM +
+    `<button type="button" class="danger" data-start-over>${icon("rotate-clockwise")}` +
+    `Reset: clear everything entered</button>` +
+    `</div>`;
+  // Reset's question, in the page's own words and colours, under the bar's ⋯.
+  const resetAsk =
+    `<div id="reset-confirm" class="reset-confirm" popover="auto" role="alertdialog" ` +
+    `aria-labelledby="reset-ask"><p id="reset-ask">Clear the parts, motor, load and every figure?</p>` +
+    `<p class="dialog-actions"><button type="button" class="ghost" data-reset-keep>Keep</button>` +
+    `<button type="button" class="danger" data-reset-sure>Clear everything</button></p></div>`;
   return (
     `<header class="top"><h1 class="brand">MotionSim</h1>` +
     `<span class="top-note">Datasheets as models for motor drives</span>` +
-    `<p id="engine-status" class="engine-status" role="status" aria-live="polite" hidden></p>${files}` +
-    `<button type="button" class="top-button" data-equations aria-label="The equations">` +
-    `${icon("math-function")}<span>The equations</span></button>` +
-    `<button type="button" class="top-button about-button" popovertarget="about" aria-label="Exploratory tool">` +
-    `${icon("info-circle")}<span>Exploratory tool</span></button>` +
-    `<div id="about" class="about" popover="auto"><p>${about}</p></div>` +
-    `<button type="button" class="top-button reset" data-start-over ` +
-    `title="Clear everything entered and start again">${icon("rotate-clockwise")}<span class="keep">Reset</span>` +
-    `</button>` +
-    // On a phone the setup file and Reset go into one menu, each with its words.
+    `<p id="engine-status" class="engine-status" role="status" aria-live="polite" hidden></p>${CHAT_BUTTON}${files}` +
     `<button type="button" class="top-button more-button" popovertarget="top-more" ` +
-    `aria-label="Setup file and reset">${icon("dots-vertical")}</button>` +
-    `<div id="top-more" class="top-menu" popover="auto">` +
-    `<button type="button" data-save-setup>${icon("device-floppy")}Save setup</button>` +
-    `<label>${icon("folder-open")}Open setup` +
-    `<input type="file" class="sr" data-setup-file accept=".json,application/json"/></label>` +
-    `<button type="button" data-start-over>${icon("rotate-clockwise")}Reset: clear everything entered</button>` +
-    `</div></header>\n` +
+    `aria-label="More: the equations, settings and reset" title="More">${icon("dots")}</button>` +
+    `${menu}<div id="about" class="about" popover="auto"><p>${about}</p></div>${resetAsk}</header>\n` +
     `<dialog id="equations" aria-labelledby="equations-title"><div class="dialog-head">` +
     `<h2 id="equations-title">How the results are worked out</h2>` +
     `<button type="button" class="close" data-close-equations aria-label="Close the equations">${icon("x")}</button>` +
@@ -417,12 +457,15 @@ export function frame(): string {
   // are redrawn as the user types would be read out again at every key.
   const spoken = `<p id="announce" class="sr-only" role="status" aria-live="polite"></p>`;
   const panel = `<section id="panel" aria-label="Current step"></section>`;
-  return `<nav id="rail" aria-label="Steps"></nav>\n${stage}\n${panel}${spoken}\n${DIALOGS}`;
+  // The settings are a server's to keep: the hosted page, whose engine is in the browser, has none.
+  const settings = api.mode() === "server" ? SETTINGS_DIALOG + CHAT_PANEL : "";
+  return `<nav id="rail" aria-label="Steps"></nav>\n${stage}\n${panel}${spoken}\n${DIALOGS}${settings}`;
 }
 
 /** Let the engine side ask for redraws. */
 export function connect(): void {
   draw.panel = renderPanel;
+  drawProposal.block = redrawProposal;
   draw.stage = renderStage;
   draw.rail = renderRail;
   draw.preview = renderPreview;

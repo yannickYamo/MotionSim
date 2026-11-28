@@ -1,0 +1,599 @@
+{
+  "clarke": [],
+  "current_discrete_dq": [
+    {
+      "name": "gain",
+      "unit": "",
+      "choices": [],
+      "default": 0.25
+    },
+    {
+      "name": "bemf_feedforward",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "voltage_share",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "current_pi_dq": [
+    {
+      "name": "kp_d",
+      "unit": "V/A",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "ki_d",
+      "unit": "V/(A·s)",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "kp_q",
+      "unit": "V/A",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "ki_q",
+      "unit": "V/(A·s)",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "decoupling",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "bemf_feedforward",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "anti_windup",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "voltage_share",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "current_reference": [
+    {
+      "name": "strategy",
+      "unit": "",
+      "choices": ["mtpa_fw", "id_zero", "least_loss"],
+      "default": "mtpa_fw"
+    },
+    {
+      "name": "i_limit",
+      "unit": "A",
+      "choices": [],
+      "default": 1000000000000.0
+    },
+    {
+      "name": "voltage_share",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "torque_grid",
+      "unit": "N·m",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "speed_grid",
+      "unit": "rad/s",
+      "choices": [],
+      "default": 0.0
+    }
+  ],
+  "current_sampling": [
+    {
+      "name": "noise",
+      "unit": "A",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "offset",
+      "unit": "A",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "gain_error",
+      "unit": "",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "bits",
+      "unit": "bit",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "full_scale",
+      "unit": "A",
+      "choices": [],
+      "default": 100.0
+    }
+  ],
+  "dead_time_compensation": [
+    {
+      "name": "dead_time",
+      "unit": "s",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "drop",
+      "unit": "V",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "band",
+      "unit": "A",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "share",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "deadbeat_dq": [
+    {
+      "name": "delay_compensation",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "gain",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "voltage_share",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "dtc": [
+    {
+      "name": "torque_band",
+      "unit": "N·m",
+      "choices": [],
+      "default": 0.1
+    },
+    {
+      "name": "flux_band",
+      "unit": "Wb",
+      "choices": [],
+      "default": 0.001
+    },
+    {
+      "name": "delay_compensation",
+      "unit": "",
+      "choices": [],
+      "default": true
+    }
+  ],
+  "fcs_mpc": [
+    {
+      "name": "weight",
+      "unit": "A",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "delay_compensation",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "cost",
+      "unit": "",
+      "choices": ["abs", "squared"],
+      "default": "abs"
+    },
+    {
+      "name": "weighting",
+      "unit": "",
+      "choices": ["count", "loss"],
+      "default": "count"
+    },
+    {
+      "name": "horizon",
+      "unit": "steps",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "if_current": [],
+  "if_startup": [
+    {
+      "name": "current",
+      "unit": "A",
+      "choices": [],
+      "default": 10.0
+    },
+    {
+      "name": "align",
+      "unit": "s",
+      "choices": [],
+      "default": 0.02
+    },
+    {
+      "name": "ramp",
+      "unit": "rad/s2",
+      "choices": [],
+      "default": 1000.0
+    },
+    {
+      "name": "handover",
+      "unit": "rad/s",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "blend",
+      "unit": "s",
+      "choices": [],
+      "default": 0.02
+    },
+    {
+      "name": "handback",
+      "unit": "rad/s",
+      "choices": [],
+      "default": 0.0
+    }
+  ],
+  "inverse_park": [
+    {
+      "name": "advance",
+      "unit": "samples",
+      "choices": [],
+      "default": 1.5
+    }
+  ],
+  "modulator": [
+    {
+      "name": "pwm",
+      "unit": "",
+      "choices": [
+        "sine",
+        "third-harmonic",
+        "space-vector",
+        "discontinuous",
+        "discontinuous-high",
+        "discontinuous-low",
+        "discontinuous-min-loss"
+      ],
+      "default": "space-vector"
+    },
+    {
+      "name": "threshold",
+      "unit": "",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "advance",
+      "unit": "samples",
+      "choices": [],
+      "default": 0.0
+    }
+  ],
+  "observer_emf_pll": [
+    {
+      "name": "bandwidth",
+      "unit": "Hz",
+      "choices": [],
+      "default": 500.0
+    },
+    {
+      "name": "pll_bandwidth",
+      "unit": "Hz",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "phase_compensation",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "discretisation",
+      "unit": "",
+      "choices": ["exact", "euler"],
+      "default": "exact"
+    }
+  ],
+  "observer_flux": [
+    {
+      "name": "crossover",
+      "unit": "Hz",
+      "choices": [],
+      "default": 10.0
+    },
+    {
+      "name": "pll_bandwidth",
+      "unit": "Hz",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "discretisation",
+      "unit": "",
+      "choices": ["exact", "euler"],
+      "default": "exact"
+    }
+  ],
+  "observer_smo": [
+    {
+      "name": "gain",
+      "unit": "V",
+      "choices": [],
+      "default": 10.0
+    },
+    {
+      "name": "boundary",
+      "unit": "A",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "cutoff",
+      "unit": "Hz",
+      "choices": [],
+      "default": 500.0
+    },
+    {
+      "name": "pll_bandwidth",
+      "unit": "Hz",
+      "choices": [],
+      "default": 100.0
+    },
+    {
+      "name": "phase_compensation",
+      "unit": "",
+      "choices": [],
+      "default": true
+    },
+    {
+      "name": "discretisation",
+      "unit": "",
+      "choices": ["exact", "euler"],
+      "default": "exact"
+    }
+  ],
+  "park": [],
+  "position_sensing": [
+    {
+      "name": "sensor",
+      "unit": "",
+      "choices": ["ideal", "encoder"],
+      "default": "ideal"
+    },
+    {
+      "name": "counts",
+      "unit": "1/turn",
+      "choices": [],
+      "default": 4096.0
+    },
+    {
+      "name": "latency",
+      "unit": "s",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "speed_window",
+      "unit": "samples",
+      "choices": [],
+      "default": 8.0
+    }
+  ],
+  "speed_pi": [
+    {
+      "name": "kp",
+      "unit": "N·m·s/rad",
+      "choices": [],
+      "default": 0.1
+    },
+    {
+      "name": "ki",
+      "unit": "N·m/rad",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "limit",
+      "unit": "N·m",
+      "choices": [],
+      "default": 1000000000000.0
+    },
+    {
+      "name": "anti_windup",
+      "unit": "",
+      "choices": [],
+      "default": true
+    }
+  ],
+  "speed_reference": [
+    {
+      "name": "shape",
+      "unit": "",
+      "choices": ["step", "slew", "s-curve"],
+      "default": "slew"
+    },
+    {
+      "name": "slew",
+      "unit": "rad/s2",
+      "choices": [],
+      "default": 1000.0
+    },
+    {
+      "name": "jerk",
+      "unit": "rad/s3",
+      "choices": [],
+      "default": 100000.0
+    }
+  ],
+  "thermal_supervisor": [
+    {
+      "name": "actuators",
+      "unit": "",
+      "choices": ["all", "none", "clamp", "clamp+frequency", "derate"],
+      "default": "all"
+    },
+    {
+      "name": "limit",
+      "unit": "°C",
+      "choices": [],
+      "default": 150.0
+    },
+    {
+      "name": "t_clamp",
+      "unit": "°C",
+      "choices": [],
+      "default": 105.0
+    },
+    {
+      "name": "t_frequency",
+      "unit": "°C",
+      "choices": [],
+      "default": 120.0
+    },
+    {
+      "name": "t_derate",
+      "unit": "°C",
+      "choices": [],
+      "default": 135.0
+    },
+    {
+      "name": "hysteresis",
+      "unit": "K",
+      "choices": [],
+      "default": 15.0
+    },
+    {
+      "name": "f_step",
+      "unit": "",
+      "choices": [],
+      "default": 0.25
+    },
+    {
+      "name": "f_floor",
+      "unit": "",
+      "choices": [],
+      "default": 0.5
+    },
+    {
+      "name": "i_floor",
+      "unit": "",
+      "choices": [],
+      "default": 0.3
+    },
+    {
+      "name": "dwell",
+      "unit": "s",
+      "choices": [],
+      "default": 0.01
+    },
+    {
+      "name": "loss_error",
+      "unit": "",
+      "choices": [],
+      "default": 1.0
+    }
+  ],
+  "torque_shaper": [
+    {
+      "name": "shape",
+      "unit": "",
+      "choices": ["step", "slew", "s-curve"],
+      "default": "step"
+    },
+    {
+      "name": "limit",
+      "unit": "N·m",
+      "choices": [],
+      "default": 1000000000000.0
+    },
+    {
+      "name": "rate",
+      "unit": "N·m/s",
+      "choices": [],
+      "default": 1000.0
+    },
+    {
+      "name": "jerk",
+      "unit": "N·m/s2",
+      "choices": [],
+      "default": 1000000.0
+    }
+  ],
+  "variable_frequency": [
+    {
+      "name": "mode",
+      "unit": "",
+      "choices": ["fixed", "peak", "rms", "point"],
+      "default": "fixed"
+    },
+    {
+      "name": "ripple_limit",
+      "unit": "A",
+      "choices": [],
+      "default": 1.0
+    },
+    {
+      "name": "f_min",
+      "unit": "Hz",
+      "choices": [],
+      "default": 1000.0
+    },
+    {
+      "name": "f_max",
+      "unit": "Hz",
+      "choices": [],
+      "default": 100000.0
+    },
+    {
+      "name": "inductance",
+      "unit": "H",
+      "choices": [],
+      "default": 0.0
+    },
+    {
+      "name": "filter",
+      "unit": "s",
+      "choices": [],
+      "default": 0.01
+    }
+  ]
+}

@@ -3,13 +3,13 @@
 
 import { api } from "../api";
 import type { DeviceSummary, ReadOutcome } from "../api";
-import { escape, sentence, sig } from "../format";
+import { escape, num, ratio, sentence } from "../format";
 import { icon } from "../icons";
 import { shown } from "../shown";
 import { DEVICE } from "../steps";
-import { app, conditionsGiven, ownDevices, pending, res, ui, underTest } from "../store";
+import { app, conditionsGiven, ownDevices, pending, picked, res, ui, underTest } from "../store";
 import type { PartRead } from "../store";
-import { leadButton, packaging, refusal, waiting } from "./html";
+import { packaging, refusal, waiting } from "./html";
 import { nextButton } from "./rail";
 import { reviewBlock, setAsideItem } from "./review";
 import { typedForm } from "./typed";
@@ -17,12 +17,9 @@ import { typedForm } from "./typed";
 /** A made-up part by what tells it from the others: its voltage and its kind. */
 const madeUpName = (d: DeviceSummary) => escape(d.name.replace(/^made-up /, ""));
 
-/** A made-up part as it is offered: its name, and the application it opens on. */
-const offered = (d: DeviceSummary) => `${madeUpName(d)}${d.use ? `<span class="quiet">, ${escape(d.use)}</span>` : ""}`;
-
-/** Items in a sentence: "a, b or c". */
-const either = (items: string[]) =>
-  items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} or ${items[items.length - 1]}`;
+/** What tells a made-up part apart beyond its name: its technology and its rated current. */
+/** A part's kind and its rated current, the rating as a datasheet prints it: 30 A, never 30.0 A. */
+export const ratingOf = (d: DeviceSummary) => `${escape(d.technology)} · ${ratio(d.i_nominal)} A rated`;
 
 /** Why a part compared on the design is ruled out by it, where it is: the design was started
  *  from another part, and this one cannot run it or does not pass it. */
@@ -36,7 +33,8 @@ function ruledOut(id: string): string | null {
   return failed ? `${sentence(failed.topic)}: ${failed.message}` : "it does not pass on this design";
 }
 
-/** The note under a part the design rules out, with the way to start the design from it. */
+/** The note under a part the design rules out. A design is never offered to be started from a
+ *  part ruled out: it would be a verdict on a drive sized to that part, not on the user's. */
 function ruledOutNote(d: DeviceSummary): string {
   const why = ruledOut(d.id);
   if (!why) return "";
@@ -44,36 +42,38 @@ function ruledOutNote(d: DeviceSummary): string {
   const said =
     `<p class="small"><b>Ruled out by the design, which was started from ${escape(lead)}.</b> ` +
     `${escape(sentence(why))}.</p>`;
-  return `<div class="ruled-out">${said}<p>${leadButton(d.id, d.name)}</p></div>`;
+  return `<div class="ruled-out">${said}</div>`;
 }
 
-/** One part of the user's: its tick, its facts, and the links to take it off or check it. */
+/** One part of the user's: its tick, its facts, the link to check it, and the X to take it off. */
 function deviceRow(d: DeviceSummary): string {
   const on = app.state.devices.includes(d.id);
   const open = ui.review?.id === d.id;
   const id = escape(d.id);
   const name = `${escape(d.name)}${d.example ? ' <span class="tag">made-up part</span>' : ""}`;
   const facts =
-    `<span class="device-facts">${escape(d.technology)} · ${sig(d.v_max)} V · ${sig(d.i_nominal)} A</span>` +
+    `<span class="device-facts">${escape(d.technology)} · ${num(d.v_max)} V · ${num(d.i_nominal)} A</span>` +
     `<span class="device-facts kind-of-part">${packaging(d)}</span>` +
     `<span class="device-facts">Switching loss: ${escape(d.switching)}. Model built from ${escape(d.support)}.</span>`;
   const tick = `<input type="checkbox" data-device="${id}" ${on ? "checked" : ""}/>`;
-  // Taking a part off sits apart from the links that look at it, at the far end of its row.
+  // Taking a part off is a close mark in the card's top right corner, apart from the link that
+  // looks at it; its name says what it does, and so does its tooltip.
+  const off = `Take ${escape(d.name)} off this page`;
   const forget =
-    `<button type="button" class="link forget-link" data-forget-device="${id}" ` +
-    `aria-label="Take ${escape(d.name)} off this page">Take off this page</button>`;
+    `<button type="button" class="icon-button device-forget" data-forget-device="${id}" ` +
+    `aria-label="${off}" title="${off}">${icon("x")}</button>`;
   const check =
     `<button type="button" class="link review-link" data-review="${id}" ` +
     `aria-label="${open ? "Hide" : "Check"} what was read for ${escape(d.name)}" aria-expanded="${open}">` +
     `${open ? "Hide what was read" : "Check what was read"}</button>`;
   return (
     `<li class="device${on ? " is-on" : ""}"><label>${tick}<span class="device-name">${name}</span>${facts}</label>` +
-    `<div class="device-links">${check}${forget}</div>${on ? ruledOutNote(d) : ""}</li>`
+    `${forget}<div class="device-links">${check}</div>${on ? ruledOutNote(d) : ""}</li>`
   );
 }
 
 /** Where a file is dropped to add a part, or word that one is being read or added. */
-function dropZone(canRead: boolean, local: boolean): string {
+export function dropZone(canRead: boolean, local: boolean): string {
   const reading = ui.reading;
   if (reading && !reading.outcome && !reading.refused) {
     return waiting(/\.pdf$/i.test(reading.name) ? `Reading ${reading.name}.` : `Adding ${reading.name}.`, reading.at);
@@ -81,7 +81,7 @@ function dropZone(canRead: boolean, local: boolean): string {
   const accepts = canRead ? "its datasheet (PDF), a device file (.yaml)" : "a device file (.device.yaml)";
   const elsewhere = local
     ? "This page does not read a datasheet PDF: below is how to make a device file from one on your own machine."
-    : "This page reads a datasheet PDF only once your own API key is set: how is below.";
+    : "This page reads a datasheet PDF once your own API key is set, under Settings in the top bar.";
   const paid =
     '<span class="quiet">Reading a datasheet is a paid language-model call from this machine, with your key. ' +
     "It takes a minute or two.</span>";
@@ -90,8 +90,10 @@ function dropZone(canRead: boolean, local: boolean): string {
   const invite =
     `<span><b>Add your device</b> Drop ${accepts}, or your own double-pulse measurements (.json). ` +
     `Or press to choose a file.</span>`;
+  // With no part chosen yet, the drop is the step's next action.
+  const next = app.state.devices.length ? "" : " is-next";
   return (
-    `<label class="drop big" id="drop">${input}${icon("upload")}${invite}` +
+    `<label class="drop big${next}" id="drop">${input}${icon("upload")}${invite}` +
     `${canRead ? "" : `<span class="quiet">${elsewhere}</span>`}${canRead ? paid : ""}</label>`
   );
 }
@@ -115,30 +117,11 @@ function howInBrowser(): string {
   return `<details class="more">${summary}${why}${commands}${then}</details>${note}`;
 }
 
-/** How to have a datasheet read on this machine, where no key has been set. */
-function howWithKey(): string {
-  const about = `<span class="quiet">it needs your own key, on your own machine</span>`;
-  const summary = `<summary>${icon("info-circle")}To read a datasheet PDF here${about}</summary>`;
-  const why =
-    `<p class="quiet">Reading a datasheet is done by a language model, and that is a paid call. It is made ` +
-    `from this machine with your own key, straight to its maker, or to a model you run yourself: this tool ` +
-    `has no server of its own, keeps no key and sees none of your files. That is why it runs on your ` +
-    `machine.</p>`;
-  const set =
-    `<p class="quiet">Set the key in the terminal, then start the page again:</p>` +
-    `<p><code>export ANTHROPIC_API_KEY=your-key</code><br/><code>motionsim serve</code></p>`;
-  const others =
-    `<p class="quiet">OpenAI, Gemini, Grok or a model of your own work too: ` + `the README says what to set.</p>`;
-  const without =
-    `<p class="quiet">Without a key everything else works: device files, your own measurements, and the ` +
-    `made-up part.</p>`;
-  return `<details class="more">${summary}${why}${set}${others}${without}</details>`;
-}
-
 /** How to get a datasheet read, said only where it cannot be read as things stand. */
-function howToRead(canRead: boolean, local: boolean): string {
+export function howToRead(canRead: boolean, local: boolean): string {
   if (canRead) return "";
-  return local ? howInBrowser() : howWithKey();
+  // On your own machine the drop zone says where the key goes; the rest is the README's to say.
+  return local ? howInBrowser() : "";
 }
 
 /** The part just added: what was read for it, and what a check set aside. */
@@ -164,7 +147,7 @@ function addedNote(reading: PartRead, outcome: ReadOutcome): string {
 }
 
 /** What came of the last part added: why it was refused, or what was read. */
-function lastOutcome(): string {
+export function lastOutcome(): string {
   const reading = ui.reading;
   if (reading?.refused) return refusal(reading.refused);
   return reading?.outcome ? addedNote(reading, reading.outcome) : "";
@@ -192,16 +175,56 @@ function undoNote(): string {
 }
 
 /** The made-up parts not yet on the page. */
-const spareExamples = (): DeviceSummary[] =>
+export const spareExamples = (): DeviceSummary[] =>
   app.setup.devices.filter((d) => d.example && !app.state.added.includes(d.id));
 
-/** The link to try the tool with a made-up part, for whoever has none to hand. */
+export { picked } from "../store";
+
+/** One made-up part as the list shows it: its name, its technology and rating beneath, and
+ *  the application it opens on at the right; the chosen one ticked. */
+function pickOption(d: DeviceSummary, on: boolean): string {
+  const use = d.use ? `<span class="pick-use">${escape(sentence(d.use))}</span>` : "";
+  return (
+    `<li role="option" id="example-pick-${escape(d.id)}" data-example-choose="${escape(d.id)}" ` +
+    `aria-selected="${on}"${on ? ' class="is-on"' : ""}>` +
+    `<span class="pick-tick" aria-hidden="true">${icon("check")}</span>` +
+    `<span class="pick-part"><span class="pick-name">${madeUpName(d)}</span>` +
+    `<span class="pick-rating">${ratingOf(d)}</span></span>${use}</li>`
+  );
+}
+
+/** The made-up parts as one list to choose from, and one press to walk through with it. The
+ *  list is a select-only combobox (WAI-ARIA's pattern): a native select cannot show a part's
+ *  rating and application on two aligned lines, and draws the system's own list. */
+export function examplePick(spare: DeviceSummary[], label: string, own = ""): string {
+  const chosen = spare.find((d) => d.id === picked.id) ?? spare[0];
+  const open = picked.open;
+  const use = chosen.use ? `<span class="pick-use">${escape(sentence(chosen.use))}</span>` : "";
+  const face =
+    `<span class="pick-face"><span class="pick-name">${madeUpName(chosen)}</span>${use}</span>` +
+    `<span class="pick-caret" aria-hidden="true">${icon("chevron-down")}</span>`;
+  const combo =
+    `<button type="button" id="example-pick" class="pick-box" role="combobox" data-example-open ` +
+    `data-value="${escape(chosen.id)}" aria-haspopup="listbox" aria-expanded="${open}" ` +
+    `aria-controls="example-pick-list" aria-labelledby="example-pick-label"` +
+    `${open ? ` aria-activedescendant="example-pick-${escape(chosen.id)}"` : ""}>${face}</button>`;
+  const list =
+    `<ul role="listbox" id="example-pick-list" class="pick-list" aria-labelledby="example-pick-label" ` +
+    `tabindex="-1"${open ? "" : " hidden"}>${spare.map((d) => pickOption(d, d.id === chosen.id)).join("")}</ul>`;
+  // With a part on the page already, another is brought to be set beside it.
+  const words = app.state.devices.length ? "Add to compare" : "Try it";
+  const go =
+    own || `<button type="button" class="ghost pick-go" data-example-go>${words}${icon("arrow-right")}</button>`;
+  return (
+    `<div class="example-pick"><span class="pick-label" id="example-pick-label">${label}</span>` +
+    `<div class="example-pick-row"><div class="pick">${combo}${list}</div>${go}</div></div>`
+  );
+}
+
+/** For whoever has no part to hand: a made-up one, from a list. */
 function exampleLink(spare: DeviceSummary[]): string {
   if (!spare.length) return "";
-  const links = either(
-    spare.map((d) => `<button type="button" class="link" data-example="${escape(d.id)}">a ${madeUpName(d)}</button>`),
-  );
-  return `<p class="aside examples">No part to hand? Try the tool with a made-up one: ${links}.</p>`;
+  return `<div class="aside examples">${examplePick(spare, "No part to hand? Try a made-up one")}</div>`;
 }
 
 /** The design as a file for `motionsim design run`, from a terminal or an agent. Saving and
@@ -214,20 +237,12 @@ function setupFiles(): string {
   return `<p class="aside setup-files">${design}</p>`;
 }
 
-/** The first of a newcomer's paths: a made-up part to walk through every step with. */
+/** A newcomer's quickest path: a made-up part, chosen from a list, to walk through every step
+ *  on the application it is found in. */
 function tryPath(spare: DeviceSummary[]): string {
   if (!spare.length) return "";
-  const buttons = spare
-    .map(
-      (d) =>
-        `<button type="button" class="ghost" data-example="${escape(d.id)}">` +
-        `${icon("player-play")}<span>A ${offered(d)}</span></button>`,
-    )
-    .join("");
-  const said =
-    `<p class="quiet">A made-up part, to walk through every step on the application it is found in. ` +
-    `Not a real device.</p>`;
-  return `<section class="path"><h3>See what it does</h3>${said}<p class="path-go">${buttons}</p></section>`;
+  const said = `<p class="quiet">Not a real part. Each opens on its usual application.</p>`;
+  return `<section class="path"><h3>Or try a made-up part</h3>${said}${examplePick(spare, "Made-up part")}</section>`;
 }
 
 /** Whether the fold to add another part stands open: a part is being read or was refused, or
@@ -240,9 +255,10 @@ function anotherOpen(): boolean {
 
 /** The three ways a newcomer can bring a part: a made-up one, one typed in, one from a file. */
 function newcomerPaths(spare: DeviceSummary[], drop: string, how: string): string {
-  const typed = `<section class="path"><h3>Your own part, typed in</h3>${typedForm()}</section>`;
-  const file = `<section class="path"><h3>Your own part, from a file</h3>${drop}${how}</section>`;
-  return `${tryPath(spare)}${typed}${file}${undoNote()}`;
+  // The datasheet first, where the eye goes; typing figures in and a made-up part after it.
+  const typed = `<section class="path"><h3>Or type in its figures</h3>${typedForm()}</section>`;
+  const file = `<section class="path path-first"><h3>Your own part, from its datasheet</h3>${drop}${how}</section>`;
+  return `${file}${typed}${tryPath(spare)}${undoNote()}`;
 }
 
 /** The lead of the device step, and every way it offers to bring a part. In the + Add
@@ -260,7 +276,9 @@ function routes(inDialog: boolean): { lead: string; body: string } {
   // Where a datasheet cannot be read on this page, a newcomer has no file to drop: what they
   // can do at once comes first, and the file last.
   if (!canRead && !parts.length && !ui.reading && !(ui.starting && state.added.length)) {
-    const lead = `<p class="lead">The power transistor or module you have in mind. Three ways to bring one.</p>`;
+    const lead =
+      `<p class="lead">The switch or module under test. ` +
+      `Bring its datasheet, type its figures, or try a made-up one.</p>`;
     return { lead, body: newcomerPaths(spare, drop, how) };
   }
   const ways = `${canRead ? "drop its datasheet, " : ""}type in its figures, or drop a device file.`;
@@ -293,6 +311,12 @@ export function deviceRoutes(): string {
 /** The device step: the user's parts, and every way to bring another. */
 export function devicesPanel(): string {
   const { lead, body } = routes(false);
+  // The board is given with the switching event, in its fold: said here, with no control.
+  // Said only once there is a part whose switching event it would serve.
+  const boardNote = app.state.devices.length
+    ? `<p class="aside quiet small">Board file (KiCad, IPC-2581): give it with the switching event for its loop ` +
+      `inductances.</p>`
+    : "";
   return `<h2 tabindex="-1">The device you want to test</h2>${lead}
-${body}${setupFiles()}${nextButton(DEVICE)}`;
+${body}${boardNote}${setupFiles()}${nextButton(DEVICE)}`;
 }

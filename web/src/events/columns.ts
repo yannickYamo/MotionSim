@@ -7,7 +7,7 @@ import { schedule } from "../engine";
 import { itemOf } from "../engine/loads";
 import { suggestFor } from "../engine/suggest";
 import type { Field } from "../api";
-import { shownAs, shownText } from "../motorentry";
+import { fieldsOf, shownAs, shownText } from "../motorentry";
 import { readNumber } from "../parse";
 import { save } from "../state";
 import { MOST } from "../steps";
@@ -196,7 +196,7 @@ function saveMotor(id: string | null): boolean {
   const kind = setup.motors[state.kind];
   const base = motorOf(id);
   const motor: Record<string, string | number> = { ...base.motor, type: state.kind };
-  for (const f of kind.fields) {
+  for (const f of fieldsOf(state.kind, kind.fields, base.motor)) {
     const box = at<HTMLInputElement>(`#variant-dialog [data-variant="motor.${f.key}"]`);
     if (!box) continue;
     if (f.options) motor[f.key] = box.value;

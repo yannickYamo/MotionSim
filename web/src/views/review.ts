@@ -3,7 +3,7 @@
 
 import type { ModelTable, Reading } from "../api";
 import { tableChart } from "../charts";
-import { escape, percent, sentence, sig } from "../format";
+import { escape, num, percent, sentence } from "../format";
 import { icon } from "../icons";
 import { app, ui } from "../store";
 
@@ -54,7 +54,7 @@ const READ_NAMES: Record<string, string> = {
 const readName = (what: string): string => READ_NAMES[what] ?? what.replace(/_/g, " ");
 
 /** The temperature a curve was drawn at, where the datasheet gives one. */
-const atTemperature = (tj: number | null) => (tj !== null ? ` at ${sig(tj)} °C` : "");
+const atTemperature = (tj: number | null) => (tj !== null ? ` at ${num(tj)} °C` : "");
 
 /** One thing set aside by a check: what it is, its page and why. */
 export const setAsideItem = (a: SetAside) => `<li>${escape(a.what)}, page ${a.page}: ${escape(a.why)}</li>`;

@@ -65,7 +65,7 @@ describe("a motion followed in part", () => {
   it("names the readout's junction as the design point's where the motion differs", () => {
     renderStage();
     const text = document.querySelector("#readouts")!.textContent;
-    expect(text).toContain("Hottest junction, design point");
+    expect(text).toContain("Tj peak, design point");
     expect(text).toContain("through the motion, in the part followed: 141 °C");
   });
   it("off the results, gives the readout as a reload does: the motion is followed only on the results", () => {

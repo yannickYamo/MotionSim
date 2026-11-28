@@ -4,7 +4,7 @@ import { Refused } from "../api";
 import type { MotorKind, Suggest } from "../api";
 import { escape, sentence } from "../format";
 import { icon } from "../icons";
-import { constantOf, hasConstant, hasWiring, shownAs, shownText } from "../motorentry";
+import { constantOf, fieldsOf, hasConstant, hasWiring, shownAs, shownText } from "../motorentry";
 import { MOTOR } from "../steps";
 import { app, res, underTest } from "../store";
 import { field, select, together } from "./html";
@@ -44,8 +44,9 @@ function kindOption([k, x]: Kind, fits: Fits): string {
   const rec = fit?.fit === "recommended" ? " is-rec" : "";
   const radio = `<input type="radio" name="kind" value="${k}" data-kind ${k === state.kind ? "checked" : ""}/>`;
   const name = `<span class="kind-name">${escape(x.label)}${tag}</span>`;
-  const about = `<span class="kind-about">${escape(x.about)}</span>`;
-  return `<label class="kind${on}${rec}">${radio}${name}${about}${why}</label>`;
+  // What a kind is, an expert knows: said under the one chosen, and on the others' hover.
+  const about = on ? `<span class="kind-about">${escape(x.about)}</span>` : "";
+  return `<label class="kind${on}${rec}" title="${escape(x.about)}">${radio}${name}${about}${why}</label>`;
 }
 
 /** Kinds of motor set out under the family each belongs to. */
@@ -94,7 +95,10 @@ function motorField(f: MotorKind["fields"][number], v: Figures): string {
 }
 
 /** The catalogue figures of the kind of motor picked. */
-const motorFields = (m: MotorKind, v: Figures): string => m.fields.map((f) => motorField(f, v)).join("");
+const motorFields = (m: MotorKind, v: Figures): string =>
+  fieldsOf(app.state.kind, m.fields, v)
+    .map((f) => motorField(f, v))
+    .join("");
 
 /** Two ways to give the same figures, as a pair of choices: switching shows the motor's
  *  figures the other way, and the motor stays the same. */

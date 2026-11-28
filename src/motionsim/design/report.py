@@ -296,6 +296,33 @@ def _motors_section(result: dict, name: str) -> list[str]:
     return [*lines, ""]
 
 
+def _front_end_section(result: dict) -> list[str]:
+    front = result.get("front_end")
+    if not front:
+        return []
+    lines = ["## Front end", ""]
+    if "refused" in front:
+        return lines + _refused(front)
+    r, mains = front["result"], front["mains"]
+    phases = "three phases" if mains["phases"] == 3 else "one phase"
+    own = front["chosen"] != front["recommended"]
+    lines += [
+        f"- {r['name']} on {_n(mains['v'], 'V')}, {_n(mains['f'], 'Hz')}, {phases}"
+        + (", chosen in the design" if own else f": {_said(front['why'])}"),
+        f"- It holds the DC link at {_n(r['v_dc'], 'V')}"
+        + (" (given in the design)" if front.get("v_dc_given") else "")
+        + f" and loses {_n(r['loss'], 'W')} on top of the inverter's ({_n(100 * r['efficiency'], '%')} efficient).",
+        f"- Mains current {_n(r['i_line'], 'A rms')}, power factor {_n(r['power_factor'], '')}".rstrip()
+        + ("." if r.get("within_limit") is not False else ", over the harmonic limits of IEC 61000-3-2 class A."),
+    ]
+    lines += [
+        f"- {WORD.get(c['level'], c['level']).capitalize()}: {_said(c['message'])}"
+        for c in r["checks"]
+        if c["level"] != "ok"
+    ]
+    return [*lines, ""]
+
+
 def _build_section(result: dict, name: str) -> list[str]:
     build = result.get("build")
     if not build:
@@ -357,6 +384,7 @@ def markdown(result: dict) -> str:
         *_motion_section(result, name),
         *_motions_section(result),
         *_motors_section(result, name),
+        *_front_end_section(result),
         *_build_section(result, name),
         *_drive_section(result, name),
         *_rests_section(result),

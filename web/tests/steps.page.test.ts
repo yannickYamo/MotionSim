@@ -73,10 +73,15 @@ describe("step 1 once a part is chosen", () => {
     expect(panel.querySelectorAll("#drop").length).toBe(1);
     expect(panel.querySelector(".path")).toBeNull();
   });
-  it("sets taking a part off apart from the links that look at it, and has no second Start over", () => {
+  it("sets taking a part off apart from the link that looks at it, and has no second Start over", () => {
     renderPanel();
     const links = [...document.querySelectorAll("#panel .device .device-links button")];
-    expect(links.map((b) => b.textContent)).toEqual(["Check what was read", "Take off this page"]);
+    expect(links.map((b) => b.textContent)).toEqual(["Check what was read"]);
+    // Taking it off is an X in the card's corner, named and titled for the part, with no words.
+    const x = document.querySelector<HTMLButtonElement>("#panel .device > button.device-forget")!;
+    expect(x.textContent).toBe("");
+    expect(x.getAttribute("aria-label")).toMatch(/^Take .+ off this page$/);
+    expect(x.title).toBe(x.getAttribute("aria-label"));
     expect(document.querySelector("#panel [data-start-over]")).toBeNull();
     expect(document.querySelectorAll("header.top [data-start-over]").length).toBeGreaterThan(0);
   });

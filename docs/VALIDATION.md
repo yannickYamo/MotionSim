@@ -5,11 +5,13 @@ Every check the tool is held to, by how strong a claim it supports, strongest la
 - **A, mathematical**: closed-form solutions.
 - **B, numerical**: independent numerical integration, written apart from the engine.
 - **C, external**: a datasheet against itself, vendor charts, a vendor's public simulator.
-- **D, physical**: measured inverter or double-pulse data. One published inverter loss measurement so far; no published measurement of junction temperature.
+- **D, physical**: measured inverter or double-pulse data. Four published reference designs so far: two inverters' measured loss, and three boards' measured temperature of the hottest transistor case.
 
 Modules A, B and C in this document are three 600 V, 15 A IGBT modules with built-in drivers from one vendor. They are not named.
 
 ## What holds each claim
+
+A count of tests below is of test functions; a function run over several cases counts once.
 
 A claim here is held in one of three ways. A **test in CI** runs on every change and fails if the claim stops being true. A **script, not in CI** is in the repository and is run by hand. A **one-off** was done once, by hand or with a script and data that are not in the repository, usually because it needs a datasheet or a vendor's output that is not ours to distribute: it cannot be reproduced from the repository alone, and nothing fails if it stops being true.
 
@@ -20,8 +22,10 @@ A claim here is held in one of three ways. A **test in CI** runs on every change
 | Level B: 421 and 240 operating points against a separate calculation | one-off | script and points not in the repository |
 | Level C: datasheets against their own tables | plot areas and part of the curves by a test that runs only where the datasheets are present, so not in CI; the rest one-off | `tests/test_real_datasheets.py` |
 | Level C: Module A against its datasheet chart, Module C against its vendor's simulator | one-off, Module A's with an earlier state of the tool | the chart readings and the simulator's output are not in the repository |
+| Level C: the published boards' transistors through their makers' own calculators at the same points | not done | no maker publishes such a calculator's result at these points where it can be cited, and the calculators themselves are interactive |
 | The same three currents on the made-up module of the examples, as the code gives them today | rerun by hand on this version; no test holds them | the section on Module A |
-| Level D: one published inverter loss measurement | one-off | the measured figures are in the table below; the model's inputs are not in the repository |
+| Level D: the first published inverter loss measurement | one-off | the measured figures are in the table below; the model's inputs are not in the repository |
+| Level D: three published boards, measured case temperature and stage loss | test that runs only where the device models are present, so not in CI | `tests/test_published_boards.py`, with the device models in a `runs/validation/` folder that is not in the repository |
 | The datasheets the reader has been tried on | one-off, one run each, checked by hand | nothing in the repository |
 | The reader's checks on recorded readings of made-up datasheets | test in CI, no key and no model call | `evals/reader`, the tests marked `reader_eval`; see "Reader accuracy eval" |
 | A typed part beside its read model | one-off | needs the datasheet |
@@ -35,6 +39,11 @@ A claim here is held in one of three ways. A **test in CI** runs on every change
 | A device changed while an answer is on its way, the search for the largest load cancelled partway (the engine in the browser holds to having stopped), and two short random walks, on the local and the hosted page | script in CI | `web/scripts/race.mjs`, `walk.mjs` |
 | The search for the largest load reports each probe and ends in the answer it gave before; a page that stops waiting stops it on the server | test in CI | `tests/test_heavier_probes.py`, `tests/test_streamed.py` |
 | An answer kept for the report is the one worked out afresh, and never one for another request or device file | test in CI | `tests/test_remembered.py` |
+| The control lab: a held point against the settled engine, the loops against linear theory and a calculation by hand, the blocks against closed forms, every exploration's direction | test in CI | `tests/test_control_*.py`, 422 tests |
+| The motor's saturating iron, the twisting shaft and the disturbance-observer speed loop: the iron map gives back its calibration and is reciprocal, the plant keeps the terminal energy, a free shaft swings at √(K(1/Jm+1/Jl)) and decays at c/2Jeq, the speed loop's poles are its control law's and its observer's | A, B; test in CI | `tests/test_control_magnetics.py`, `tests/test_control_shaft.py`, `tests/test_control_adrc.py` |
+| The board reader: partial inductances and meshed loops against closed forms, the half bridge found in made-up boards, files that cannot be read refused | test in CI | `tests/test_board_*.py`, 98 tests |
+| The local app: every address answered as the service's own dispatch answers it, the key never sent back, the store, the streams | test in CI | `tests/test_app_*.py`, 145 tests |
+| The control lab or the board reader against a measured drive, a field solver or a measured board | not done | nothing |
 | The tour at four widths, and the long random walk | script, not in CI | `web/scripts/measure.mjs`, `walk.mjs` |
 | Lighthouse scores | one-off measurement | nothing in the repository |
 
@@ -330,7 +339,11 @@ Turn-on at 6 kHz is 0.55 W a switch against the simulator's 0.41 W, a third high
 
 Modules A and B could not be run in the same simulator. One part, one vendor, and the reference is a model, not a measurement. `motionsim validate` runs such a comparison from a file of reference points; the simulator's output is not redistributed here.
 
-## Level D: one public measurement, and what it does and does not show
+## Level D: published measurements, and what they do and do not show
+
+Four reference designs that semiconductor makers publish with design guides, each with what was measured on it. None is named; the device models were read from the transistors' public datasheets and are not in the repository.
+
+### A 48 V inverter, 30 MOSFETs on a heatsink: loss
 
 A comparison made once. The measured figures below are from the published guide; the device model and the run that gave the model's column are not in the repository, since the model was read from a datasheet.
 
@@ -355,9 +368,175 @@ What it shows:
 - The measurement is of the whole inverter: board copper, connectors and snubbers are in it, and they are not in the model. The part of the measured loss that does not change with frequency is about three times the transistors' own conduction loss at 131 A, and grows with the square of the current: about 0.8 mΩ a phase of resistance outside the transistors would account for it. The guide gives no figure to check that against, so the conduction model is neither confirmed nor refuted by this.
 - The part that changes with frequency can be separated, from the two rows measured at the same current. At 27 A the measured loss rises by 1.6 W for each kHz and the model's by 1.15 W; at 131 A, 3.7 W against 4.95 W. So the switching estimate from gate and output charge is about 30% low at low current and about a third high at high current on this board. The snubbers, which lose the same at any current, are part of the first.
 
-What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The same maker's companion design (the same transistor one to a switch, six-step, no heatsink) and the motor-drive boards published for the GaN part read here give further points and have not been run yet.
+What it does not show: anything about the junction temperature, about measured-energy parts, or about a board whose own resistance is known. One design, one part. The three boards below add temperature and a second loss measurement.
+
+### Three boards without a heatsink: case temperature, and one stage's loss
+
+Held by `tests/test_published_boards.py`, which runs where the two device models are present in `runs/validation/` and skips where they are not, as in CI: it holds the model's figure at every measured point to 0.5% and the ratios drawn from them below. The measured figures are in the test as the guides give them. Nothing is fitted to the measurements: every figure the model is given is the datasheet's or the guide's, and where a guide leaves one open the choice is said.
+
+The three boards stand in still air with no heatsink, so what the guides measure is the whole chain the tool works out for such a stage: the loss, and the path from the transistor to the air through the board. The tool takes that path from the datasheet's junction-to-air figure and the board's area (the board cooling of Level A). The guides measure the hottest transistor's case, by infrared camera; on the GaN boards the case top is 0.2 K/W from the junction, under 0.6 K at these losses, and the model's case temperature is what is set beside it.
+
+**Board A: six 100 V GaN transistors, one a switch.** A 130 by 100 mm board, 48 V, sinusoidal, 50 ns dead time, a motor on a bench at 5 Hz, 25 °C air. The guide's chart of the hottest case's rise against phase current at 50 and 100 kHz, read from its pixels (±0.2 A, ±0.7 K). The model: the transistor as read from its datasheet; its gate resistors chosen by the tool for the 5 V/ns it allows a motor on a cable (the guide measures edges under 10 V/ns); each package on a square inch of copper, the area the datasheet's junction-to-air figure is taken on. The datasheet gives two such figures: 45 K/W on the standard test board, which is the one the tool asks for, and 21 K/W on its maker's own evaluation board. Both are shown. The guides do not give modulation index or power factor; this transistor's conduction does not depend on them, and moving them from 0.2 and 0.5 to 0.9 and 1 moves the rise by under 0.1 K.
+
+| Switching | Phase current | Measured rise | Model, 45 K/W | Over measured | Model, 21 K/W | Over measured |
+|---|---|---|---|---|---|---|
+| 50 kHz | 5.1 A | 8.6 K | 16.2 K | 1.89 | 10.1 K | 1.18 |
+| 50 kHz | 10.2 A | 14.6 K | 29.0 K | 1.99 | 17.9 K | 1.23 |
+| 50 kHz | 15.7 A | 26.7 K | 50.8 K | 1.90 | 30.8 K | 1.15 |
+| 50 kHz | 19.6 A | 38.5 K | 75.1 K | 1.95 | 44.4 K | 1.15 |
+| 50 kHz | 24.9 A | 58.9 K | 121.6 K | 2.06 | 67.6 K | 1.15 |
+| 100 kHz | 5.0 A | 16.7 K | 31.0 K | 1.86 | 19.4 K | 1.16 |
+| 100 kHz | 10.2 A | 25.7 K | 53.3 K | 2.08 | 32.9 K | 1.28 |
+| 100 kHz | 14.3 A | 38.0 K | 78.6 K | 2.07 | 47.7 K | 1.26 |
+| 100 kHz | 19.5 A | 58.4 K | 131.8 K | 2.26 | 77.1 K | 1.32 |
+| 100 kHz | 22.9 A | 74.9 K | 178.8 K | 2.39 | 101.4 K | 1.35 |
+
+**Board B: 24 of the same transistor, four in parallel a switch.** A 135 by 100 mm board, the same conditions, a larger motor, 25.5 °C air, at 20, 50 and 100 kHz. Each package's copper is its share of the board, 5.6 cm².
+
+| Switching | Phase current | Measured rise | Model, 45 K/W | Over measured | Model, 21 K/W | Over measured |
+|---|---|---|---|---|---|---|
+| 20 kHz | 25.8 A | 18.4 K | 18.5 K | 1.01 | 14.9 K | 0.81 |
+| 20 kHz | 41.1 A | 31.2 K | 31.2 K | 1.00 | 24.9 K | 0.80 |
+| 20 kHz | 56.4 A | 54.2 K | 50.8 K | 0.94 | 40.0 K | 0.74 |
+| 50 kHz | 36.0 A | 35.6 K | 54.5 K | 1.53 | 43.7 K | 1.23 |
+| 50 kHz | 51.1 A | 60.3 K | 82.1 K | 1.36 | 64.7 K | 1.07 |
+| 100 kHz | 15.4 A | 25.3 K | 54.8 K | 2.16 | 44.3 K | 1.75 |
+| 100 kHz | 30.6 A | 44.3 K | 88.1 K | 1.99 | 70.8 K | 1.60 |
+| 100 kHz | 46.1 A | 74.5 K | 130.8 K | 1.76 | 103.6 K | 1.39 |
+
+**The switching part, with the board's path taken out.** At one current the path from a transistor to the air is the same at every switching frequency, so the ratio of two rises at that current says how much of the loss comes with switching, whatever the path is. The model's ratio barely moves with the junction-to-air figure (under 3%).
+
+| Board, current | Rise at the higher frequency over the lower | Measured | Model |
+|---|---|---|---|
+| A, 5 A | 100 over 50 kHz | 1.95 | 1.93 |
+| A, 10.2 A | 100 over 50 kHz | 1.76 | 1.84 |
+| A, 19.5 A | 100 over 50 kHz | 1.53 | 1.77 |
+| B, 41.1 A | 50 over 20 kHz | 1.41 | 2.01 |
+| B, 41.1 A | 100 over 20 kHz | 2.08 | 3.71 |
+
+**Board C: six 100 V silicon MOSFETs, six-step.** The same maker's companion to the 48 V design above: the same transistor in a D2PAK, one a switch, on a 70 by 69 mm four-layer board with no heatsink, 54 V, block commutation. At 95% duty the high side chops at 20 kHz and the low side freewheels actively; at 100% nothing chops. Dead time 100 ns. The guide tabulates the whole stage's loss (DC input less output power) at six currents for each, and charts the hottest MOSFET's temperature, read here from the chart's own drawn path. The air's temperature is not stated; its thermal images read 24 to 26 °C, taken as 25 °C. The model: the read transistor scaled to the 2 mΩ the guide gives, as above; the datasheet's 62 K/W junction to air; a brushless motor of no winding resistance at 50 Hz, wound so that the duty is its back-EMF; 100% duty taken as 99% (the most the stage passes) at 200 Hz, whose switching is a hundredth of 20 kHz's.
+
+First the loss alone, with every case held at the temperature the guide measured at that current (beyond the chart's last point, its last temperature):
+
+| Winding current | Measured, 100% | Model | Measured, 95% | Model |
+|---|---|---|---|---|
+| 7.3 and 8.1 A | 2.57 W | 0.34 W | 3.60 W | 0.96 W |
+| 11.4 and 11.6 A | 3.42 W | 0.85 W | 4.48 W | 1.64 W |
+| 15.5 and 15.9 A | 4.91 W | 1.66 W | 7.35 W | 2.89 W |
+| 20.5 and 21.4 A | 6.81 W | 3.16 W | 10.87 W | 5.37 W |
+| 25.5 and 25.7 A | 9.42 W | 5.52 W | 14.48 W | 8.16 W |
+| 27.7 and 27.6 A | 10.73 W | 6.96 W | 16.74 W | 9.33 W |
+
+Then the whole chain on the board's own path, against the chart:
+
+| Winding current | Measured rise, 100% | Model | Over measured |
+|---|---|---|---|
+| 5.5 A | 6.8 K | 3.6 K | 0.53 |
+| 8.6 A | 8.8 K | 8.8 K | 1.00 |
+| 12.5 A | 16.7 K | 20.1 K | 1.20 |
+| 16.9 A | 26.8 K | 40.9 K | 1.53 |
+| 21.1 A | 42.1 K | 77.5 K | 1.84 |
+| 24.0 A | 54.2 K | 126.8 K | 2.34 |
+| 27.0 A | 69.1 K | 263.3 K | 3.81 |
+| 29.5 A | 86.1 K | no steady temperature | |
+
+At 95% duty the model is 1.2 times the measured rise at 8 A, 1.9 times at 18 A and 4 times at 26 A.
+
+What they show:
+
+- **The path to the air is the larger error, and it is on the hot side.** With the standard test board's junction-to-air figure, the one the tool asks for, the model is about twice the measured rise on board A at every current and both frequencies, and on board C from 1.2 times at 12 A to 3.8 times at 27 A, where the loss and the temperature feed each other until there is no steady state at 29.5 A, a current the board carried at 111 °C. These boards have copper planes in several layers spreading the heat; the board model leaves out layers and vias (said in its limits) and takes the datasheet's figure, from a board made to a standard, as each package's own path. With the figure the datasheet gives on its maker's own evaluation board, board A comes to 1.15 to 1.35 times. No tool figure is fitted to this; the datasheet's second figure is a choice a user can make by typing it.
+- **At the lowest frequency the chain can land close.** Board B at 20 kHz is within 6% with the standard figure; board C at 8.6 A agrees. That is agreement of a sum, not of each part: the 21 K/W figure, nearer on board A, is 19 to 26% low on board B at 20 kHz.
+- **The switching estimate from charge grows faster with frequency than the boards do.** With the path taken out, board A agrees at 5 A, and at 19.5 A the rise at 100 kHz is 1.77 times the 50 kHz rise in the model against 1.53 measured; on board B the rise at 100 kHz is 3.71 times the 20 kHz rise in the model against 2.08 measured. Two things can make that, and the measurement cannot tell them apart: the estimate is high (the output charge of each of the four devices in parallel is taken through the full voltage at every hard turn-on; with the gate resistors at their least and a 1 nH loop the ratio still comes to 2.9), or loss outside the transistors that does not change with frequency, in the copper and shunts carrying 41 A, adds to the measured rise at every frequency alike and lowers the measured ratio. The second is what the first 48 V board above showed.
+- **Board C's loss, the path set aside, is low: a fixed 2 W the model does not draw, and half of what PWM adds.** Without PWM the measured loss is 2.0 W fixed plus a part in the square of the current; the fixed part is the gate driver, the supplies and the controller, which the guide puts at about 0.6 W for the driver alone and which nothing in the model draws. Of the part in the square of the current the model has 81%; the guide's 0.5 mΩ shunt in the link accounts for a third of the rest, and the board's copper can account for the remainder. What 20 kHz PWM adds, 95% against 100% duty at the same current, is 3.6 and 4.9 W measured at 21 and 26 A and half of that in the model: the switching estimate from charge, low here as it was at low current on the first board, with the snubbers' 0.2 W and the diode's conduction at each commutation, which the model leaves out, on the measured side.
+
+What they do not show: a junction temperature measured under the case, a part with measured switching energy, or a board whose own resistance or thermal path is known. Two parts, two makers' boards, all in still air. The guides' charts are read, not tabulated, and the readings are said with each.
 
 `motionsim validate` takes a file of measurements, for anyone with their own. A point can give each loss term on its own, how the stage was mounted, and a load that comes and goes with the junction's lowest and highest temperature once it repeats.
+
+## What a figure can claim, loss by loss
+
+There is no one accuracy figure for this tool, and none is given. What a result can claim depends on which loss it is and what it was worked out from. The published comparisons this rests on are listed, with their own conditions, in [CONTROL_RESEARCH.md](CONTROL_RESEARCH.md) section 4; they are other people's models on other people's hardware, and say what a datasheet-based method can reach, not what this tool has reached. This tool's own measured points are Level D above: four boards, two of them measured for loss and three for temperature.
+
+| Loss component | From the datasheet alone | What one measurement or a board file buys |
+|---|---|---|
+| Conduction, at a known current and junction temperature | The strongest footing: the curve is printed. What is left is the reading of typical values and the temperature. The spread between parts up to the datasheet's maximum is larger than the model's error and is shown apart from it | A measured on-resistance or forward drop of the actual part removes the spread |
+| Switching, from printed energy curves, at the datasheet's own gate resistor | Weaker, and the split between turn-on and turn-off is weaker than their sum: the datasheet's test fixture, its loop inductance and its opposite switch are not the application's. Published comparisons of datasheet-based models with double-pulse measurements find the sum closer than either part, the two errors partly cancelling | One double-pulse measurement on the real layout, given to `motionsim measure`, replaces the datasheet's energy. It is the measurement most worth making |
+| Switching, estimated from charges or from rise and fall times | The weakest. At Level D this estimate was about 30% low at low current and about a third high at high current on the first board, about half of what PWM added on the six-step board, and grew faster with frequency than two GaN boards did | The same double-pulse measurement |
+| Dead-time conduction | To first order from printed data, where the datasheet gives the reverse path's curve; a usual figure by technology where it does not. Counted for the whole dead time | The dead time the firmware really uses, which you know |
+| Board copper, connectors, shunts, capacitor loss, snubbers | Not in a device datasheet, and not in the model. At Level D the part of the measured loss that does not change with frequency was about three times the transistors' own conduction loss at the highest current | The board file gives the loop's copper resistance for a steady current, and the inductances that set the event's overshoot and ringing. It does not add the board's loss to the stage's. One resistance measurement a phase would |
+| The split of switching loss with layout | The loop inductance is assumed by the package's kind unless given. It moves turn-on and turn-off energy in opposite directions; the loss model's energy stays the datasheet's | The board file replaces the assumed inductances in the switching event with ones worked out from the copper, each with a band. The loss model's energy is still the datasheet's or yours |
+| Junction temperature rise | The loss's error carries through in proportion, and the thermal path adds its own: junction to case is printed, what lies beyond is yours, and heating between chips is a range. With no heatsink, a datasheet's junction-to-air figure from a standard test board put two published GaN boards up to 2.4 times their measured rise, and a silicon one up to 3.8 times and then into no steady state, while one board at 20 kHz came within 6% | One temperature reading at a known load fixes the path from case to air |
+
+For the control lab the same holds, with one thing added. Two schemes compared on the same device, board and motor share what the model gets wrong, so the difference between them is on firmer ground than either one's watts. The exception is a scheme that moves the current at the switching instant (a clamp placed on the current's peak, a predictive cost that charges commutations by their energy): its gain rests on the shape of the switching-energy curve against current, where the split between turn-on and turn-off matters.
+
+## The control lab
+
+Held by tests in CI (`tests/test_control_*.py`). Every expected value is a closed form, the tool's own settled engine, or linear theory worked apart from the run; none is a figure the lab gave before. None is a measurement.
+
+Against the settled engine, on the six made-up parts, each at its own starting design, held under torque control (`tests/test_control_engine.py`):
+
+- The mean d- and q-axis currents of the run are the engine's settled currents within 0.5% of the current's size, with the stage averaged and switched.
+- The switched run's total loss is the engine's within 1%, its conduction and its switching loss each within 1.5%, and the junction's peak rise over the heatsink within 1%. The six switches' own losses add up to the total, and the mean switching frequency is the design's within 0.1%.
+- On the part whose design switches 24 times in a turn of its output, sampling once a carrier period reads the current high and leaves the loss within 1.3% of the engine's; sampling twice closes it to 0.6%.
+- The switched run's current ripple, peak to peak, is the engine's analytic ripple within 5%, at five points on three parts. The averaged stage shows under 1% of it.
+- The power into the motor is the shaft power and the copper loss, ripple included, within 0.5%.
+
+The motor alone, against its equations by hand (`tests/test_control_plant.py`): a voltage step on a still rotor rises with L/R to 1 part in a million on the d axis; the back-EMF is the speed times the flux; the torque is the magnet's and the reluctance torque; the energy put in is the heat, the field, the motion and the load within 0.5%.
+
+Against linear theory (`tests/test_control_loops.py`):
+
+- A current step rises in the time the analysis predicts within 10%, with the overshoot within 1 point of the step, at standstill and at 2000 rpm, averaged and switched.
+- The closed current loop's gain, measured in time with a sine, falls to −3 dB at the frequency the analysis gives within 10%.
+- The phase margin is the one a calculation by hand gives within 0.1°, and the crossover within 0.2%; the tuning rule's gains are the rule worked by hand.
+- A speed step rises and settles as predicted within 10%, with the overshoot within 2 points, for the cascade sampled once and twice a period.
+- Each design starts on the scheme its kind calls for; a scheme goes to plain data and back unchanged; a parameter out of its bounds is refused by its place in the scheme.
+
+The blocks, each against what can be worked out by hand (`tests/test_control_blocks.py`, `tests/test_control_predictive.py`, `tests/test_control_schemes.py`):
+
+- An observer started knowing nothing finds the angle, and with its phase compensation off lags by its filter's phase.
+- A discontinuous modulation switches the share of the current the published analysis gives, 1 − ½·cos φ for a clamp on the voltage's peak and a half with the clamp on the current's, to 2 parts in 1000.
+- Deadbeat control is on its reference two samples after it is asked; with a wrong inductance its error shrinks by the textbook's factor, 1 − L̂/L, within 0.06; past twice the inductance it diverges.
+- The pair of least loss never loses more than the pair of least current, and makes the same torque.
+- The variable switching frequency holds the ripple to its limit within 3% with a mean frequency under 85% of the fixed one and under 90% of its switching loss, at the same torque within 0.5%.
+- At a stall, the thermal supervisor holds the junction under a limit the plain scheme passes by more than 3 K, and pays for it in torque; with the limit out of reach it changes nothing.
+- The predictive controller tracks its currents within 1% with no modulator; a heavier weight switches less and ripples more; at the same mean switching frequency it switches a smaller current than the modulated drive.
+- Every scheme offered holds the design point of unlike designs, and says where each figure it sets comes from.
+
+The explorations (`tests/test_control_explore.py`): each of the 23 is run on two unlike made-up designs, inside 60 s, and its headline moves the way the physics says, with the reason written beside the assertion.
+
+The service (`tests/test_control_run.py`): gains past the gain margin are run with a caution and a current that runs away is refused; a run of too many sampling instants is refused before it starts; a run with noise is the same run for the same seed; a second of switched simulation at 20 kHz takes under 8 s.
+
+The pulsed rating, the observer's floor, the hand-back and a window of the motion (`tests/test_control_held_more.py`):
+
+- After a torque step, the overshoot the pulsed rating is held to is the run's torque overshoot, read apart by the step-response metric, within half a point, and the current held is the run's own peak per switch within 2%. A rating between the two is cautioned in the run's words; a hold, with no step, is cautioned with the 15% allowance, said as one; the five steps' check says the same.
+- With an ideal stage the back-EMF observer's floor is its lock floor, 300/p rpm. With the dead time on it is four times t_dead·f_sw·V_dc over ψ, to 1 part in 1000; with noise on the samples it is that noise through √(R² + (g·L)²), worked by hand.
+- A motion that reverses through the floor is found to reverse, with its share of time under the floor counted by hand, and the verdict offers the hand-back.
+- With the hand-back set, a held design point is the run without it to the last figure, and its loss and junction rise are the settled engine's within 1%. A reversal from half the design speed to half the other way, which loses the rotor on the sliding-mode observer alone, ends within 1% of the speed asked for, with the angle within 10° of the rotor's wherever the scheme is on the observer.
+- A window of peak torque is centred on the motion's spike; under torque control the mean torque made over it is the mean of the motion's triangle by hand within 1%. A window of fastest change is centred on the steepest stretch; a speed scheme holds the motion's speed within 2% through the load's step.
+
+What this does not show: that the lab matches a real drive. No measured current, loss or temperature has been set beside a run: no public record of a permanent-magnet drive's measured phase currents, with the motor's figures and the drive's settings and a licence to use them, has been found.
+
+## The board reader
+
+Held by tests in CI (`tests/test_board_*.py`). The expected values are published closed forms, worked out in the test or by hand beside it.
+
+| What | Held to |
+|---|---|
+| A rectangular bar's own inductance | 1% on a 10 mm bar, 0.5% on a 100 mm bar |
+| A square thin tape's own, the exact form | 1 part in 10 000 |
+| A round wire's own | 0.5% |
+| Two parallel filaments' mutual | 2 parts in 100 000 |
+| A 60 by 40 mm rectangular loop of track, meshed and solved, against the rectangle-of-bar formula | 5%, by the steady and by the least-energy current |
+| That loop's resistance against its copper's | 5% |
+| A pair of planes against µ0·h·l/w | 10%; in proportion to the height within 10% |
+| A track and its return side by side against the two-bar formula | 5% |
+| A return on the next layer under the track | under 0.4 of the loop with the return beside it, and the least-energy figure under the steady one |
+| The same made-up board as KiCad and as IPC-2581 | the six figures within 1% |
+| The three legs of a made-up three-phase board | their loops within 5% of each other |
+
+Besides: the half bridge, its capacitors and each switch's gate drive are found on the made-up boards, with what the user names taken over the guess; a board with no bridge is refused with what was looked for; a file cut short anywhere, malformed or built to exhaust the reader is refused in a line; a layout from a board moves the switching event's turn-off overshoot the way its loop inductance says.
+
+What this does not show: that a figure from a real board is right. No board has been compared with a field solver or a measurement, and only made-up boards have been read.
 
 ## Datasheets the reader has been tried on
 

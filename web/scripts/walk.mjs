@@ -173,6 +173,8 @@ for (let walk = 0; walk < walks; walk++) {
   await page.reload();
   await page.waitForSelector("#panel h2", { timeout: 120000 });
   await settle(page);
+  // A first visit offers the file box behind "Your part".
+  if (!(await page.locator("#part-file").count())) await page.click("#panel [data-your-part]");
   await page.setInputFiles("#part-file", parts[0]);
   // In the browser the engine may still be starting when the part is brought: it is waited
   // for until it is in, or refused, on a budget a slow machine keeps to.

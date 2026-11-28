@@ -33,6 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 
 import numpy as np
+from scipy.signal import lfilter
 
 from motionsim.cycle import Cycle, Step
 from motionsim.device.schema import Device
@@ -109,6 +110,20 @@ class ChipState:
         decay = np.exp(-dt / self.tau)
         self.state = self.state * decay + power * self.r * (1 - decay)
 
+    def follow(self, powers: np.ndarray, dt: float) -> np.ndarray:
+        """advance() for each power in turn, each held for dt: the rise after each, K. The
+        same recurrence, run as one filter per stage of the network instead of a step at a
+        time in Python."""
+        decay = np.exp(-dt / self.tau)
+        rises = np.zeros(powers.size)
+        for s in range(self.r.size):
+            d = float(decay[s])
+            gain = float(self.r[s]) * (1 - d)
+            path, _ = lfilter([gain], [1.0, -d], powers, zi=[d * float(self.state[s])])
+            self.state[s] = path[-1]
+            rises += path
+        return rises
+
 
 class Lag:
     """A rise that follows where it is headed with one time constant."""
@@ -124,6 +139,23 @@ class Lag:
         if self.settled:
             self.settled, keep = False, 0.0
         self.value = target + (self.value - target) * keep
+
+    def follow(self, targets: np.ndarray, dt: float) -> np.ndarray:
+        """advance() for each target in turn, each held for dt: the value after each."""
+        if not targets.size:
+            return targets
+        first: list[float] = []
+        if self.settled:
+            self.settled = False
+            self.value = float(targets[0])
+            first, targets = [self.value], targets[1:]
+        keep = float(np.exp(-dt / self.tau)) if self.tau > 0 else 0.0
+        rest, _ = (
+            lfilter([1.0 - keep], [1.0, -keep], targets, zi=[keep * self.value]) if targets.size else (targets, None)
+        )
+        values = np.concatenate([first, rest])
+        self.value = float(values[-1])
+        return values
 
 
 def _static(role: RoleResult, chip: str, rth: float, t_sink: float) -> float:
@@ -335,7 +367,7 @@ class _Follower:
     def solved(self, s, t_sink: float) -> tuple[Step, tuple]:
         """The instant solved as if it lasted. Instants that ask the same of the stage are
         solved once: a hold or a cruise is many instants and one operating point."""
-        least = None if self.start is None else self.start.floor(s.motor_rpm)
+        least = None if self.start is None else self.start.floor(s.motor_rpm, s.resting)
         key = (
             rounded(s.motor_rpm, 9),
             rounded(s.motor_torque, 9),
@@ -362,7 +394,7 @@ class _Follower:
         if step.point is None:
             return step
         s = step.sample
-        least = None if self.start is None else self.start.floor(s.motor_rpm)
+        least = None if self.start is None else self.start.floor(s.motor_rpm, s.resting)
         op = replace(self.base, t_sink=round(t_sink / self.grid) * self.grid)
         point = at_speed_and_torque(self.device, self.motor, s.motor_rpm, s.motor_torque, op, least_current=least)
         return replace(step, point=point)
@@ -554,13 +586,14 @@ class _Follower:
             own.append(t_sink + rest.value + chip.rise)
             return reached, 0.0
         n = int(np.clip(np.ceil(turns * STEPS_PER_PERIOD), 8, MAX_SUBSTEPS))
-        for j in range(n):
-            k = int(((position + turns * (j + 0.5) / n) % 1.0) * power.size) % power.size
-            chip.advance(float(power[k]), dt / n)
-            rest.advance(target + (0.0 if swing is None else float(swing[k])), dt / n)
-            now = rest.value + chip.rise
-            reached, lowest = max(reached, now), min(lowest, now)
-            own.append(t_sink + now)
+        # The n sub-steps at once: where in the period each falls, the loss there, and every
+        # state moved through them in turn (the same recurrence as a step at a time).
+        at = (((position + turns * (np.arange(n) + 0.5) / n) % 1.0) * power.size).astype(int) % power.size
+        rises = chip.follow(np.asarray(power, dtype=float)[at], dt / n)
+        targets = target + (np.zeros(n) if swing is None else np.asarray(swing, dtype=float)[at])
+        now = rest.follow(targets, dt / n) + rises
+        reached, lowest = max(reached, float(now.max())), min(lowest, float(now.min()))
+        own.extend((t_sink + now).tolist())
         # Within the instant the junction went from its lowest to its highest: the swing a
         # slow turn puts on it, as long as the instant holds at most a turn of it.
         return reached, (reached - lowest) if 0 < turns <= 1.0 else 0.0

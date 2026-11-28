@@ -1,0 +1,1253 @@
+{
+  "chosen": "foc_servo",
+  "why": "a speed is held against the load: the usual cascade of a speed and a current regulator",
+  "schemes": [
+    {
+      "id": "foc_servo",
+      "label": "Cascaded speed and current control (servo)",
+      "about": "A speed regulator asks a torque, a current regulator in the rotor's frame makes it: the usual field-oriented servo, sampled once a carrier period with one period of computation.",
+      "timing": { "update": "single", "delay": true, "f_control": null },
+      "actuation": { "kind": "duties", "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"] },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": { "i_a": "plant.i_a", "i_b": "plant.i_b", "i_c": "plant.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": { "theta": "plant.theta_e", "omega_m": "plant.omega_m" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": { "a": "sample.i_a", "b": "sample.i_b", "c": "sample.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": { "alpha": "clarke.alpha", "beta": "clarke.beta", "theta": "position.theta" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": { "target": "cmd.speed" },
+          "params": { "shape": "step", "slew": 837.76, "jerk": 526380.0 },
+          "sources": {
+            "slew": "the acceleration the torque limit gives the inertia with no load",
+            "jerk": "that acceleration reached in one time constant of the speed loop"
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": { "ref": "speed_ref.ref", "speed": "position.omega_m" },
+          "params": { "kp": 3.5086, "ki": 324.34, "limit": 4.6782 },
+          "sources": {
+            "kp": "symmetric optimum a decade below the current loop (\u03c9s/2\u03c0 = 100 Hz, a = 6.8): Kp = J\u00b7\u03c9s, J = 0.00558 kg\u00b7m\u00b2.",
+            "ki": "symmetric optimum a decade below the current loop (\u03c9s/2\u03c0 = 100 Hz, a = 6.8): Ki = Kp\u00b7\u03c9s/a",
+            "limit": "the torque of the drive's current limit"
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": { "torque": "speed.torque" },
+          "params": { "shape": "step", "limit": 4.6782, "rate": 5878.8, "jerk": 14775000.0 },
+          "sources": {
+            "limit": "the torque of the drive's current limit",
+            "rate": "the whole torque limit in half the speed loop's time constant, 1/(2\u00b7\u03c9s)",
+            "jerk": "that rate reached in a quarter of the speed loop's time constant"
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": { "torque": "shaper.torque", "omega_m": "position.omega_m", "v_dc": "plant.v_dc" },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.569,
+            "voltage_share": 0.99222,
+            "torque_grid": 0.073097,
+            "speed_grid": 3.2725
+          },
+          "sources": {
+            "i_limit": "the motor's current limit",
+            "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, shortest pulse and the devices' drop), as the loss engine takes it",
+            "torque_grid": "1/64 of the torque limit",
+            "speed_grid": "1/64 of the design speed"
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": { "kp_d": 0.75398, "ki_d": 282.74, "kp_q": 0.75398, "ki_q": 282.74 },
+          "sources": {
+            "kp_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Kp = \u03c9c\u00b7Ld",
+            "ki_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs",
+            "kp_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Kp = \u03c9c\u00b7Lq",
+            "ki_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs"
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": { "advance": 1.5 },
+          "sources": { "advance": "the delay around the loop in sampling periods: half the hold, and the computation" }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": { "alpha": "inverse_park.alpha", "beta": "inverse_park.beta", "v_dc": "plant.v_dc" },
+          "params": { "pwm": "space-vector" },
+          "sources": { "pwm": "the modulation of the design" }
+        }
+      ]
+    },
+    {
+      "id": "foc_torque",
+      "label": "Torque control with least current and field weakening (traction)",
+      "about": "The torque asked for goes straight to the currents that make it with least current, and into field weakening where the voltage runs out; no speed regulator. What the loss engine's settled result is the end state of.",
+      "timing": { "update": "single", "delay": true, "f_control": null },
+      "actuation": { "kind": "duties", "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"] },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": { "i_a": "plant.i_a", "i_b": "plant.i_b", "i_c": "plant.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": { "theta": "plant.theta_e", "omega_m": "plant.omega_m" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": { "a": "sample.i_a", "b": "sample.i_b", "c": "sample.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": { "alpha": "clarke.alpha", "beta": "clarke.beta", "theta": "position.theta" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": { "torque": "cmd.torque" },
+          "params": { "shape": "step", "limit": 4.6782, "rate": 5878.8, "jerk": 14775000.0 },
+          "sources": {
+            "limit": "the torque of the drive's current limit",
+            "rate": "the whole torque limit in half the speed loop's time constant, 1/(2\u00b7\u03c9s)",
+            "jerk": "that rate reached in a quarter of the speed loop's time constant"
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": { "torque": "shaper.torque", "omega_m": "position.omega_m", "v_dc": "plant.v_dc" },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.569,
+            "voltage_share": 0.99222,
+            "torque_grid": 0.073097,
+            "speed_grid": 3.2725
+          },
+          "sources": {
+            "i_limit": "the motor's current limit",
+            "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, shortest pulse and the devices' drop), as the loss engine takes it",
+            "torque_grid": "1/64 of the torque limit",
+            "speed_grid": "1/64 of the design speed"
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": { "kp_d": 0.75398, "ki_d": 282.74, "kp_q": 0.75398, "ki_q": 282.74 },
+          "sources": {
+            "kp_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Kp = \u03c9c\u00b7Ld",
+            "ki_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs",
+            "kp_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Kp = \u03c9c\u00b7Lq",
+            "ki_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 1,000 Hz (a twentieth of the 20,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs"
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": { "advance": 1.5 },
+          "sources": { "advance": "the delay around the loop in sampling periods: half the hold, and the computation" }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": { "alpha": "inverse_park.alpha", "beta": "inverse_park.beta", "v_dc": "plant.v_dc" },
+          "params": { "pwm": "space-vector" },
+          "sources": { "pwm": "the modulation of the design" }
+        }
+      ]
+    },
+    {
+      "id": "foc_high_speed",
+      "label": "Speed control at a low carrier ratio (high speed)",
+      "about": "The same cascade sampled twice a carrier period, at its peak and its valley, with the angle advanced for the delay: for a motor that turns through a large angle in one switching period.",
+      "timing": { "update": "double", "delay": true, "f_control": null },
+      "actuation": { "kind": "duties", "wires": ["modulator.d_a", "modulator.d_b", "modulator.d_c"] },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": { "i_a": "plant.i_a", "i_b": "plant.i_b", "i_c": "plant.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": { "theta": "plant.theta_e", "omega_m": "plant.omega_m" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": { "a": "sample.i_a", "b": "sample.i_b", "c": "sample.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": { "alpha": "clarke.alpha", "beta": "clarke.beta", "theta": "position.theta" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "speed_ref",
+          "kind": "speed_reference",
+          "inputs": { "target": "cmd.speed" },
+          "params": { "shape": "step", "slew": 837.76, "jerk": 1052800.0 },
+          "sources": {
+            "slew": "the acceleration the torque limit gives the inertia with no load",
+            "jerk": "that acceleration reached in one time constant of the speed loop"
+          }
+        },
+        {
+          "name": "speed",
+          "kind": "speed_pi",
+          "inputs": { "ref": "speed_ref.ref", "speed": "position.omega_m" },
+          "params": { "kp": 7.0173, "ki": 1297.4, "limit": 4.6782 },
+          "sources": {
+            "kp": "symmetric optimum a decade below the current loop (\u03c9s/2\u03c0 = 200 Hz, a = 6.8): Kp = J\u00b7\u03c9s, J = 0.00558 kg\u00b7m\u00b2.",
+            "ki": "symmetric optimum a decade below the current loop (\u03c9s/2\u03c0 = 200 Hz, a = 6.8): Ki = Kp\u00b7\u03c9s/a",
+            "limit": "the torque of the drive's current limit"
+          }
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": { "torque": "speed.torque" },
+          "params": { "shape": "step", "limit": 4.6782, "rate": 11758.0, "jerk": 59100000.0 },
+          "sources": {
+            "limit": "the torque of the drive's current limit",
+            "rate": "the whole torque limit in half the speed loop's time constant, 1/(2\u00b7\u03c9s)",
+            "jerk": "that rate reached in a quarter of the speed loop's time constant"
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": { "torque": "shaper.torque", "omega_m": "position.omega_m", "v_dc": "plant.v_dc" },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.569,
+            "voltage_share": 0.99222,
+            "torque_grid": 0.073097,
+            "speed_grid": 3.2725
+          },
+          "sources": {
+            "i_limit": "the motor's current limit",
+            "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, shortest pulse and the devices' drop), as the loss engine takes it",
+            "torque_grid": "1/64 of the torque limit",
+            "speed_grid": "1/64 of the design speed"
+          }
+        },
+        {
+          "name": "current",
+          "kind": "current_pi_dq",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": { "kp_d": 1.508, "ki_d": 565.49, "kp_q": 1.508, "ki_q": 565.49 },
+          "sources": {
+            "kp_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 2,000 Hz (a twentieth of the 40,000 Hz sampling rate): Kp = \u03c9c\u00b7Ld",
+            "ki_d": "pole-zero cancellation at \u03c9c/2\u03c0 = 2,000 Hz (a twentieth of the 40,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs",
+            "kp_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 2,000 Hz (a twentieth of the 40,000 Hz sampling rate): Kp = \u03c9c\u00b7Lq",
+            "ki_q": "pole-zero cancellation at \u03c9c/2\u03c0 = 2,000 Hz (a twentieth of the 40,000 Hz sampling rate): Ki = \u03c9c\u00b7Rs"
+          }
+        },
+        {
+          "name": "inverse_park",
+          "kind": "inverse_park",
+          "inputs": {
+            "d": "current.v_d",
+            "q": "current.v_q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e"
+          },
+          "params": { "advance": 1.5 },
+          "sources": { "advance": "the delay around the loop in sampling periods: half the hold, and the computation" }
+        },
+        {
+          "name": "modulator",
+          "kind": "modulator",
+          "inputs": { "alpha": "inverse_park.alpha", "beta": "inverse_park.beta", "v_dc": "plant.v_dc" },
+          "params": { "pwm": "space-vector" },
+          "sources": { "pwm": "the modulation of the design" }
+        }
+      ]
+    },
+    {
+      "id": "mpc_torque",
+      "label": "Predictive torque control with no modulator (finite control set)",
+      "about": "The same torque-to-current reference, with the regulator and the modulator replaced by a controller that picks the legs' states directly. Its switching frequency is not set: it follows from the weight on commutations.",
+      "timing": { "update": "single", "delay": true, "f_control": 100000.0 },
+      "actuation": { "kind": "states", "wires": ["predictive.s_a", "predictive.s_b", "predictive.s_c"] },
+      "blocks": [
+        {
+          "name": "sample",
+          "kind": "current_sampling",
+          "inputs": { "i_a": "plant.i_a", "i_b": "plant.i_b", "i_c": "plant.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "position",
+          "kind": "position_sensing",
+          "inputs": { "theta": "plant.theta_e", "omega_m": "plant.omega_m" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "clarke",
+          "kind": "clarke",
+          "inputs": { "a": "sample.i_a", "b": "sample.i_b", "c": "sample.i_c" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "park",
+          "kind": "park",
+          "inputs": { "alpha": "clarke.alpha", "beta": "clarke.beta", "theta": "position.theta" },
+          "params": {},
+          "sources": {}
+        },
+        {
+          "name": "shaper",
+          "kind": "torque_shaper",
+          "inputs": { "torque": "cmd.torque" },
+          "params": { "shape": "step", "limit": 4.6782, "rate": 5878.8, "jerk": 14775000.0 },
+          "sources": {
+            "limit": "the torque of the drive's current limit",
+            "rate": "the whole torque limit in half the speed loop's time constant, 1/(2\u00b7\u03c9s)",
+            "jerk": "that rate reached in a quarter of the speed loop's time constant"
+          }
+        },
+        {
+          "name": "current_ref",
+          "kind": "current_reference",
+          "inputs": { "torque": "shaper.torque", "omega_m": "position.omega_m", "v_dc": "plant.v_dc" },
+          "params": {
+            "strategy": "mtpa_fw",
+            "i_limit": 56.569,
+            "voltage_share": 0.99222,
+            "torque_grid": 0.073097,
+            "speed_grid": 3.2725
+          },
+          "sources": {
+            "i_limit": "the motor's current limit",
+            "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, shortest pulse and the devices' drop), as the loss engine takes it",
+            "torque_grid": "1/64 of the torque limit",
+            "speed_grid": "1/64 of the design speed"
+          }
+        },
+        {
+          "name": "predictive",
+          "kind": "fcs_mpc",
+          "inputs": {
+            "id_ref": "current_ref.i_d",
+            "iq_ref": "current_ref.i_q",
+            "i_d": "park.d",
+            "i_q": "park.q",
+            "theta": "position.theta",
+            "omega_e": "position.omega_e",
+            "v_dc": "plant.v_dc"
+          },
+          "params": { "weight": 0.0, "delay_compensation": true },
+          "sources": { "weight": "no weight on commutations: the least current error, whatever it costs in switching" }
+        }
+      ]
+    }
+  ],
+  "blocks": {
+    "clarke": {
+      "kind": "clarke",
+      "title": "Clarke transform",
+      "definition": "Three phase currents as two in the stator's own axes (amplitude kept).",
+      "math": [
+        "i_\\alpha = \\tfrac{2}{3}\\left(i_a - \\tfrac12 i_b - \\tfrac12 i_c\\right)",
+        "i_\\beta = \\tfrac{1}{\\sqrt3}\\left(i_b - i_c\\right)"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "a", "unit": "A", "about": "phase a" },
+        { "name": "b", "unit": "A", "about": "phase b" },
+        { "name": "c", "unit": "A", "about": "phase c" }
+      ],
+      "outputs": [
+        { "name": "alpha", "unit": "A", "about": "along phase a" },
+        { "name": "beta", "unit": "A", "about": "a quarter turn ahead" }
+      ],
+      "params": []
+    },
+    "current_pi_dq": {
+      "kind": "current_pi_dq",
+      "title": "Current regulator (PI, rotor frame)",
+      "definition": "Asks the d- and q-axis voltages that close the current errors: a PI on each axis, with the cross-coupling between the axes and the back-EMF fed forward (each can be switched off), held inside the circle of voltage the modulation reaches, the integrals held while it holds. Tuned by cancelling the winding's pole: Kp = \u03c9c\u00b7L and Ki = \u03c9c\u00b7R, with \u03c9c the bandwidth asked for.",
+      "math": [
+        "v_d^* = K_{pd}\\,e_d + K_{id}\\!\\int e_d\\,dt - \\omega_e L_q i_q",
+        "v_q^* = K_{pq}\\,e_q + K_{iq}\\!\\int e_q\\,dt + \\omega_e L_d i_d + \\omega_e \\psi",
+        "\\sqrt{v_d^2 + v_q^2} \\le k\\,m_{max}\\,\\tfrac{V_{dc}}{2}",
+        "C(z) = K_p + K_i T_s \\frac{z}{z-1}"
+      ],
+      "linear": true,
+      "loop": "current",
+      "inputs": [
+        { "name": "id_ref", "unit": "A", "about": "d-axis current reference" },
+        { "name": "iq_ref", "unit": "A", "about": "q-axis current reference" },
+        { "name": "i_d", "unit": "A", "about": "d-axis current as measured" },
+        { "name": "i_q", "unit": "A", "about": "q-axis current as measured" },
+        { "name": "omega_e", "unit": "rad/s", "about": "electrical speed" },
+        { "name": "v_dc", "unit": "V", "about": "DC voltage" }
+      ],
+      "outputs": [
+        { "name": "v_d", "unit": "V", "about": "d-axis voltage asked for" },
+        { "name": "v_q", "unit": "V", "about": "q-axis voltage asked for" },
+        { "name": "err_d", "unit": "A", "about": "d-axis current error" },
+        { "name": "err_q", "unit": "A", "about": "q-axis current error" },
+        { "name": "limited", "unit": "", "about": "1 while the voltage limit holds" }
+      ],
+      "params": [
+        {
+          "name": "kp_d",
+          "unit": "V/A",
+          "value": 1.0,
+          "default": 1.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "proportional gain, d axis",
+          "source": ""
+        },
+        {
+          "name": "ki_d",
+          "unit": "V/(A\u00b7s)",
+          "value": 100.0,
+          "default": 100.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "integral gain, d axis",
+          "source": ""
+        },
+        {
+          "name": "kp_q",
+          "unit": "V/A",
+          "value": 1.0,
+          "default": 1.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "proportional gain, q axis",
+          "source": ""
+        },
+        {
+          "name": "ki_q",
+          "unit": "V/(A\u00b7s)",
+          "value": 100.0,
+          "default": 100.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "integral gain, q axis",
+          "source": ""
+        },
+        {
+          "name": "decoupling",
+          "unit": "",
+          "value": true,
+          "default": true,
+          "low": null,
+          "high": null,
+          "choices": [],
+          "about": "feed the cross-coupling between the axes forward",
+          "source": ""
+        },
+        {
+          "name": "bemf_feedforward",
+          "unit": "",
+          "value": true,
+          "default": true,
+          "low": null,
+          "high": null,
+          "choices": [],
+          "about": "feed the back-EMF forward",
+          "source": ""
+        },
+        {
+          "name": "anti_windup",
+          "unit": "",
+          "value": true,
+          "default": true,
+          "low": null,
+          "high": null,
+          "choices": [],
+          "about": "hold the integrals while the voltage limit holds",
+          "source": ""
+        },
+        {
+          "name": "voltage_share",
+          "unit": "",
+          "value": 1.0,
+          "default": 1.0,
+          "low": 0.1,
+          "high": 1.5,
+          "choices": [],
+          "about": "share of the modulation's linear range the voltage is held to",
+          "source": ""
+        }
+      ]
+    },
+    "current_reference": {
+      "kind": "current_reference",
+      "title": "Torque to current reference",
+      "definition": "The d- and q-axis currents that make the torque: the pair of least current, and field weakening where the voltage runs out, both worked out by the same solver the loss engine settles its currents with; or the d-axis current held at nought. Held to the drive's current limit.",
+      "math": [
+        "T = \\tfrac32\\,p\\,\\left(\\psi\\,i_q + (L_d - L_q)\\,i_d\\,i_q\\right)",
+        "\\min\\ i_d^2 + i_q^2 \\quad \\text{(least current)}",
+        "v_d^2 + v_q^2 \\le \\left(k\\,m_{max}\\,\\tfrac{V_{dc}}{2}\\right)^2 \\quad \\text{(field weakening)}"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "torque", "unit": "N\u00b7m", "about": "torque asked for" },
+        { "name": "omega_m", "unit": "rad/s", "about": "shaft speed as sensed" },
+        { "name": "v_dc", "unit": "V", "about": "DC voltage" }
+      ],
+      "outputs": [
+        { "name": "i_d", "unit": "A", "about": "d-axis current reference" },
+        { "name": "i_q", "unit": "A", "about": "q-axis current reference" }
+      ],
+      "params": [
+        {
+          "name": "strategy",
+          "unit": "",
+          "value": "mtpa_fw",
+          "default": "mtpa_fw",
+          "low": null,
+          "high": null,
+          "choices": ["mtpa_fw", "id_zero"],
+          "about": "least current with field weakening, or id = 0",
+          "source": ""
+        },
+        {
+          "name": "i_limit",
+          "unit": "A",
+          "value": 1000000000000.0,
+          "default": 1000000000000.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most current asked for, peak",
+          "source": ""
+        },
+        {
+          "name": "voltage_share",
+          "unit": "",
+          "value": 1.0,
+          "default": 1.0,
+          "low": 0.1,
+          "high": 1.0,
+          "choices": [],
+          "about": "share of the modulation's linear range field weakening keeps to",
+          "source": ""
+        },
+        {
+          "name": "torque_grid",
+          "unit": "N\u00b7m",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "grid of torque the solver is read between while moving; 0: asked at every value",
+          "source": ""
+        },
+        {
+          "name": "speed_grid",
+          "unit": "rad/s",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "grid of speed the solver is read between while moving; 0: asked at every value",
+          "source": ""
+        }
+      ]
+    },
+    "current_sampling": {
+      "kind": "current_sampling",
+      "title": "Current sampling",
+      "definition": "Reads two phase currents at the sampling instant (the carrier's peak, where the ripple passes through its mean) and makes the third from them; a sensor's noise, offset, gain error and the converter's steps are added where given.",
+      "math": [
+        "\\hat i_a = \\mathrm{Q}\\!\\left[(1+g)\\,i_a + o + n\\right]",
+        "\\hat i_b = \\mathrm{Q}\\!\\left[i_b + n\\right]",
+        "\\hat i_c = -\\hat i_a - \\hat i_b"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "i_a", "unit": "A", "about": "phase a current" },
+        { "name": "i_b", "unit": "A", "about": "phase b current" },
+        { "name": "i_c", "unit": "A", "about": "phase c current" }
+      ],
+      "outputs": [
+        { "name": "i_a", "unit": "A", "about": "sampled phase a current" },
+        { "name": "i_b", "unit": "A", "about": "sampled phase b current" },
+        { "name": "i_c", "unit": "A", "about": "phase c current made from the other two" }
+      ],
+      "params": [
+        {
+          "name": "noise",
+          "unit": "A",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 10000.0,
+          "choices": [],
+          "about": "gaussian noise on each sample, rms",
+          "source": ""
+        },
+        {
+          "name": "offset",
+          "unit": "A",
+          "value": 0.0,
+          "default": 0.0,
+          "low": -10000.0,
+          "high": 10000.0,
+          "choices": [],
+          "about": "offset of the phase a sensor",
+          "source": ""
+        },
+        {
+          "name": "gain_error",
+          "unit": "",
+          "value": 0.0,
+          "default": 0.0,
+          "low": -0.5,
+          "high": 0.5,
+          "choices": [],
+          "about": "gain error of the phase a sensor, as a share",
+          "source": ""
+        },
+        {
+          "name": "bits",
+          "unit": "bit",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 24.0,
+          "choices": [],
+          "about": "resolution of the converter; 0 for none",
+          "source": ""
+        },
+        {
+          "name": "full_scale",
+          "unit": "A",
+          "value": 100.0,
+          "default": 100.0,
+          "low": 0.001,
+          "high": 1000000.0,
+          "choices": [],
+          "about": "current at the converter's full scale, either way",
+          "source": ""
+        }
+      ]
+    },
+    "fcs_mpc": {
+      "kind": "fcs_mpc",
+      "title": "Predictive current control (finite control set)",
+      "definition": "Chooses the state of the three legs directly, with no modulator: of the eight, the one whose predicted current one step on lies nearest the reference, a commutation costing \u03bb amperes. With the one-sample delay, the current is first predicted to the instant the choice takes effect.",
+      "math": [
+        "i_{dq}[k+1] = i_{dq}[k] + T_s\\,L^{-1}\\!\\left(v_{dq}(s) - R\\,i_{dq}[k] - \\omega_e J L\\,i_{dq}[k] - \\omega_e \\psi\\,e_q\\right)",
+        "g(s) = \\left|i_d^* - i_d[k+2]\\right| + \\left|i_q^* - i_q[k+2]\\right| + \\lambda\\,n_{sw}(s, s_{k+1})",
+        "s_{k+1}^{\\,next} = \\arg\\min_{s \\in \\{0..7\\}} g(s)"
+      ],
+      "linear": false,
+      "loop": "current",
+      "inputs": [
+        { "name": "id_ref", "unit": "A", "about": "d-axis current reference" },
+        { "name": "iq_ref", "unit": "A", "about": "q-axis current reference" },
+        { "name": "i_d", "unit": "A", "about": "d-axis current as measured" },
+        { "name": "i_q", "unit": "A", "about": "q-axis current as measured" },
+        { "name": "theta", "unit": "rad", "about": "electrical angle" },
+        { "name": "omega_e", "unit": "rad/s", "about": "electrical speed" },
+        { "name": "v_dc", "unit": "V", "about": "DC voltage" }
+      ],
+      "outputs": [
+        { "name": "s_a", "unit": "", "about": "leg a: 1 with the high side on" },
+        { "name": "s_b", "unit": "", "about": "leg b: 1 with the high side on" },
+        { "name": "s_c", "unit": "", "about": "leg c: 1 with the high side on" },
+        { "name": "cost", "unit": "A", "about": "cost of the state chosen" }
+      ],
+      "params": [
+        {
+          "name": "weight",
+          "unit": "A",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 1000000.0,
+          "choices": [],
+          "about": "\u03bb: what one leg's commutation costs, in amperes of current error",
+          "source": ""
+        },
+        {
+          "name": "delay_compensation",
+          "unit": "",
+          "value": true,
+          "default": true,
+          "low": null,
+          "high": null,
+          "choices": [],
+          "about": "predict to the instant the choice takes effect first",
+          "source": ""
+        }
+      ]
+    },
+    "inverse_park": {
+      "kind": "inverse_park",
+      "title": "Inverse Park transform",
+      "definition": "Rotor-frame voltages turned back to the stator's frame, at the angle the rotor will have reached when the voltage is applied: `advance` sampling periods ahead (1.5 with a one-sample delay: the delay, and half the period the voltage is held for; 0.5 without).",
+      "math": [
+        "\\theta' = \\theta + a\\,\\omega_e T_s",
+        "v_\\alpha = v_d\\cos\\theta' - v_q\\sin\\theta'",
+        "v_\\beta = v_d\\sin\\theta' + v_q\\cos\\theta'"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "d", "unit": "V", "about": "d-axis voltage" },
+        { "name": "q", "unit": "V", "about": "q-axis voltage" },
+        { "name": "theta", "unit": "rad", "about": "electrical angle" },
+        { "name": "omega_e", "unit": "rad/s", "about": "electrical speed" }
+      ],
+      "outputs": [
+        { "name": "alpha", "unit": "V", "about": "along phase a" },
+        { "name": "beta", "unit": "V", "about": "a quarter turn ahead" }
+      ],
+      "params": [
+        {
+          "name": "advance",
+          "unit": "samples",
+          "value": 1.5,
+          "default": 1.5,
+          "low": 0.0,
+          "high": 4.0,
+          "choices": [],
+          "about": "sampling periods the angle is advanced by",
+          "source": ""
+        }
+      ]
+    },
+    "modulator": {
+      "kind": "modulator",
+      "title": "Modulator",
+      "definition": "Turns the voltage asked for into the three legs' duty cycles: each phase's share of half the DC voltage, shifted together by the scheme's zero-sequence signal (the same shifts the loss engine uses), and held between 0 and 1.",
+      "math": [
+        "u_x = \\frac{v_x}{V_{dc}/2},\\quad x \\in \\{a,b,c\\}",
+        "d_x = \\mathrm{clip}\\!\\left(\\tfrac12\\,(1 + u_x + u_0),\\,0,\\,1\\right)",
+        "u_0 = -\\tfrac12\\left(\\max u_x + \\min u_x\\right)\\ \\text{(space-vector)}"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "alpha", "unit": "V", "about": "voltage along phase a" },
+        { "name": "beta", "unit": "V", "about": "voltage a quarter turn ahead" },
+        { "name": "v_dc", "unit": "V", "about": "DC voltage" }
+      ],
+      "outputs": [
+        { "name": "d_a", "unit": "", "about": "duty cycle of leg a's high side" },
+        { "name": "d_b", "unit": "", "about": "duty cycle of leg b's high side" },
+        { "name": "d_c", "unit": "", "about": "duty cycle of leg c's high side" },
+        { "name": "m", "unit": "", "about": "modulation index asked for" }
+      ],
+      "params": [
+        {
+          "name": "pwm",
+          "unit": "",
+          "value": "space-vector",
+          "default": "space-vector",
+          "low": null,
+          "high": null,
+          "choices": [
+            "sine",
+            "third-harmonic",
+            "space-vector",
+            "discontinuous",
+            "discontinuous-high",
+            "discontinuous-low"
+          ],
+          "about": "how the three references are shifted",
+          "source": ""
+        }
+      ]
+    },
+    "park": {
+      "kind": "park",
+      "title": "Park transform",
+      "definition": "Stator-frame quantities seen from the rotor: d along the magnet, q a quarter turn ahead.",
+      "math": [
+        "x_d = x_\\alpha\\cos\\theta + x_\\beta\\sin\\theta",
+        "x_q = -x_\\alpha\\sin\\theta + x_\\beta\\cos\\theta"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "alpha", "unit": "", "about": "stator-frame component along phase a" },
+        { "name": "beta", "unit": "", "about": "stator-frame component a quarter turn ahead" },
+        { "name": "theta", "unit": "rad", "about": "electrical angle" }
+      ],
+      "outputs": [
+        { "name": "d", "unit": "", "about": "along the magnet" },
+        { "name": "q", "unit": "", "about": "a quarter turn ahead of it" }
+      ],
+      "params": []
+    },
+    "position_sensing": {
+      "kind": "position_sensing",
+      "title": "Position sensing",
+      "definition": "Gives the controller the rotor's angle and speed: as they are (ideal), or as an encoder of so many counts a turn reads them, so many seconds late, with the speed taken from the counts over a window.",
+      "math": [
+        "\\hat\\theta_m[k] = \\frac{2\\pi}{N}\\left\\lfloor \\frac{N\\,\\theta_m(t_k - T_\\ell)}{2\\pi} \\right\\rfloor",
+        "\\hat\\omega_m[k] = \\frac{\\hat\\theta_m[k] - \\hat\\theta_m[k-W]}{W\\,T_s}",
+        "\\hat\\theta_e = p\\,\\hat\\theta_m"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [
+        { "name": "theta", "unit": "rad", "about": "the rotor's electrical angle" },
+        { "name": "omega_m", "unit": "rad/s", "about": "the shaft's speed" }
+      ],
+      "outputs": [
+        { "name": "theta", "unit": "rad", "about": "electrical angle as sensed" },
+        { "name": "omega_m", "unit": "rad/s", "about": "shaft speed as sensed" },
+        { "name": "omega_e", "unit": "rad/s", "about": "electrical speed as sensed" }
+      ],
+      "params": [
+        {
+          "name": "sensor",
+          "unit": "",
+          "value": "ideal",
+          "default": "ideal",
+          "low": null,
+          "high": null,
+          "choices": ["ideal", "encoder"],
+          "about": "ideal, or an encoder with counts and latency",
+          "source": ""
+        },
+        {
+          "name": "counts",
+          "unit": "1/turn",
+          "value": 4096.0,
+          "default": 4096.0,
+          "low": 4.0,
+          "high": 100000000.0,
+          "choices": [],
+          "about": "encoder counts in one turn of the shaft",
+          "source": ""
+        },
+        {
+          "name": "latency",
+          "unit": "s",
+          "value": 0.0,
+          "default": 0.0,
+          "low": 0.0,
+          "high": 0.01,
+          "choices": [],
+          "about": "how late the angle is read",
+          "source": ""
+        },
+        {
+          "name": "speed_window",
+          "unit": "samples",
+          "value": 8.0,
+          "default": 8.0,
+          "low": 1.0,
+          "high": 4096.0,
+          "choices": [],
+          "about": "samples the speed is taken over",
+          "source": ""
+        }
+      ]
+    },
+    "speed_pi": {
+      "kind": "speed_pi",
+      "title": "Speed regulator (PI)",
+      "definition": "Asks the torque that closes the speed error: proportional and integral, held to a torque limit, the integral stopped while the limit holds (anti-windup). Tuned by symmetric optimum, a decade below the current loop.",
+      "math": [
+        "e = \\omega^* - \\omega",
+        "T^* = \\mathrm{sat}\\!\\left(K_p\\,e + K_i\\!\\int e\\,dt\\right)",
+        "C(z) = K_p + K_i T_s \\frac{z}{z-1}"
+      ],
+      "linear": true,
+      "loop": "speed",
+      "inputs": [
+        { "name": "ref", "unit": "rad/s", "about": "speed reference" },
+        { "name": "speed", "unit": "rad/s", "about": "speed as sensed" }
+      ],
+      "outputs": [
+        { "name": "torque", "unit": "N\u00b7m", "about": "torque asked for" },
+        { "name": "error", "unit": "rad/s", "about": "speed error" }
+      ],
+      "params": [
+        {
+          "name": "kp",
+          "unit": "N\u00b7m\u00b7s/rad",
+          "value": 0.1,
+          "default": 0.1,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "proportional gain",
+          "source": ""
+        },
+        {
+          "name": "ki",
+          "unit": "N\u00b7m/rad",
+          "value": 1.0,
+          "default": 1.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "integral gain",
+          "source": ""
+        },
+        {
+          "name": "limit",
+          "unit": "N\u00b7m",
+          "value": 1000000000000.0,
+          "default": 1000000000000.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most torque asked for, either way",
+          "source": ""
+        },
+        {
+          "name": "anti_windup",
+          "unit": "",
+          "value": true,
+          "default": true,
+          "low": null,
+          "high": null,
+          "choices": [],
+          "about": "stop the integral while the limit holds",
+          "source": ""
+        }
+      ]
+    },
+    "speed_reference": {
+      "kind": "speed_reference",
+      "title": "Speed reference",
+      "definition": "Takes the speed asked for to the speed regulator: at once (step), at a limited acceleration (slew), or with the acceleration itself limited in how fast it changes (S-curve).",
+      "math": [
+        "\\left|\\frac{d\\omega^*}{dt}\\right| \\le a_{max}",
+        "\\left|\\frac{d^2\\omega^*}{dt^2}\\right| \\le j_{max}\\ \\text{(S-curve)}"
+      ],
+      "linear": false,
+      "loop": "",
+      "inputs": [{ "name": "target", "unit": "rad/s", "about": "speed asked for" }],
+      "outputs": [
+        { "name": "ref", "unit": "rad/s", "about": "speed reference" },
+        { "name": "accel", "unit": "rad/s2", "about": "its rate of change" }
+      ],
+      "params": [
+        {
+          "name": "shape",
+          "unit": "",
+          "value": "slew",
+          "default": "slew",
+          "low": null,
+          "high": null,
+          "choices": ["step", "slew", "s-curve"],
+          "about": "step, slew or s-curve",
+          "source": ""
+        },
+        {
+          "name": "slew",
+          "unit": "rad/s2",
+          "value": 1000.0,
+          "default": 1000.0,
+          "low": 1e-6,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most acceleration of the reference",
+          "source": ""
+        },
+        {
+          "name": "jerk",
+          "unit": "rad/s3",
+          "value": 100000.0,
+          "default": 100000.0,
+          "low": 1e-6,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most rate of change of that acceleration (S-curve)",
+          "source": ""
+        }
+      ]
+    },
+    "torque_shaper": {
+      "kind": "torque_shaper",
+      "title": "Torque limit and shaping",
+      "definition": "Holds the torque asked for to the limit the drive's current allows, and shapes how it gets there: at once (a hard limit), at a limited rate, or along an S-curve.",
+      "math": ["|T^*| \\le T_{max}", "\\left|\\frac{dT^*}{dt}\\right| \\le r_{max}\\ \\text{(slew, S-curve)}"],
+      "linear": false,
+      "loop": "",
+      "inputs": [{ "name": "torque", "unit": "N\u00b7m", "about": "torque asked for" }],
+      "outputs": [{ "name": "torque", "unit": "N\u00b7m", "about": "torque passed on" }],
+      "params": [
+        {
+          "name": "shape",
+          "unit": "",
+          "value": "step",
+          "default": "step",
+          "low": null,
+          "high": null,
+          "choices": ["step", "slew", "s-curve"],
+          "about": "step (hard limit), slew or s-curve",
+          "source": ""
+        },
+        {
+          "name": "limit",
+          "unit": "N\u00b7m",
+          "value": 1000000000000.0,
+          "default": 1000000000000.0,
+          "low": 0.0,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most torque passed on, either way",
+          "source": ""
+        },
+        {
+          "name": "rate",
+          "unit": "N\u00b7m/s",
+          "value": 1000.0,
+          "default": 1000.0,
+          "low": 1e-9,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most rate of change of the torque",
+          "source": ""
+        },
+        {
+          "name": "jerk",
+          "unit": "N\u00b7m/s2",
+          "value": 1000000.0,
+          "default": 1000000.0,
+          "low": 1e-9,
+          "high": 1000000000000.0,
+          "choices": [],
+          "about": "most rate of change of that rate (S-curve)",
+          "source": ""
+        }
+      ]
+    }
+  },
+  "sources": [
+    { "name": "time.t", "unit": "s", "about": "time" },
+    { "name": "plant.i_a", "unit": "A", "about": "phase a current, at the sampling instant" },
+    { "name": "plant.i_b", "unit": "A", "about": "phase b current, at the sampling instant" },
+    { "name": "plant.i_c", "unit": "A", "about": "phase c current, at the sampling instant" },
+    { "name": "plant.i_d", "unit": "A", "about": "true d-axis current" },
+    { "name": "plant.i_q", "unit": "A", "about": "true q-axis current" },
+    { "name": "plant.theta_e", "unit": "rad", "about": "true electrical angle" },
+    { "name": "plant.omega_m", "unit": "rad/s", "about": "true shaft speed" },
+    { "name": "plant.torque", "unit": "N\u00b7m", "about": "torque the motor makes" },
+    { "name": "plant.load_torque", "unit": "N\u00b7m", "about": "torque the load asks" },
+    { "name": "plant.v_dc", "unit": "V", "about": "DC voltage" },
+    { "name": "cmd.speed", "unit": "rad/s", "about": "speed the test asks for" },
+    { "name": "cmd.torque", "unit": "N\u00b7m", "about": "torque the test asks for" }
+  ],
+  "scenarios": [
+    {
+      "kind": "hold",
+      "label": "Hold the design point",
+      "about": "The drive settled at the design speed and torque.",
+      "needs": null,
+      "fields": [
+        { "name": "periods", "unit": "turns", "about": "turns of the output analysed" },
+        { "name": "settle", "unit": "s", "about": "time before them, for the loop to settle" }
+      ],
+      "defaults": {
+        "foc_servo": { "periods": 4, "settle": 0.011937 },
+        "foc_torque": { "periods": 4, "settle": 0.01 },
+        "foc_high_speed": { "periods": 4, "settle": 0.0085714 },
+        "mpc_torque": { "periods": 4, "settle": 0.01 }
+      }
+    },
+    {
+      "kind": "torque_step",
+      "label": "Torque step",
+      "about": "The torque asked for steps at a held speed.",
+      "needs": "cmd.torque",
+      "fields": [
+        { "name": "from", "unit": "N\u00b7m", "about": "torque before the step" },
+        { "name": "to", "unit": "N\u00b7m", "about": "torque after the step" },
+        { "name": "rpm", "unit": "rpm", "about": "speed the shaft is held at" },
+        { "name": "t_step", "unit": "s", "about": "when the step is made" },
+        { "name": "duration", "unit": "s", "about": "length of the test" }
+      ],
+      "defaults": {
+        "foc_servo": { "from": 0.0, "to": 1.0, "rpm": 2000.0, "t_step": 0.002, "duration": 0.012 },
+        "foc_torque": { "from": 0.0, "to": 1.0, "rpm": 2000.0, "t_step": 0.002, "duration": 0.012 },
+        "foc_high_speed": { "from": 0.0, "to": 1.0, "rpm": 2000.0, "t_step": 0.002, "duration": 0.012 },
+        "mpc_torque": { "from": 0.0, "to": 1.0, "rpm": 2000.0, "t_step": 0.002, "duration": 0.012 }
+      }
+    },
+    {
+      "kind": "speed_step",
+      "label": "Speed step",
+      "about": "The speed asked for steps, against the load.",
+      "needs": "cmd.speed",
+      "fields": [
+        { "name": "from_rpm", "unit": "rpm", "about": "speed before the step" },
+        { "name": "to_rpm", "unit": "rpm", "about": "speed after the step" },
+        { "name": "t_step", "unit": "s", "about": "when the step is made" },
+        { "name": "duration", "unit": "s", "about": "length of the test" }
+      ],
+      "defaults": {
+        "foc_servo": { "from_rpm": 1800.0, "to_rpm": 2000.0, "t_step": 0.02, "duration": 0.067746 },
+        "foc_torque": { "from_rpm": 1800.0, "to_rpm": 2000.0, "t_step": 0.02, "duration": 0.067746 },
+        "foc_high_speed": { "from_rpm": 1800.0, "to_rpm": 2000.0, "t_step": 0.02, "duration": 0.043873 },
+        "mpc_torque": { "from_rpm": 1800.0, "to_rpm": 2000.0, "t_step": 0.02, "duration": 0.029549 }
+      }
+    },
+    {
+      "kind": "start",
+      "label": "Start from standstill",
+      "about": "From rest to a speed against the load, at the current limit.",
+      "needs": null,
+      "fields": [
+        { "name": "to_rpm", "unit": "rpm", "about": "speed to reach" },
+        { "name": "duration", "unit": "s", "about": "the most the test lasts" },
+        { "name": "shape", "unit": "", "about": "how the torque comes up to its limit: hard, slew or s-curve" },
+        { "name": "current_limit", "unit": "A", "about": "the drive's current limit, rms" }
+      ],
+      "defaults": {
+        "foc_servo": { "to_rpm": 2000.0, "duration": 0.8, "shape": "hard", "current_limit": 40.0 },
+        "foc_torque": { "to_rpm": 2000.0, "duration": 0.8, "shape": "hard", "current_limit": 40.0 },
+        "foc_high_speed": { "to_rpm": 2000.0, "duration": 0.8, "shape": "hard", "current_limit": 40.0 },
+        "mpc_torque": { "to_rpm": 2000.0, "duration": 0.8, "shape": "hard", "current_limit": 40.0 }
+      }
+    },
+    {
+      "kind": "load_step",
+      "label": "Load step",
+      "about": "The load's torque steps while the speed is held.",
+      "needs": "cmd.speed",
+      "fields": [
+        { "name": "torque", "unit": "N\u00b7m", "about": "torque added to the load" },
+        { "name": "t_step", "unit": "s", "about": "when the step is made" },
+        { "name": "duration", "unit": "s", "about": "length of the test" }
+      ],
+      "defaults": {
+        "foc_servo": { "torque": 0.5, "t_step": 0.02, "duration": 0.067746 },
+        "foc_torque": { "torque": 0.5, "t_step": 0.02, "duration": 0.067746 },
+        "foc_high_speed": { "torque": 0.5, "t_step": 0.02, "duration": 0.043873 },
+        "mpc_torque": { "torque": 0.5, "t_step": 0.02, "duration": 0.029549 }
+      }
+    }
+  ],
+  "fidelities": ["switched", "averaged"],
+  "limits": { "duration": 5.0, "steps": 500000, "points": 5000 },
+  "design": {
+    "rpm": 2000.0,
+    "torque": 1.0,
+    "v_dc": 48.0,
+    "f_sw": 20000.0,
+    "f_out": 233.33,
+    "carrier_ratio": 85.714,
+    "i_design": 12.092,
+    "i_limit": 56.569,
+    "torque_limit": 4.6782,
+    "inertia": 0.0055842,
+    "usable": 0.99222,
+    "pwm": "space-vector"
+  },
+  "taken": [
+    "no inertia is given: 0.00558 kg\u00b7m\u00b2 is taken, which the torque limit runs up to the design speed in a quarter of a second"
+  ]
+}

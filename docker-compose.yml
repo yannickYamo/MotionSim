@@ -1,0 +1,83 @@
+# MotionSim on this machine, in one command:
+#
+#   docker compose up
+#
+# then open http://127.0.0.1:4310/ and, to read datasheet PDFs, set your language-model key
+# under Settings on the page. Ctrl+C stops it; what you brought and saved stays in the volume.
+# A coding agent connects at http://localhost:4310/mcp with the access code Settings shows
+# (docs/MCP.md).
+#
+# The cross-compilers a port to a microcontroller is compiled with are optional, in a service
+# of their own (docs/EXPORT_C.md). The page and the service share a token, made once:
+#
+#   make firmware-token                 (keeps MOTIONSIM_FIRMWARE_TOKEN in .env)
+#   docker compose --profile firmware up
+#
+# Without it the C export and its port are made all the same: the source, replayed against the
+# engine by the image's own gcc, and a port that says it was not compiled for the chip.
+
+services:
+  motionsim:
+    build: .
+    image: motionsim:local
+    ports:
+      # This machine only: nothing else on the network reaches the page. The page answers
+      # to 127.0.0.1 and localhost by name, on whichever port is put before the colon.
+      # The same port as `motionsim serve`, so the agent's address is one: 4310.
+      - "127.0.0.1:${MOTIONSIM_PORT:-4310}:8000"
+    volumes:
+      # The device files, the local store and the reader's key.
+      - motionsim-data:/data
+    environment:
+      # Where the page is opened from this machine, said when it starts.
+      - MOTIONSIM_PUBLISHED=127.0.0.1:${MOTIONSIM_PORT:-4310}
+      # The datasheet reader's key is set under Settings on the page, and kept in the volume.
+      # To hand the container the key of the shell that runs compose instead, take the # off
+      # the next line: the container then has it in its environment for as long as it runs.
+      # - ANTHROPIC_API_KEY
+      # The firmware service, where `--profile firmware` started it: the port is compiled there,
+      # with the token the two share (make firmware-token; none set, the service does not start).
+      - MOTIONSIM_FIRMWARE_URL=http://firmware:8090
+      - MOTIONSIM_FIRMWARE_TOKEN=${MOTIONSIM_FIRMWARE_TOKEN:-}
+    # The page cannot gain rights it was not started with, holds none of root's, and writes
+    # only to its volume. A file made to cost memory or a flood of requests stops at these
+    # bounds and not at the machine's.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      # The replay builds the law in here and runs it: a tmpfs is noexec unless told.
+      - /tmp:exec,nosuid,nodev
+    mem_limit: 2g
+    pids_limit: 256
+
+  # Compiles a port with arm-none-eabi-gcc, riscv64-unknown-elf-gcc and the ESP32-S3's
+  # xtensa-esp32s3-elf-gcc; links nothing, runs nothing. The C2000 compiler and XC16 may not be
+  # redistributed: a port to those chips is source only. Started only with --profile firmware.
+  firmware:
+    profiles: [firmware]
+    build:
+      context: .
+      dockerfile: tools/firmware/Dockerfile
+    image: motionsim-firmware:local
+    ports:
+      # This machine only, for `motionsim serve` run outside compose (its default address).
+      # Inside, the service listens on every interface of its container (tools/firmware/Dockerfile).
+      - "127.0.0.1:${MOTIONSIM_FIRMWARE_PORT:-4391}:8090"
+    environment:
+      # Every compile request carries it; a request without it is refused.
+      - MOTIONSIM_FIRMWARE_TOKEN=${MOTIONSIM_FIRMWARE_TOKEN:-}
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    mem_limit: 1g
+    pids_limit: 128
+
+volumes:
+  motionsim-data:

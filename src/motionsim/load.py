@@ -11,6 +11,7 @@ Speeds and torques on the load side unless said otherwise.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -66,12 +67,54 @@ class Tumble(_Model):
         return float(self.mass * G * self.radius * 0.5 * (1 + LIFT_SWING * np.sin(LIFTERS * angle)) * share)
 
 
-class Pulsation(_Model):
-    """A torque that pulses with the load's turn, as a rotary compressor's does as it
-    compresses a pocket of gas each turn: torque * sin(per_turn * angle) on top of the rest."""
+# The gas torque of a rolling-piston (rotary) compressor through one turn of its shaft, as a
+# shape with mean nought and peak one. The pocket closes at suction pressure at the top of the
+# turn and is squeezed polytropically (pV^n constant) as the roller sweeps it, its volume
+# falling in proportion to the angle swept; at the discharge pressure the valve opens and the
+# pressure holds until the turn ends. The torque on the shaft is the pressure above suction
+# on the roller, through the eccentric's lever, which grows with the angle as sin(θ/2). With the
+# pressure ratio of an air conditioner (about 3) the peak stands about twice the mean above it,
+# late in the turn, and the torque is low for the first third: the shape a single-rotor
+# compressor drive has to hold its speed through. Two rotors half a turn apart sum to a
+# gentler shape at twice the frequency.
+COMPRESSION_RATIO = 3.0
+POLYTROPIC = 1.15
 
-    torque: float = Field(ge=0, description="N·m, the swing either way about the mean")
+
+def _rotary_shape(points: int = 720, rotors: int = 1) -> np.ndarray:
+    theta = np.linspace(0.0, 2.0 * np.pi, points, endpoint=False)
+    swept = theta / (2.0 * np.pi)
+    pressure = np.minimum((1.0 / np.maximum(1.0 - swept, 1e-9)) ** POLYTROPIC, COMPRESSION_RATIO)
+    one = (pressure - 1.0) * np.sin(0.5 * theta)
+    if rotors == 2:
+        one = one + np.roll(one, points // 2)
+    one = one - one.mean()
+    return one / float(np.max(one))
+
+
+ROTARY_SHAPES = {"rotary": _rotary_shape(), "twin_rotary": _rotary_shape(rotors=2)}
+
+
+class Pulsation(_Model):
+    """A torque that pulses with the load's turn, as a compressor's does as it compresses a
+    pocket of gas each turn, on top of the rest: torque * sin(per_turn * angle) for "sine", or
+    the gas torque of a single-rotor ("rotary") or twin-rotor ("twin_rotary") rolling-piston
+    compressor, scaled so that its peak stands `torque` above its mean."""
+
+    torque: float = Field(ge=0, description="N·m, the swing either way about the mean (its peak above it)")
     per_turn: int = Field(default=1, ge=1, le=12, description="pulses in one turn of the load")
+    shape: Literal["sine", "rotary", "twin_rotary"] = Field(
+        default="sine", description="a sine, or a rolling-piston compressor's gas torque"
+    )
+
+    def at(self, angle: float) -> float:
+        """The pulse at this angle of the load's turn, N·m."""
+        if self.shape == "sine":
+            return self.torque * float(np.sin(self.per_turn * angle))
+        table = ROTARY_SHAPES[self.shape]
+        x = (self.per_turn * angle / (2.0 * np.pi)) % 1.0 * table.size
+        k = int(x)
+        return self.torque * float(table[k] + (x - k) * (table[(k + 1) % table.size] - table[k]))
 
 
 class Breakaway(_Model):
@@ -126,7 +169,7 @@ class Load(_Model):
         if self.tumble is not None:
             torque += direction * self.tumble.torque(speed, angle)
         if self.pulsation is not None:
-            torque += direction * self.pulsation.torque * np.sin(self.pulsation.per_turn * angle)
+            torque += direction * self.pulsation.at(angle)
         if self.breakaway is not None:
             torque += direction * self.breakaway.at(speed)
         return float(torque)
@@ -222,6 +265,12 @@ class Sample:
     torques: tuple[float, ...] | None = None
     turn: float = 0.0
     steady: int | None = None  # the stretch held until the junction is steady, by its place
+    aligning: bool = False  # the rotor is being aligned before an open-loop start: current, no motion
+
+    @property
+    def resting(self) -> bool:
+        """Standing with nothing asked of the motor, and not being aligned: the drive is off."""
+        return self.motor_rpm == 0 and self.motor_torque == 0 and not self.aligning
 
 
 def sample(load: Load, profile: Profile, per_segment: int = 12) -> list[Sample]:

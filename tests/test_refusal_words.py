@@ -108,7 +108,7 @@ CONDITION_SLIPS = [
     # The page's switching frequency box is in kHz: the limit is said with its unit, for the
     # page to turn into the box's own.
     ({"f_sw": 50}, "f_sw", "switching frequency cannot be below 100 Hz"),
-    ({"f_sw": 2e7}, "f_sw", "switching frequency cannot be above 10,000,000 Hz"),
+    ({"f_sw": 2e7}, "f_sw", "switching frequency cannot be above 10 000 000 Hz"),
     ({"v_dc": 5000}, "v_dc", "supply voltage cannot be above 2000 V"),
     ({"t_sink": 300}, "t_sink", "heatsink temperature cannot be above 200 °C"),
     ({"parallel": 13}, "parallel", "devices in parallel cannot be above 12"),

@@ -2,6 +2,7 @@
 // opened from one, and kept in step with the page open in another tab.
 
 import { api, partsOf } from "../api";
+import { carry } from "../control/carry";
 import type { KeptPart } from "../api";
 import { dropInFlight, schedule } from "../engine";
 import { resetEvent } from "../eventask";
@@ -59,12 +60,28 @@ export function applyState(next: State): void {
   schedule();
 }
 
+/** Reset pressed: asked first, in the page's own small dialog under the bar's menu (never the
+ *  browser's unstyled confirm), with Keep on the keyboard so a stray Enter clears nothing. */
+export function startOver(): void {
+  const ask = document.querySelector<HTMLElement>("#reset-confirm");
+  if (!ask) return;
+  document.querySelector<HTMLElement>("#top-more")?.hidePopover?.();
+  ask.showPopover?.();
+  ask.hidden = false;
+  ask.querySelector<HTMLElement>("[data-reset-keep]")?.focus();
+}
+
+/** Keep pressed: the question shuts and nothing changes. */
+export function keepEverything(): void {
+  const ask = document.querySelector<HTMLElement>("#reset-confirm");
+  ask?.hidePopover?.();
+  document.querySelector<HTMLElement>(".more-button")?.focus();
+}
+
 /** Clear everything entered and start again, in place: the parts brought, the motor, the
  *  load and every figure. Only what this page kept is cleared. */
-export function startOver(): void {
-  const sure =
-    "Reset the simulation? This clears the parts, the motor, the load and everything else entered on this page.";
-  if (!window.confirm(sure)) return;
+export function clearEverything(): void {
+  document.querySelector<HTMLElement>("#reset-confirm")?.hidePopover?.();
   for (const id of app.state.added) api.forget(id);
   try {
     // Only what this page kept: other pages served from the same address keep their own.
@@ -73,6 +90,8 @@ export function startOver(): void {
     /* a private window: nothing was kept */
   }
   ui.setupNote = null;
+  // The control lab starts again too: its scheme, edits and test are of what was cleared.
+  carry.clear();
   applyState(initial(app.setup));
   say("Everything entered was cleared: step 1 is open.");
   $("#panel").querySelector<HTMLElement>("h2")?.focus();
@@ -202,6 +221,8 @@ export async function openSetup(file: File): Promise<void> {
     return;
   }
   const { state, missing } = withParts(read.state, carried.renamed);
+  // The control lab opens next on what the setup carries of it, or from nothing.
+  carry.open((read.data as { control?: unknown }).control);
   applyState(state);
   ui.setupNote = openedNote(file.name, missing, carried);
   draw.panel(true);
@@ -223,7 +244,9 @@ export async function saveSetup(): Promise<void> {
       }),
     )
   ).flat();
-  const file = { app: "MotionSim", setup: SETUP_VERSION, state: app.state, parts };
+  // The control lab's scheme, edits, test and fidelity, where it has been opened or is waiting.
+  const control = carry.saved();
+  const file = { app: "MotionSim", setup: SETUP_VERSION, state: app.state, parts, ...(control ? { control } : {}) };
   download(new Blob([JSON.stringify(file, null, 1)], { type: "application/json" }), "motionsim-setup.json");
   say("Saved motionsim-setup.json.");
 }

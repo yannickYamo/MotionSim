@@ -77,11 +77,24 @@ export interface State {
     sized: "" | "rth_sink" | "board_area"; // the cooling figure the tool sized, until the user edits it
     sizedFor: string; // what it was sized from: the inputs with its box empty, and the design's part
     edge_limit: EdgeLimit; // how fast an edge the tool may choose the gate resistors for
+    // A drive fed from the mains (supply "mains"): the mains, the stage in front of the link
+    // ("" is the one the tool recommends), its switching frequency, and whether the link's
+    // voltage is the user's own figure or the one that stage holds.
+    mains_v: string;
+    mains_f: string;
+    mains_phases: "1" | "3";
+    front_end: string;
+    fe_f_khz: string;
+    fe_used: string; // the stage the last answer worked out: the user's, or the one recommended
+    link_own: "" | "1";
+    // Whether the front end's control is told the power the motor's control is about to draw.
+    /** The front end's control and the motor's: empty for what suits the load, or the user's own. */
+    fe_tie: "" | "on" | "off";
   };
   typed: Record<string, string>; // a part being typed in from its datasheet, kept until added
   typedOf: Record<string, Record<string, string>>; // each typed part's figures as added, to give one more of them
   mission: Mission | null; // a mission profile brought as a file, in place of the load and motion
-  supply: "one-way" | "battery";
+  supply: "one-way" | "battery" | "mains";
   load: {
     gear_ratio: number;
     gear_efficiency: number;
@@ -113,6 +126,7 @@ export interface State {
   loadSet: LoadItem[]; // loads compared with the one of step 4
   loadKind: string; // which kind of load the figures describe
   loadTouched: boolean; // the user has picked a load or edited one
+  loadUsual: boolean; // the usual load (the duty) is in, not the one proposed for the part: the default
   inertiaOwn: boolean; // the user typed the load's inertia: it no longer follows the weight on the arm
   loadTouchedBefore: boolean; // as it was before a mission profile was brought, to go back to
   segments: Segment[];
@@ -189,6 +203,14 @@ function freshConditions(start: Setup["motors"][string]["start"]): State["condit
     sized: "",
     sizedFor: "",
     edge_limit: "cable",
+    mains_v: "230",
+    mains_f: "50",
+    mains_phases: "1",
+    front_end: "",
+    fe_f_khz: "",
+    fe_used: "",
+    link_own: "",
+    fe_tie: "",
   };
 }
 
@@ -243,6 +265,7 @@ export function initial(setup: Setup): State {
     pwmPeriods: 5,
     mapAt: "",
     loadTouched: false,
+    loadUsual: true, // the user's duty first: the load the part can carry is offered, never put in for them
     inertiaOwn: false,
     loadTouchedBefore: false,
     segments: setup.profile.segments.map((s) => ({ ...s })),
@@ -266,6 +289,18 @@ export function initial(setup: Setup): State {
   };
 }
 
+/** A part on the page is always under test: with parts on the page and none ticked (a design
+ *  kept that way, or met half from one version and half from another), the one the design
+ *  started from is ticked, else the first brought. Mends the state where it was so; returns
+ *  whether it did. */
+export function partsHeld(state: Pick<State, "devices" | "added" | "lead">): boolean {
+  if (state.devices.length || !state.added.length) return false;
+  const pick = state.added.includes(state.lead) ? state.lead : state.added[0];
+  state.devices = [pick];
+  state.lead = pick;
+  return true;
+}
+
 let held = false;
 
 /** Hold this tab's saving, or let it go on: held while the user has not yet chosen between
@@ -274,11 +309,16 @@ export function holdSaving(on: boolean): void {
   held = on;
 }
 
+/** Who else hears of each save: the session shared with a coding agent, on a page served
+ *  on this machine (session/sync.ts). Told after the browser's own copy is written. */
+export const onSaved = new Set<(state: State) => void>();
+
 /** Keep what was entered. Returns false where the browser would not take it (a private
  *  window, a full store): the page still works, it just forgets, and can say so. */
 export function save(state: State): boolean {
   // While another tab's newer setup is on offer, this tab writes nothing over it.
   if (held) return true;
+  onSaved.forEach((heard) => heard(state));
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
     return true;
@@ -333,6 +373,38 @@ export function request(state: State) {
       sized_earlier: sizedEarlier(state) || null,
     },
     supply: state.supply,
+    ...(state.supply === "mains" ? fromMains(state) : {}),
+  };
+}
+
+/** The mains a drive is fed from and the stage in front of its link, as the engine takes them. */
+/** Whether the load swings within a turn of the shaft (a compressor's, a piston pump's). */
+export const loadSwings = (state: State): boolean =>
+  Number(state.load.pulsation_torque) !== 0 || (!state.loadTouched && !state.loadPicked && usualLoad.swings);
+
+/** What is known of the application's usual load before it is sized and put in (step 4 is not
+ *  reached yet): whether it swings within a turn. Set where what suits the part arrives. */
+export const usualLoad = { swings: false };
+
+/** Whether the front end is told the motor's power: the user's choice, or what suits the load.
+ *  Tied, the stage draws from the mains what the motor draws as it draws it, so a load that
+ *  swings within a turn would bend the mains current: such a load is left to the link capacitor. */
+export function tied(state: State): boolean {
+  const own = state.conditions.fe_tie;
+  return own === "" ? !loadSwings(state) : own === "on";
+}
+
+function fromMains(state: State) {
+  const c = state.conditions;
+  return {
+    mains: { v: number(c.mains_v), f: number(c.mains_f) ?? 50, phases: Number(c.mains_phases) || 1 },
+    front_end: {
+      topology: c.front_end || c.fe_used || null,
+      f_sw: number(c.fe_f_khz, 1000),
+      // The link's voltage is sent as the stage's set point only where the user typed it.
+      v_dc: c.link_own ? c.v_dc : null,
+      feed_forward: tied(state),
+    },
   };
 }
 

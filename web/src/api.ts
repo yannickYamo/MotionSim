@@ -6,12 +6,15 @@ import { engineReady, fromServer, modeNow, send, useEngine, whereEngineIs } from
 import type { Mode } from "./api/transport";
 import { streamed } from "./api/stream";
 import type { Advice, Capability, Cycle, DeviceSummary, KeptPart, Largest, LoadPreset, MapGrid } from "./api/types";
-import type { Probe } from "./api/types";
+import type { FrontEndAnswer } from "./api/frontend";
+import type { LoadProposal, Probe } from "./api/types";
 import type { CoolingOffer, Proposal, Reading, ReadOutcome, Recommendation, Setup, Stage, Suggest } from "./api/types";
 import type { SwitchingEvent } from "./api/types";
 import { startWorker } from "./api/worker";
+import type { BoardRead } from "./board/types";
 
 export * from "./api/types";
+export type * from "./api/frontend";
 export {
   answerOf,
   bodyOf,
@@ -101,11 +104,20 @@ export const api = {
    *  before its next probe. */
   largest: (d: unknown, onProbe: (p: Probe) => void, s?: AbortSignal) =>
     streamed<Largest>("/api/largest", d, (p) => onProbe(p as Probe), s),
+  /** The load the part under test can carry for this design, each probe of its search handed
+   *  to `onProbe` as it finishes. The same design asked again is answered from what was kept. */
+  loadProposal: (d: unknown, onProbe: (p: Probe) => void, s?: AbortSignal) =>
+    streamed<LoadProposal>("/api/load-proposal", d, (p) => onProbe(p as Probe), s),
   suggest: (device: string) => send<Suggest>("/api/suggest", { device }),
   /** The heatsink or the board the chosen cooling needs, for a box left empty. */
   cooling: (d: unknown, s?: AbortSignal) => send<CoolingOffer>("/api/cooling", d, s),
+  /** The stages that can feed this design from its mains, one recommended, the chosen one in full. */
+  frontEnd: (d: unknown, s?: AbortSignal) => send<FrontEndAnswer>("/api/front-end", d, s),
   /** One switching event of the hottest switch, through time: asked for only once it is opened. */
   event: (d: unknown, s?: AbortSignal) => send<SwitchingEvent>("/api/event", d, s),
+  /** A board's own design file read for the figures of its switching loop. Only where the
+   *  engine is a local server's: the page never asks the engine in the browser for it. */
+  board: (d: unknown, s?: AbortSignal) => send<BoardRead>("/api/board", d, s),
   /** The whole design as a report in Markdown. */
   report: (d: unknown) => send<{ markdown: string }>("/api/report", d),
   /** Whether a motor as described fits a device, before any design point is set. */

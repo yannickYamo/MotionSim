@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { lines, pngName, scaleFor, sheet, slug } from "../src/charts/png";
+import { lines, pngName, scaleFor, sheet, slug, standing } from "../src/charts/png";
 
 describe("the file a chart is saved as", () => {
   it("is named for the chart, in letters a file system takes", () => {
@@ -78,5 +78,28 @@ describe("a chart set on its sheet", () => {
   });
   it("carries the typeface where one is given", () => {
     expect(sheet(drawing(), "A chart", "", "@font-face{font-family:X}").markup).toContain("<style>@font-face");
+  });
+});
+
+describe("the drawing an image is made of", () => {
+  const draw = () => {
+    const chart = `<svg viewBox="0 0 10 10" class="chart"><text class="tick">5</text></svg>`;
+    document.body.innerHTML = `<div id="plot">${chart}</div>`;
+    return document.querySelector<SVGSVGElement>("#plot svg")!;
+  };
+  it("is the one that stands on the page when the image is made, not one held from before", () => {
+    const first = draw();
+    const find = () => document.querySelector<SVGSVGElement>("#plot svg");
+    expect(standing(find)).toBe(first);
+    // The page draws its chart again (as the full-screen plot does when a line under it changes).
+    const again = draw();
+    expect(first.isConnected).toBe(false);
+    expect(standing(find)).toBe(again);
+  });
+  it("is refused once it is off the page, where no mark has a style to read", () => {
+    const first = draw();
+    draw();
+    expect(() => standing(first)).toThrow(/drawn again/);
+    expect(() => standing(() => null)).toThrow(/drawn again/);
   });
 });

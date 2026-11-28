@@ -1,6 +1,7 @@
 // Under the tabs of the results: what is set beside the design, one column each, with the
 // way to add one more and, where adding it would clear what is there, the question first.
 
+import { emptyArt } from "../emptyart";
 import { comparing, series } from "../compare";
 import { escape } from "../format";
 import { icon } from "../icons";
@@ -9,6 +10,7 @@ import type { Kind } from "../shown";
 import { app, focused, pending, res, ui } from "../store";
 import { addMenu } from "./columns";
 import { compareTable, onDevice } from "./comparison";
+import { choiceLine } from "./choice";
 import { at } from "./html";
 import { put } from "./morph";
 import { landOnColumn } from "./oncolumn";
@@ -80,9 +82,10 @@ export function compareInner(): string {
     : `<h3 id="compare-title" tabindex="-1">Compare</h3>`;
   const start = many
     ? ""
-    : `<div class="compare-start"><p class="quiet">Set another device, another load, this motor with a change, ` +
-      `or a setting at several values beside the design: one kind at a time.</p>${addMenu()}</div>`;
-  const table = `<div id="compare-table" class="compare-table">${many ? compareTable() : ""}</div>`;
+    : `<div class="compare-start has-art">${emptyArt("compare")}<div><p class="quiet">Set another device, ` +
+      `another load, this motor with a change, or a setting at several values beside the design: one kind ` +
+      `at a time.</p>${addMenu()}</div></div>`;
+  const table = `<div id="compare-table" class="compare-table">${many ? choiceLine() + compareTable() : ""}</div>`;
   return `${head}${confirmBlock()}${start}${table}${readingNote()}${undoNote()}`;
 }
 

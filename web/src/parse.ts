@@ -289,6 +289,15 @@ interface TypedRead {
   notes: Record<string, string>;
 }
 
+/** Why a figure read as a number cannot be right, or null: not above zero (a temperature,
+ *  above 25 °C), or outside the range the engine holds it to, so every such box is said together. */
+function figureFault(key: string, value: number, unit?: string, low?: number, high?: number): string | null {
+  if (TEMPERATURES.has(key)) return value <= 25 ? "Has to be above 25 °C." : null;
+  if (value <= 0) return "Has to be above zero.";
+  if (low === undefined || high === undefined || (value >= low && value <= high)) return null;
+  return `Outside what a power transistor has (${low} to ${high}${unit ? ` ${unit}` : ""}): check the unit.`;
+}
+
 /**
  * The figures of the part typed in, checked as far as the page can without the engine: the
  * name is not too long, every figure the form needs is given, each one is a number, and each
@@ -297,7 +306,7 @@ interface TypedRead {
  */
 export function typedFigures(
   typed: Record<string, string>,
-  numeric: { key: string; label: string; unit?: string; required?: boolean }[],
+  numeric: { key: string; label: string; unit?: string; required?: boolean; low?: number; high?: number }[],
   nought: ReadonlySet<string> = new Set(),
 ): TypedRead {
   const figures = { ...typed };
@@ -305,7 +314,7 @@ export function typedFigures(
   const notes: Record<string, string> = {};
   const name = String(typed.part_number ?? "").trim();
   if (name.length > MOST_NAME) wrong.part_number = `A part number of ${MOST_NAME} characters at most.`;
-  for (const { key, unit, required } of numeric) {
+  for (const { key, unit, required, low, high } of numeric) {
     const read = readNumber(typed[key], unit);
     if (!read.ok) {
       if (!read.empty) wrong[key] = read.why;
@@ -316,8 +325,8 @@ export function typedFigures(
     // A figure that may be nought (a GaN part's recovery charge, which it has none of) is
     // taken as left empty.
     if (read.value === 0 && nought.has(key)) delete figures[key];
-    else if (TEMPERATURES.has(key) ? read.value <= 25 : read.value <= 0) {
-      wrong[key] = TEMPERATURES.has(key) ? "Has to be above 25 °C." : "Has to be above zero.";
+    else if (figureFault(key, read.value, unit, low, high)) {
+      wrong[key] = figureFault(key, read.value, unit, low, high)!;
     } else if (read.comma) notes[key] = `Read as ${read.value}: the comma is taken as the decimal point.`;
     else if (read.echo) notes[key] = read.echo;
   }

@@ -68,6 +68,30 @@ def forget() -> None:
         counts.update(hits=0, misses=0)
 
 
+def held(route: str, data: dict, workspace: Workspace) -> dict | None:
+    """The answer kept for this request, a copy of it, or None: for a search whose answer is
+    kept as a whole once it has finished, whichever way it was asked for."""
+    key = key_of(route, data, workspace)
+    with _lock:
+        found = _kept.get(key)
+        if found is None:
+            counts["misses"] += 1
+            return None
+        _kept.move_to_end(key)
+        counts["hits"] += 1
+        return copy.deepcopy(found)
+
+
+def keep(route: str, data: dict, workspace: Workspace, answer: dict) -> None:
+    """Keep a search's answer for this request, as `remembered` keeps one it worked out."""
+    key = key_of(route, data, workspace)
+    with _lock:
+        _kept[key] = copy.deepcopy(answer)
+        _kept.move_to_end(key)
+        while len(_kept) > MOST:
+            _kept.popitem(last=False)
+
+
 def remembered(route: str, work: Route) -> Route:
     """The same work, its answers kept: a request asked again, with the same devices, is
     answered from what was worked out the first time."""

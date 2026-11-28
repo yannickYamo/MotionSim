@@ -1,0 +1,96 @@
+{
+  "scheme": {
+    "id": "mpc_torque",
+    "label": "Predictive torque control with no modulator (finite control set)",
+    "about": "The same torque-to-current reference, with the regulator and the modulator replaced by a controller that picks the legs' states directly. Its switching frequency is not set: it follows from the weight on commutations.",
+    "timing": { "update": "single", "delay": true, "f_control": 100000.0 },
+    "actuation": { "kind": "states", "wires": ["predictive.s_a", "predictive.s_b", "predictive.s_c"] },
+    "blocks": [
+      {
+        "name": "sample",
+        "kind": "current_sampling",
+        "inputs": { "i_a": "plant.i_a", "i_b": "plant.i_b", "i_c": "plant.i_c" },
+        "params": {},
+        "sources": {}
+      },
+      {
+        "name": "position",
+        "kind": "position_sensing",
+        "inputs": { "theta": "plant.theta_e", "omega_m": "plant.omega_m" },
+        "params": {},
+        "sources": {}
+      },
+      {
+        "name": "clarke",
+        "kind": "clarke",
+        "inputs": { "a": "sample.i_a", "b": "sample.i_b", "c": "sample.i_c" },
+        "params": {},
+        "sources": {}
+      },
+      {
+        "name": "park",
+        "kind": "park",
+        "inputs": { "alpha": "clarke.alpha", "beta": "clarke.beta", "theta": "position.theta" },
+        "params": {},
+        "sources": {}
+      },
+      {
+        "name": "shaper",
+        "kind": "torque_shaper",
+        "inputs": { "torque": "cmd.torque" },
+        "params": { "shape": "step", "limit": 4.6782, "rate": 5878.8, "jerk": 14775000.0 },
+        "sources": {
+          "limit": "the torque of the drive's current limit",
+          "rate": "the whole torque limit in half the speed loop's time constant, 1/(2\u00b7\u03c9s)",
+          "jerk": "that rate reached in a quarter of the speed loop's time constant"
+        }
+      },
+      {
+        "name": "current_ref",
+        "kind": "current_reference",
+        "inputs": { "torque": "shaper.torque", "omega_m": "position.omega_m", "v_dc": "plant.v_dc" },
+        "params": {
+          "strategy": "mtpa_fw",
+          "i_limit": 56.569,
+          "voltage_share": 0.99222,
+          "torque_grid": 0.073097,
+          "speed_grid": 3.2725
+        },
+        "sources": {
+          "i_limit": "the motor's current limit",
+          "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, shortest pulse and the devices' drop), as the loss engine takes it",
+          "torque_grid": "1/64 of the torque limit",
+          "speed_grid": "1/64 of the design speed"
+        }
+      },
+      {
+        "name": "predictive",
+        "kind": "fcs_mpc",
+        "inputs": {
+          "id_ref": "current_ref.i_d",
+          "iq_ref": "current_ref.i_q",
+          "i_d": "park.d",
+          "i_q": "park.q",
+          "theta": "position.theta",
+          "omega_e": "position.omega_e",
+          "v_dc": "plant.v_dc"
+        },
+        "params": { "weight": 0.0, "delay_compensation": true },
+        "sources": { "weight": "no weight on commutations: the least current error, whatever it costs in switching" }
+      }
+    ]
+  },
+  "tuning": { "bandwidth_hz": 5000.0, "delay_s": 1.5e-5, "rule": "a twentieth of the 100,000 Hz sampling rate" },
+  "assumes": [
+    "each axis is taken alone: the cross-coupling between the axes is fed forward exactly, or the rotor is still",
+    "no voltage limit and no current limit is reached",
+    "the rotor's angle is known exactly, and the speed with no lag",
+    "the shaft has inertia and nothing else"
+  ],
+  "current_d": null,
+  "current_q": null,
+  "speed": null,
+  "missing": [
+    "Predictive current control (finite control set) (predictive) has no linear transfer function: it chooses among a finite set of states, and is read from the run in time alone"
+  ]
+}

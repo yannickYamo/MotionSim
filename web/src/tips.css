@@ -1,0 +1,117 @@
+/* The tip of a control pointed at (tips.ts), a key in its cap, the verdict's three figures held
+   to their column, and a boxed list at rest: the small things the page and the lab share. */
+
+/* ---------- 1. The tip ---------- */
+
+/* One line in the raised tone, at the small radius with the float shadow. It is laid over
+   whatever is open (the lab, a dialog) and takes no press. */
+.tt {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: max-content;
+  max-width: min(320px, calc(100vw - var(--s4)));
+  margin: 0;
+  padding: var(--s1) var(--s2);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-float);
+  color: var(--ink);
+  font-size: var(--t-small);
+  font-weight: 400;
+  line-height: 1.4;
+  text-wrap: pretty;
+  pointer-events: none;
+  animation: tt-in var(--dur-1) var(--ease-out);
+}
+.tt[hidden] {
+  display: none;
+}
+.tt[data-side="top"] {
+  --tt-from: 2px;
+}
+/* Once one tip is up, the next is there at once: only the first comes in. */
+.tt.is-instant {
+  animation: none;
+}
+@keyframes tt-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--tt-from, -2px));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tt {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .tt {
+    border-color: CanvasText;
+  }
+}
+
+/* ---------- 2. A key in its cap ---------- */
+
+/* The data face, one step under the words it stands beside: a hint, never a press. */
+.kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 var(--s1);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--t-data);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+.tt .kbd {
+  flex: none;
+  background: var(--ground);
+}
+.tt .kbd + .kbd {
+  margin-left: calc(-1 * var(--s1));
+}
+
+/* ---------- 3. The verdict's three figures ---------- */
+
+/* A figure is never broken inside a word ("unde / r 1×"): it keeps one line, and steps down a
+   size where the results' column is too narrow for three at the hero size: 44px wants 560px of
+   column for its longest figure ("under 1×"), 36px wants 460px, and 28px fits the narrowest.
+   The steps are of the column (the panel is the container); in one column, under 901px of
+   window, the page's own step to 28px stands. */
+.key-figures .figure,
+.key-figures .figure.words {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+@media (min-width: 901px) {
+  @container panel (max-width: 559.98px) {
+    .candidate.alone .key-figures .figure {
+      font-size: 36px;
+    }
+  }
+  @container panel (max-width: 459.98px) {
+    .candidate.alone .key-figures .figure {
+      font-size: var(--t-figure);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+  }
+}
+
+/* ---------- 4. A boxed list at rest ---------- */
+
+/* The list is drawn by the browser on the box's own tone: square, it painted over the box's
+   rounded corners and left them open. It takes the box's corners, as a typed box does. */
+.control select {
+  border-radius: inherit;
+}

@@ -16,9 +16,50 @@ export interface Box {
   h: number;
 }
 
-export const VIEW = { w: 560, h: 330 };
-export const TOP: Box = { x: 56, y: 30, w: 448, h: 124 };
-export const LOW: Box = { x: 56, y: 194, w: 448, h: 86 };
+/** Where an edge's two plots lie in a drawing: the voltage and current above, the gate and the
+ *  power beneath, on one time axis. */
+export interface Layout {
+  view: { w: number; h: number };
+  top: Box;
+  low: Box;
+  /** Narrow, the two axis titles of a plot stand one above the other. */
+  narrow: boolean;
+  /** About how many value ticks a plot carries, and time ticks across it. */
+  rows: number;
+  across: number;
+}
+
+/** Narrower than this an edge is drawn as on a phone: lower plots, titles one above the other. */
+export const NARROW = 520;
+/** The least and the most an edge is drawn across, and the width taken where none is known. */
+const LEAST_W = 300;
+const USUAL_W = 720;
+
+/** The layout of an edge drawn `width` across, in pixels: it is drawn at the size it is shown
+ *  at, each plot at least 260 high on a desk, so that neither is ever a thumbnail. */
+export function layout(width: number = USUAL_W): Layout {
+  const w = Math.max(LEAST_W, Math.round(Number.isFinite(width) && width > 0 ? width : USUAL_W));
+  const narrow = w < NARROW;
+  const side = narrow ? 44 : 56;
+  const head = narrow ? 44 : 28;
+  const h = narrow ? 220 : 280;
+  const top: Box = { x: side, y: head, w: w - 2 * side, h };
+  const low: Box = { x: side, y: top.y + h + head + 16, w: w - 2 * side, h };
+  return {
+    view: { w, h: low.y + h + 46 },
+    top,
+    low,
+    narrow,
+    rows: narrow ? 4 : 5,
+    across: Math.max(3, Math.min(8, Math.round(top.w / 100))),
+  };
+}
+
+/** The layout where no width is known, and its parts by their old names. */
+export const USUAL = layout();
+export const VIEW = USUAL.view;
+export const TOP: Box = USUAL.top;
+export const LOW: Box = USUAL.low;
 
 export type Trace = "v_ds" | "i" | "v_gs" | "p";
 
@@ -119,26 +160,34 @@ export function sideTicks(box: Box, r: [number, number], side: "left" | "right",
 }
 
 /** The time ticks under the lower plot, in the unit that suits the span. */
-export function timeAxis(v: Span): string {
+export function timeAxis(v: Span, at: Layout = USUAL): string {
+  const { top, low } = at;
   const { unit, scale } = timeUnit(v);
-  const sx = xOf(LOW, v);
-  const y = LOW.y + LOW.h + 18;
-  const at = ticks(v.t0 * scale, v.t1 * scale, 5);
-  const labels = tickLabels(at);
-  const marks = at
+  const sx = xOf(low, v);
+  const y = low.y + low.h + 16;
+  const marks = ticks(v.t0 * scale, v.t1 * scale, at.across);
+  const labels = tickLabels(marks);
+  const drawn = marks
     .map((t, k) => {
       const x = sx(t / scale).toFixed(1);
       return (
-        `<path class="grid" d="M${x} ${TOP.y}V${TOP.y + TOP.h}M${x} ${LOW.y}V${LOW.y + LOW.h}"/>` +
+        `<path class="grid" d="M${x} ${top.y}V${top.y + top.h}M${x} ${low.y}V${low.y + low.h}"/>` +
         `<text class="tick" x="${x}" y="${y}" text-anchor="middle">${labels[k]}</text>`
       );
     })
     .join("");
-  return `${marks}<text class="axis" x="${LOW.x + LOW.w}" y="${y + 18}" text-anchor="end">time, ${unit}</text>`;
+  return `${drawn}<text class="axis" x="${low.x + low.w}" y="${y + 18}" text-anchor="end">time, ${unit}</text>`;
 }
 
 /** The power's unit: kilowatts once the range reaches them, so its ticks stay short. */
 export const powerUnit = (r: [number, number]) => (Math.max(Math.abs(r[0]), r[1]) >= 2000 ? 1000 : 1);
+
+/** The one unit the power lost is written in on both edges of an event, so the pair is read
+ *  against each other: kilowatts on both once the larger of the two peaks reaches them. */
+export function pairPower(ev: { turn_on: { p: number[] }; turn_off: { p: number[] } }): number {
+  const peak = (p: number[]) => p.reduce((most, y) => Math.max(most, Math.abs(y)), 0);
+  return powerUnit([0, Math.max(peak(ev.turn_on.p), peak(ev.turn_off.p))]);
+}
 
 export interface Drawn {
   top: [[number, number], [number, number]];
@@ -158,14 +207,47 @@ export function ranges(e: EventEdge, v: Span, vMax: number): Drawn {
 }
 
 /** The four traces, each a line inside its plot. */
-export function traces(e: EventEdge, v: Span, r: Drawn, clip: string): string {
+export function traces(e: EventEdge, v: Span, r: Drawn, clip: string, lay: Layout = USUAL): string {
   const at = visible(e.t, v);
   const one = (x: number[], box: Box, range: [number, number], cls: string) =>
     `<path class="series ${cls}" clip-path="url(#${clip})" d="${line(e, x, at, xOf(box, v), yOf(box, range))}"/>`;
   return (
-    one(e.v_gs, LOW, r.low[0], "ev-g") +
-    one(e.p, LOW, r.low[1], "ev-p") +
-    one(e.i, TOP, r.top[1], "ev-i") +
-    one(e.v_ds, TOP, r.top[0], "ev-v")
+    one(e.v_gs, lay.low, r.low[0], "ev-g") +
+    one(e.p, lay.low, r.low[1], "ev-p") +
+    one(e.i, lay.top, r.top[1], "ev-i") +
+    one(e.v_ds, lay.top, r.top[0], "ev-v")
   );
+}
+
+/** A trace as the few points its line passes at the size it is drawn: the lowest and the highest
+ *  of each stretch a few pixels wide. What a word is kept clear of, without every sample. */
+export function outline(e: EventEdge, x: number[], v: Span, box: Box, range: [number, number]): [number, number][] {
+  const [a, b] = visible(e.t, v);
+  const sx = xOf(box, v);
+  const sy = yOf(box, range);
+  const STEP = 4;
+  const out: [number, number][] = [];
+  let col = -Infinity;
+  let lo = 0;
+  let hi = 0;
+  const flush = () => {
+    if (col === -Infinity) return;
+    out.push([col, lo]);
+    if (hi !== lo) out.push([col, hi]);
+  };
+  for (let k = a; k <= b; k++) {
+    const px = Math.min(Math.max(sx(e.t[k]), box.x), box.x + box.w);
+    const py = sy(x[k]);
+    const c = Math.round(px / STEP) * STEP;
+    if (c !== col) {
+      flush();
+      [col, lo, hi] = [c, py, py];
+    } else {
+      // In the order met, so that the line through them stays the trace's own.
+      lo = Math.min(lo, py);
+      hi = Math.max(hi, py);
+    }
+  }
+  flush();
+  return out;
 }

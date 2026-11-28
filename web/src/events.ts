@@ -1,6 +1,7 @@
 // What the user does, and what the page does about it, wired to the page: what is typed,
 // chosen, pressed, kept open, dropped, and the keys.
 
+import { wireReadouts } from "./charts/readout";
 import { reportForPrint } from "./actions/reports";
 import { goTo } from "./actions";
 import { addPart } from "./actions/parts";
@@ -11,7 +12,8 @@ import { onKeydown, saveKey } from "./events/keys";
 import { closeEquations, menusWithoutPopover } from "./events/menus";
 import { onClick } from "./events/presses";
 import { onInput, redrawNow } from "./events/typing";
-import { app, ui } from "./store";
+import { app, draw, ui } from "./store";
+import { applyPaste, onPaste, onPasteBox } from "./events/pasting";
 import { $ } from "./views/html";
 import { drawnOpen } from "./views/morph";
 
@@ -39,6 +41,7 @@ function onDrag(e: Event): void {
 
 export function wire(): void {
   followOtherTabs();
+  wireReadouts();
   menusWithoutPopover();
   const page = $("#app");
   page.addEventListener("input", onInput);
@@ -60,4 +63,15 @@ export function wire(): void {
   window.addEventListener("beforeprint", reportForPrint);
   page.addEventListener("dragover", onDrag);
   page.addEventListener("drop", onDrag);
+  page.addEventListener("paste", onPaste);
+  page.addEventListener("input", (e) => {
+    const el = e.target as HTMLElement;
+    if (el.matches?.("textarea[data-paste]")) onPasteBox(el as HTMLTextAreaElement);
+  });
+  page.addEventListener("change", (e) => {
+    const el = e.target as HTMLElement;
+    if (!el.matches?.("textarea[data-paste]")) return;
+    const n = applyPaste((el as HTMLTextAreaElement).value);
+    if (n) draw.panel(true);
+  });
 }

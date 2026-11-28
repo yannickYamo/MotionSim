@@ -6,6 +6,7 @@ import { saveSetup } from "../actions/setup";
 import { RESULTS, TABS } from "../steps";
 import { app, ui } from "../store";
 import { at } from "../views/html";
+import { pickKey } from "./picker";
 import { redrawNow } from "./typing";
 
 /** In a menu the arrows move from item to item, round at the ends, Home and End to the first
@@ -37,6 +38,7 @@ export function onKeydown(e: KeyboardEvent): void {
   // An Enter that ends the composing of characters (Japanese, Chinese, an accent) belongs to
   // the composing: it neither goes on nor adds.
   if (e.key === "Enter" && (e.isComposing || e.keyCode === 229)) return;
+  if (pickKey(e)) return;
   if (e.key === "Enter" && enterGoesOn(target)) {
     e.preventDefault();
     at<HTMLButtonElement>("#panel .actions .primary[data-step]")?.click();
@@ -60,11 +62,14 @@ function pressDrawn(e: KeyboardEvent, target: HTMLElement): boolean {
   return true;
 }
 
-/** Enter in a figure of the typed part adds the part, unless one is being added already. */
+/** Enter in a figure of the typed part adds the part, unless one is being added already. In the
+ *  first visit's table it is the table's own press: the part is built and its verdict opened. */
 function typedEnter(e: KeyboardEvent, target: HTMLElement): boolean {
   if (e.key !== "Enter" || !target.matches?.("input[data-typed]") || ui.typedBusy) return false;
   e.preventDefault();
-  void addTyped();
+  const quick = target.closest(".quick-path")?.querySelector<HTMLButtonElement>("[data-quick-add]");
+  if (quick) quick.click();
+  else void addTyped();
   return true;
 }
 

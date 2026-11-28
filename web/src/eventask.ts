@@ -4,6 +4,7 @@
 
 import { api, NotWorkedOut, Refused } from "./api";
 import type { Candidate, SwitchingEvent } from "./api";
+import { forgetBoard, layoutOrBoard } from "./board/reading";
 import { setPath } from "./boxes";
 import { schedule } from "./engine";
 import { request, save } from "./state";
@@ -55,6 +56,7 @@ export function resetEvent(): void {
     focusTo: "",
   });
   plots.now()?.forgetEvent();
+  forgetBoard();
   ui.pwmOpen = null;
 }
 
@@ -140,9 +142,13 @@ export function toEventBox(path: string): void {
   box?.focus();
 }
 
-/** A layout file chosen: its text is sent with the event, under its name. */
+/** A layout file chosen: its text is sent with the event, under its name. A board's own file
+ *  chosen in its place is read for the figures instead, and nothing of the event moves until
+ *  the user takes them. */
 export async function takeLayout(file: File): Promise<void> {
-  app.state.event.layout = await file.text();
+  const layout = await layoutOrBoard(file);
+  if (layout === null) return;
+  app.state.event.layout = layout;
   app.state.event.layout_name = file.name;
   ui.unsaved = !save(app.state);
   draw.stage();

@@ -252,7 +252,7 @@ def test_every_load_offered_for_a_motor_can_be_followed_within_its_design_torque
             assert not [c for c in out["checks"] if c["topic"] == "motion"], (kind, preset["id"])
             assert max(abs(t) for t in out["torque"]) <= 1.05 * start["torque"], (kind, preset["id"])
             assert max(abs(n) for n in out["rpm"]) <= 1.001 * start["rpm"], (kind, preset["id"])
-    assert usual == {"drum", "vacuum", "ceiling_fan", "compressor"}
+    assert usual == {"drum", "vacuum", "drone", "ceiling_fan", "compressor"}
     for kind in ("pmsm", "bldc"):
         for preset in page.load_presets(kind, 3000, 2.0, 325):
             if preset["motor"] is None:
