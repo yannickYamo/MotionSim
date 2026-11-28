@@ -40,7 +40,7 @@ MAINS = ("v", "f", "phases")
 FRONT_END = ("topology", "f_sw", "v_dc", "device", "feed_forward")
 CONDITIONS = {
     "v_dc", "rpm", "torque", "f_sw", "parallel", "pwm", "cooling", "t_sink", "t_ambient", "rth_sink", "rth_ja", "board_area",
-    "copper", "copper_ref", "rth_case_sink", "interface", "t_sink_max", "v_drive", "rg_on", "rg_off", "t_dead", "l_loop", "t_min_pulse", "t_motor",
+    "copper", "copper_ref", "rth_case_sink", "interface", "t_sink_max", "v_drive", "v_drive_off", "rg_on", "rg_off", "t_dead", "l_loop", "t_min_pulse", "t_motor",
     "sized", "sized_earlier", "edge_limit",
 }  # fmt: skip
 

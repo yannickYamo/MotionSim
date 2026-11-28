@@ -12,6 +12,7 @@ from enum import IntEnum
 from motionsim.cooling import BOARD_LIMIT
 from motionsim.device.schema import ChipKind, Device
 from motionsim.engine.limits import ceiling, hottest
+from motionsim.engine.mosfet import miller_charge
 from motionsim.engine.notes import TAKEN, Code, coded
 from motionsim.engine.solver import OperatingPoint, Result, Validity, hot_share
 from motionsim.text import whole, written
@@ -123,8 +124,9 @@ def speed_checks(device: Device, op: OperatingPoint) -> list[Check]:
     shares = {"the dead time and the shortest pulse": 2 * (op.t_dead + op.t_min_pulse) * op.f_sw}
     c = device.switch.charge
     if c is not None and op.v_drive and op.rg_on and op.rg_off and op.v_drive > c.v_plateau:
-        moved = c.q_gs - c.q_g_th + c.q_gd
-        edges = moved * op.rg_on / (op.v_drive - c.v_plateau) + moved * op.rg_off / c.v_plateau
+        moved = c.q_gs - c.q_g_th + miller_charge(c, op.v_dc)
+        pulled = c.v_plateau - (op.v_drive_off or 0.0)
+        edges = moved * op.rg_on / (op.v_drive - c.v_plateau) + moved * op.rg_off / pulled
         shares["the two switching edges"] = edges * op.f_sw
     what, share = max(shares.items(), key=lambda item: item[1])
     if share < FAST_SHARE:

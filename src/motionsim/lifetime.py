@@ -31,6 +31,9 @@ K_B = 1.380649e-23  # J/K
 SMALLEST = 1.0  # K; swings below this do no damage worth counting
 
 
+FITTED = (30.0, 80.0)  # K, the swings the model was fitted to: outside them it is extrapolated
+
+
 def cycles_to_failure(swing: float, mean_c: float) -> float:
     """Swings of this size, about this mean temperature in °C, that a device survives."""
     return float(A * swing**ALPHA * np.exp(E_A / (K_B * (mean_c + 273.15))))

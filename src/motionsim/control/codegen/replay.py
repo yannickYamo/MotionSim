@@ -241,7 +241,9 @@ def _cpp_compiler() -> str | None:
 
 def _compiled(cc: str, root: Path, precision: str) -> tuple[Path | None, str]:
     out = root / f"replay-{precision}"
-    flags = ["-std=c99", "-O2", "-Wall", "-Wextra", "-DMOTIONSIM_CTRL_REPLAY"]
+    # No fused multiply-add (the default of some compilers on some processors): the comparison
+    # is of the C against the arithmetic of the simulation, one rounding an operation.
+    flags = ["-std=c99", "-O2", "-ffp-contract=off", "-Wall", "-Wextra", "-DMOTIONSIM_CTRL_REPLAY"]
     flags += ["-DMOTIONSIM_CTRL_DOUBLE"] if precision == "double" else []
     command = [*cc.split(), *flags, "-I", str(root / "core"), "-o", str(out)]
     command += [str(root / "core" / "motionsim_ctrl.c"), str(root / "test" / "replay.c"), "-lm"]

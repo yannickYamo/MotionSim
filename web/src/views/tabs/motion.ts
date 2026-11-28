@@ -102,7 +102,11 @@ export function lifeBlock(c: Cycle): string {
   const model =
     "<li>A generic model for modules with aluminium bond wires (LESIT), applied to discrete parts too. " +
     "A real part may last several times longer or shorter; " +
-    "use the maker's power-cycling curve where there is one.</li>";
+    "use the maker's power-cycling curve where there is one.</li>" +
+    (l.extrapolated && l.fitted
+      ? `<li>The model was fitted to swings of ${num(l.fitted[0], 2)} to ${num(l.fitted[1], 2)} K: ` +
+        `this one's ${num(l.swing, 2)} K is outside them, so the figure is an extrapolation.</li>`
+      : "");
   const title = '<h4>Life under thermal cycling <span class="quiet">a rough indicator</span></h4>';
   return `${title}<ul class="plain small">${body}${model}</ul>`;
 }

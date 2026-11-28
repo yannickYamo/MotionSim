@@ -246,9 +246,13 @@ function partCells(d: DeviceSummary, others: number): string {
   if (state.reached >= SUPPLY && res.stage) {
     const over = res.stage.i_peak > d.i_nominal;
     const note = over ? `peak, above this part's ${num(d.i_nominal)} A rating` : "peak in the windings";
+    // A supply above the part's rating is said here as it is at its field: these are the
+    // motor's figures, and no word on the part.
+    const high = Number(state.conditions.v_dc) > d.v_max;
+    const from = `from ${num(state.conditions.v_dc)} V${high ? `, above this part's ${num(d.v_max)} V rating` : ""}`;
     cells +=
       readout("The motor asks for", `${num(res.stage.i_peak)} A`, note, over ? "caution" : "") +
-      readout("Shaft power", watts(res.stage.p_shaft), `from ${num(state.conditions.v_dc)} V`);
+      readout("Shaft power", watts(res.stage.p_shaft), from, high ? "caution" : "");
   } else {
     const next = state.reached < MOTOR ? "The motor" : "Supply and point";
     cells += readout("Next", next, "Losses appear once the conditions are set.");

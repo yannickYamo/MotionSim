@@ -48,7 +48,7 @@ def _inrush(data: dict, op: OperatingPoint) -> dict | None:
 def _life(trace, tj, duration: float) -> dict:
     """Thermal-cycling life of the chip that wears out first, from its own temperature
     trace, by a generic model."""
-    from motionsim.lifetime import estimate, worst_of
+    from motionsim.lifetime import FITTED, estimate, worst_of
 
     life = worst_of(trace.chips, trace.swings) or estimate(np.asarray([v for v in tj if math.isfinite(v)]))
     endless = not math.isfinite(life.repeats)
@@ -61,6 +61,10 @@ def _life(trace, tj, duration: float) -> dict:
         "swings": life.swings,
         "chip": life.chip,
         "within_turn": life.within_turn,
+        # The swings the model was fitted to, K, and whether the one that does the wear is
+        # outside them: every life figure goes with how far it can be believed.
+        "fitted": list(FITTED),
+        "extrapolated": not endless and not FITTED[0] <= life.swing <= FITTED[1],
     }
 
 

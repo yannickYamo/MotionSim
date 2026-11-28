@@ -377,7 +377,8 @@ export function renderEngineStatus(): void {
     // Started: the bar is left to the page, and the start is said once to a screen reader.
     if (!el.hidden) {
       el.hidden = true;
-      say("The engine has started.");
+      // An engine that could not start is not said to have started: its fault is.
+      say(res.fault ?? "The engine has started.");
     }
     return;
   }

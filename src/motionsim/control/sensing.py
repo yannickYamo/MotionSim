@@ -305,10 +305,14 @@ class PositionSensing(Block):
         self._late = round(self.p["latency"] / self.ctx.ts)
         self._window = int(self.p["speed_window"])
         self._count = TWO_PI / self.p["counts"]
+        # The shaft's angle an electrical turn is: what the angle given may jump by at a wrap.
+        self._turn = TWO_PI / self.ctx.pole_pairs
 
     def reset(self) -> None:
         self._line: deque[float] = deque(maxlen=self._late + 1)
         self._seen: deque[float] = deque(maxlen=self._window + 1)
+        self._last: float | None = None
+        self._turned = 0.0
 
     def step(self, t: float, *inputs: float) -> tuple[float, ...]:
         theta, omega_m = inputs
@@ -317,7 +321,12 @@ class PositionSensing(Block):
             return theta, omega_m, pairs * omega_m
         self._line.append(theta / pairs)
         read = math.floor(self._line[0] / self._count) * self._count
-        self._seen.append(read)
+        # The angle may come wrapped to one electrical turn: a jump of whole turns between two
+        # samples is taken back out, so the speed is that of the shaft and not of the wrap.
+        if self._last is not None:
+            self._turned -= math.floor((read - self._last) / self._turn + 0.5) * self._turn
+        self._last = read
+        self._seen.append(read + self._turned)
         span = len(self._seen) - 1
         speed = (self._seen[-1] - self._seen[0]) / (span * self.ctx.ts) if span else omega_m
         return pairs * read, speed, pairs * speed

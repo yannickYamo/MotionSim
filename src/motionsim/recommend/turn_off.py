@@ -51,11 +51,12 @@ def above_plateau(device: Device) -> tuple[float, float, bool]:
 
 
 def turn_off_time(
-    device: Device, v_drive: float, rg_off: float, above: float | None = None
+    device: Device, v_drive: float, rg_off: float, above: float | None = None, v_off: float = 0.0
 ) -> tuple[float, float, float]:
     """Delay, voltage-rise and current-fall time of a transistor turning off, from its charges.
 
-    The gate discharges through rg_off towards zero: from the drive voltage to the plateau
+    The gate discharges through rg_off towards the driver's low level v_off (nought, or
+    below it): from the drive voltage to the plateau
     (delay) with the capacitance it has above the plateau, across the plateau while the
     drain voltage rises (gate-drain charge at the plateau current), then from plateau to
     threshold while the current falls. above is the capacitance above the plateau; left
@@ -72,11 +73,11 @@ def turn_off_time(
     c_iss, v_th, v_pl = _gate(device)
     if above is None:
         above = above_plateau(device)[1]
-    delay = rg_off * above * log(v_drive / v_pl)
-    rise = _charges(device).q_gd * rg_off / v_pl
+    delay = rg_off * above * log((v_drive - v_off) / (v_pl - v_off))
+    rise = _charges(device).q_gd * rg_off / (v_pl - v_off)
     # With no charge at threshold tabulated the threshold is not known: the whole discharge
     # below the plateau at the plateau's gate current.
-    fall = rg_off * c_iss * (log(v_pl / v_th) if v_th > 0 else 1.0)
+    fall = rg_off * c_iss * (log((v_pl - v_off) / (v_th - v_off)) if v_th > 0 else v_pl / (v_pl - v_off))
     return delay, rise, fall
 
 
@@ -112,7 +113,8 @@ def _from_charges(device: Device, op: OperatingPoint, margin: float) -> _Needed:
     """A transistor's turn-off from its gate charges and the gate drive in use."""
     assert op.v_drive is not None and op.rg_off is not None
     low, high, given = above_plateau(device)
-    delay, rise, fall = turn_off_time(device, op.v_drive, op.rg_off, high)
+    v_off = op.v_drive_off or 0.0
+    delay, rise, fall = turn_off_time(device, op.v_drive, op.rg_off, high, v_off)
     needed = delay + rise + fall
     took = (
         f"turning off through {op.rg_off:g} ohm takes about {needed * 1e9:.0f} ns: "
@@ -121,7 +123,7 @@ def _from_charges(device: Device, op: OperatingPoint, margin: float) -> _Needed:
     )
     if given:
         return _Needed(needed, margin, [took])
-    least = turn_off_time(device, op.v_drive, op.rg_off, low)[0] + rise + fall
+    least = turn_off_time(device, op.v_drive, op.rg_off, low, v_off)[0] + rise + fall
     return _Needed(
         needed,
         margin,

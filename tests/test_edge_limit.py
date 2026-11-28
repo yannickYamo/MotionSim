@@ -122,7 +122,7 @@ def test_an_edge_limit_that_is_not_one_is_refused_by_its_name() -> None:
 
 def test_a_looser_limit_is_one_caution_naming_the_fastest_edge() -> None:
     device = from_figures(SIC)
-    for limit, said in (("close", "Edges up to 20 V/ns"), ("none", "Edges up to 64 V/ns")):
+    for limit, said in (("close", "Edges up to 20 V/ns"), ("none", "Edges up to 67 V/ns")):
         op = choose_gate_drive(device, _point(800.0, limit), AMPS).op
         found = [c for c in guard.check(device, op, solve(device, op), AMPS) if c.topic == "edges"]
         assert [(c.level, c.message) for c in found] == [
@@ -266,7 +266,8 @@ SI = {
 
 @pytest.mark.parametrize(
     ("figures", "v_dc", "low", "high"),
-    [(GAN, 400.0, 50e9, 150e9), (SIC, 800.0, 30e9, 80e9), (SI, 400.0, 10e9, 50e9)],
+    # Silicon carbide is turned off towards -4 V, which makes its turn-off the faster edge.
+    [(GAN, 400.0, 50e9, 150e9), (SIC, 800.0, 30e9, 100e9), (SI, 400.0, 10e9, 50e9)],
 )
 def test_with_no_limit_the_fastest_edge_is_what_a_driver_and_the_channel_can_give(figures, v_dc, low, high) -> None:
     # Not the chip's own gate resistance alone: a GaN part at 0.6 Ω would slew 667 V/ns.

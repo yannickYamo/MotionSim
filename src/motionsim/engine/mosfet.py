@@ -35,12 +35,22 @@ def output_charge(c, v_dc: float) -> float:
     return c.q_oss * (v_dc / c.v_ref) ** (0.5 if c.q_oss_scaling == "sqrt" else 1.0)
 
 
-# Recovery charge away from the conditions it was tabulated at. Above the test current it
-# keeps growing, about as the square root of the current: the charge a junction stores
-# rises with the current, and the faster commutation of a larger current leaves less of it
-# time to recombine. Datasheets that draw recovery charge against current show a power
-# between a half and nearly one; the square root is the low end of the growth, linear the
-# high end, and staying flat is below both.
+def miller_charge(c, v_dc: float) -> float:
+    """Gate-drain charge at the DC voltage, C.
+
+    It is tabulated at v_ref. The gate-drain capacitance falls with the voltage across it
+    about as an abrupt junction's, so on a lower supply the charge is smaller by the square
+    root of the ratio. Above v_ref it is kept as tabulated: the capacitance there is small,
+    and the tabulated figure is the safe one for a loss."""
+    return c.q_gd * min(v_dc / c.v_ref, 1.0) ** 0.5
+
+
+# Recovery charge away from the current it was tabulated at follows the square root of the
+# current, above and below: the charge a junction stores rises with the current, and the
+# faster commutation of a larger current leaves less of it time to recombine. Datasheets
+# that draw recovery charge against current show a power between a half and nearly one.
+# Above the test current the square root is the low end of the growth; below it, it is the
+# high end of what is left, and the safe one for a loss.
 RECOVERY_GROWTH = 0.5
 # With temperature the carriers of a silicon junction live longer and more of them are
 # still there to be swept out: datasheets that give the charge hot show 1.5 to 2.5 times
@@ -60,14 +70,13 @@ def recovery_rises(technology: str) -> bool:
 def recovery_charge(c, current: np.ndarray, tj=None, technology: str = "") -> np.ndarray:
     """Recovery charge of the reverse path at each current, C.
 
-    Below the current it was measured at it falls in proportion, and is nothing at no
-    current. Above, it grows as the square root. tj and technology bring it to the junction
+    It follows the square root of the current, from the current it was measured at, and is
+    nothing at no current. tj and technology bring it to the junction
     temperature for a silicon junction; left out, the tabulated figure is used as it is.
     """
     current = np.asarray(current, dtype=float)
     if c.q_rr_current:
-        share = current / c.q_rr_current
-        q_rr = c.q_rr * np.where(share <= 1.0, share, np.maximum(share, 1.0) ** RECOVERY_GROWTH)
+        q_rr = c.q_rr * (np.maximum(current, 0.0) / c.q_rr_current) ** RECOVERY_GROWTH
     else:
         q_rr = c.q_rr * (current > 0)
     if tj is not None and recovery_rises(technology):
@@ -82,9 +91,10 @@ def recovery_note(chip: Chip, technology: str, i_peak: float, tj: float) -> Note
     if c is None or not c.q_rr or (chip.e_on is not None and chip.e_off is not None):
         return None
     said = []
-    if c.q_rr_current and i_peak > c.q_rr_current:
+    if c.q_rr_current and abs(i_peak - c.q_rr_current) > 0.01 * c.q_rr_current:
         said.append(
-            f"above the {c.q_rr_current:g} A it was measured at it is taken to grow as the square root of the current"
+            f"away from the {c.q_rr_current:g} A it was measured at it is taken to follow the square root of the "
+            "current"
         )
     if recovery_rises(technology) and abs(tj - RECOVERY_REFERENCE) > 1.0:
         factor = max(1.0 + RECOVERY_RISE * (tj - RECOVERY_REFERENCE), 0.0)
@@ -119,9 +129,10 @@ def charge_energies(
             "this device has no measured switching energy; give the gate drive voltage and the "
             "turn-on and turn-off gate resistances to estimate it from charge"
         )
-    moved = c.q_gs - c.q_g_th + c.q_gd
+    moved = c.q_gs - c.q_g_th + miller_charge(c, op.v_dc)
     t_on = moved * op.rg_on / (op.v_drive - c.v_plateau)
-    t_off = moved * op.rg_off / c.v_plateau
+    # At turn-off the gate is pulled from its plateau to the driver's low level, nought or below.
+    t_off = moved * op.rg_off / (c.v_plateau - (op.v_drive_off or 0.0))
     q_oss = output_charge(c, op.v_dc)
     q_rr = recovery_charge(c, current, tj, technology)
     e_on = 0.5 * op.v_dc * current * t_on + (q_oss + q_rr) * op.v_dc

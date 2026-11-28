@@ -220,6 +220,9 @@ export interface Cycle extends DutyAnswer {
     swings: number;
     chip: string;
     within_turn: boolean;
+    /** The swings the life model was fitted to, K, and whether this one is outside them. */
+    fitted?: [number, number];
+    extrapolated?: boolean;
   };
   start: {
     applies: "method" | "flux" | "none";

@@ -184,7 +184,7 @@ def test_overshoot_check_and_avalanche_wording() -> None:
     assert any("above the 650 V rating" in w for w in solve(fet(), op(v_dc=700.0)).rating_warnings)
 
 
-def test_recovery_charge_is_nothing_at_no_current_and_follows_the_current_below_its_test_point() -> None:
+def test_recovery_charge_is_nothing_at_no_current_and_follows_its_square_root_from_its_test_point() -> None:
     import numpy as np
 
     from motionsim.engine.mosfet import charge_energies
@@ -202,8 +202,8 @@ def test_recovery_charge_is_nothing_at_no_current_and_follows_the_current_below_
     assert (e_on - without).tolist() == pytest.approx([0.0, 1e-6 * drive.v_dc, 1e-6 * drive.v_dc])
     scaled = chip.model_copy(update={"charge": charge.model_copy(update={"q_rr_current": 20.0})})
     e_scaled, _ = charge_energies(scaled, np.array([0.0, 5.0, 40.0]), drive)
-    # Twice the test current recovers the root of two times the charge.
-    assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.25e-6 * drive.v_dc, 2**0.5 * 1e-6 * drive.v_dc])
+    # A quarter of the test current recovers half the charge, twice it the root of two times.
+    assert (e_scaled - without).tolist() == pytest.approx([0.0, 0.5e-6 * drive.v_dc, 2**0.5 * 1e-6 * drive.v_dc])
 
 
 def test_the_lowest_sensorless_speed_follows_from_the_voltage_the_stage_gets_wrong() -> None:

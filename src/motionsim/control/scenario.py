@@ -102,7 +102,7 @@ def settled(design: Design, rpm: float, torque: float) -> dict[str, float]:
     """The currents and voltages the engine's control settles to at a speed and torque, with
     the voltage the stage really gives: where a run starts from a running drive."""
     motor = pmsm.Motor(pole_pairs=design.pole_pairs, flux_linkage=design.psi, ld=design.ld, lq=design.lq, rs=design.rs)
-    v_max = design.usable * design.pwm.max_modulation_index * design.v_dc / 2.0
+    v_max = pmsm.WEAKENING_HEADROOM * design.usable * design.pwm.max_modulation_index * design.v_dc / 2.0
     s = pmsm.operating_state(motor, rpm, torque, v_max)
     found = {
         "i_d": s.i_d,
@@ -185,7 +185,7 @@ def available_torque(design: Design, omega: float) -> float:
     reference asks them)."""
     limit = design.torque_limit
     rpm = abs(omega) * 30.0 / math.pi
-    v_max = design.usable * design.pwm.max_modulation_index * design.v_dc / 2.0
+    v_max = pmsm.WEAKENING_HEADROOM * design.usable * design.pwm.max_modulation_index * design.v_dc / 2.0
     motor = _motor(design)
 
     def fits(torque: float) -> bool:

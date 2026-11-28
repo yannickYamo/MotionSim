@@ -215,8 +215,8 @@ def test_an_observer_is_judged_after_the_hand_over(ws, base, offered) -> None:
     sensing = a["sensing"]
     startup = block(offered["sensorless_emf"], "position")["params"]
     open_loop = startup["align"] + startup["handover"] / startup["ramp"] + startup["blend"]
-    assert sensing["from"] >= open_loop * 0.99
-    assert sensing["angle_error_rms"] < 3.0
+    assert sensing["from"] >= open_loop * 0.99, (sensing, startup)
+    assert sensing["angle_error_rms"] < 3.0, (sensing, startup)
 
 
 def test_an_observer_s_error_at_a_hold_names_no_lever() -> None:

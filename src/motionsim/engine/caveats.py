@@ -114,7 +114,8 @@ def _rating_warnings(device: Device, op: OperatingPoint, i_pk: float) -> list[st
     overshoot = None
     if op.l_loop is not None and sw.charge is not None and op.rg_off is not None:
         # Current falls while the gate moves from plateau to threshold.
-        t_fall = (sw.charge.q_gs - sw.charge.q_g_th) * op.rg_off / sw.charge.v_plateau
+        pulled = sw.charge.v_plateau - (op.v_drive_off or 0.0)
+        t_fall = (sw.charge.q_gs - sw.charge.q_g_th) * op.rg_off / pulled
         if t_fall > 0:
             overshoot = op.l_loop * i_pk / t_fall
     if overshoot is None:

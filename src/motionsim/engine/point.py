@@ -53,6 +53,9 @@ class OperatingPoint:
     # the tool to work out the one a drive would be set to; nought given is used as nought.
     t_dead_given: bool = False
     v_drive: float | None = None  # gate drive voltage, V
+    # The driver's low level, V, nought or below: what the gate is pulled to at turn-off. Left
+    # open, the usual one for the kind of transistor is taken where the gate drive is chosen.
+    v_drive_off: float | None = None
     rg_on: float | None = None  # total turn-on gate resistance, ohm
     rg_off: float | None = None  # total turn-off gate resistance, ohm
     # Commutation-loop inductance, H: of one device's own loop. With devices in parallel

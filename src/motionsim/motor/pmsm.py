@@ -94,8 +94,10 @@ def _voltages(motor: Motor, w: float, i_d: float, i_q: float) -> tuple[float, fl
 def operating_state(motor: Motor, rpm: float, torque: float, v_max: float, i_d: float | None = None) -> DriveState:
     """Currents and voltages for a speed and torque, within a peak phase voltage v_max.
 
-    With a saturation current given, each axis's inductance follows its own current,
-    L = L0 / sqrt(1 + (i / i_sat)^2), and the point is found again until it settles.
+    With a saturation current given, both inductances follow the magnitude of the current,
+    L = L0 / sqrt(1 + (|i| / i_sat)^2), and the point is found again until it settles. The
+    two axes share the stator's iron, which the whole current saturates: the motor keeps the
+    saliency it was given, and a motor with none gains no reluctance torque from saturating.
     i_d holds the d-axis current at a value of the caller's, where the voltage allows it,
     in place of the one that needs least current.
     """
@@ -104,20 +106,22 @@ def operating_state(motor: Motor, rpm: float, torque: float, v_max: float, i_d: 
     now = motor
     for _ in range(12):
         s = _state(now.model_copy(update={"i_max": None}), rpm, torque, v_max, i_d)
-        now = motor.model_copy(
-            update={
-                "ld": motor.ld / float(np.sqrt(1 + (s.i_d / motor.i_sat) ** 2)),
-                "lq": motor.lq / float(np.sqrt(1 + (s.i_q / motor.i_sat) ** 2)),
-            }
-        )
+        fallen = saturated(motor.i_sat, s.i_d, s.i_q)
+        now = motor.model_copy(update={"ld": motor.ld / fallen, "lq": motor.lq / fallen})
     return _state(now, rpm, torque, v_max, i_d)
+
+
+def saturated(i_sat: float, i_d: float, i_q: float) -> float:
+    """What both inductances are divided by at a point, for a motor whose iron saturates."""
+    return float(np.sqrt(1 + (i_d**2 + i_q**2) / i_sat**2))
 
 
 def _least_current_id(motor: Motor, torque: float, floor: float, held: float | None) -> float:
     """The d-axis current: as held, nought where it adds nothing, else the one that gives the
     torque for the least current."""
     if held is not None:
-        if not floor <= held:
+        # Buried magnets may be opposed in full and beyond, as far as the weakening search goes.
+        if not (floor if motor.ld >= motor.lq else -4.0 * motor.flux_linkage / motor.ld) <= held:
             raise Unreachable(
                 f"a d-axis current of {written(held, 3)} A would oppose the magnet in full", Code.reach_other
             )
@@ -126,8 +130,25 @@ def _least_current_id(motor: Motor, torque: float, floor: float, held: float | N
         return 0.0
     span = 5 * abs(torque) / (1.5 * motor.pole_pairs * motor.flux_linkage) + 1.0
     lo, hi = (max(-span, floor), 0.0) if motor.ld < motor.lq else (0.0, span)
-    best = minimize_scalar(lambda x: x**2 + _iq_for(motor, torque, x) ** 2, bounds=(lo, hi), method="bounded")
+
+    def squared(x: float) -> float:
+        return float(x**2 + _iq_for(motor, torque, x) ** 2)
+
+    best = minimize_scalar(squared, bounds=(lo, hi), method="bounded")
+    # With buried magnets the reluctance torque is worth current of its own, and at a high
+    # torque the least current lies past the point where the magnet is fully opposed: the
+    # search goes on to find it.
+    if motor.ld < motor.lq and lo > -span and best.x < 0.99 * lo:
+        further = minimize_scalar(squared, bounds=(-span, lo), method="bounded")
+        if further.fun < best.fun:
+            best = further
     return float(best.x)
+
+
+# A drive does not weaken its field at the last volt: it keeps a few percent in hand for the
+# current regulator to move the current with, and weakens from there. The settled result and
+# the control lab's references keep 5%; the solver itself keeps to the voltage it is given.
+WEAKENING_HEADROOM = 0.95
 
 
 def _weakened_id(motor: Motor, w: float, rpm: float, torque: float, v_max: float, floor: float, i_d: float) -> float:
@@ -142,7 +163,7 @@ def _weakened_id(motor: Motor, w: float, rpm: float, torque: float, v_max: float
     # give at this speed. With magnets on the surface it sits where the magnet is fully
     # opposed. With buried magnets, whose reluctance torque needs current of its own, it
     # lies further out, and the search goes on to find it.
-    lowest = floor if motor.ld >= motor.lq else -4.0 * motor.flux_linkage / motor.ld
+    lowest = floor if motor.ld >= motor.lq else min(-4.0 * motor.flux_linkage / motor.ld, 2.0 * i_d)
     least = minimize_scalar(excess, bounds=(lowest, i_d), method="bounded")
     deepest = float(least.x) if excess(float(least.x)) < excess(lowest) else lowest
     if excess(deepest) > 0:

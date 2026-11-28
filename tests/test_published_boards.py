@@ -107,12 +107,12 @@ def board_b(ws, rth_ja: float) -> list[tuple[str, float, float, float]]:
 
 # The model's rise at each measured point, K, as VALIDATION.md records it.
 A_RECORDED = {
-    RTH_JA_STANDARD: [16.2, 29.0, 50.8, 75.1, 121.6, 31.0, 53.3, 78.6, 131.8, 178.8],
-    RTH_JA_OWN_BOARD: [10.1, 17.9, 30.8, 44.4, 67.6, 19.4, 32.9, 47.7, 77.1, 101.4],
+    RTH_JA_STANDARD: [16.2, 29.1, 50.6, 74.6, 120.9, 31.1, 53.4, 78.1, 130.9, 177.7],
+    RTH_JA_OWN_BOARD: [10.1, 18.0, 30.6, 44.1, 67.2, 19.4, 33.0, 47.4, 76.6, 100.8],
 }
 B_RECORDED = {
-    RTH_JA_STANDARD: [18.5, 31.2, 50.8, 54.5, 82.1, 54.8, 88.1, 130.8],
-    RTH_JA_OWN_BOARD: [14.9, 24.9, 40.0, 43.7, 64.7, 44.3, 70.8, 103.6],
+    RTH_JA_STANDARD: [18.5, 31.3, 50.5, 54.6, 81.7, 54.8, 88.3, 131.1],
+    RTH_JA_OWN_BOARD: [14.9, 25.0, 39.8, 43.8, 64.4, 44.3, 70.9, 103.8],
 }
 
 
@@ -143,7 +143,7 @@ def test_board_b_four_gan_transistors_a_switch(workspace, rth_ja) -> None:
     for label, _, measured, model in rows:
         by_frequency.setdefault(label, []).append(model / measured)
     if rth_ja == RTH_JA_STANDARD:
-        # At 20 kHz, where conduction is half the loss, within 6%; the higher the
+        # At 20 kHz, where conduction is half the loss, within 7%; the higher the
         # frequency, the further above: the switching estimate is what grows.
         assert all(0.93 < r < 1.02 for r in by_frequency["20 kHz"])
         assert all(1.35 < r < 1.55 for r in by_frequency["50 kHz"])
@@ -240,8 +240,8 @@ def at_its_temperature(ws, i_rms: float, chopped: bool) -> float:
 
 
 C_LOSS_RECORDED = {
-    "100%": [0.344, 0.853, 1.660, 3.159, 5.522, 6.957],
-    "95%": [0.962, 1.638, 2.891, 5.365, 8.163, 9.333],
+    "100%": [0.346, 0.854, 1.661, 3.160, 5.523, 6.959],
+    "95%": [1.135, 1.802, 3.054, 5.520, 8.302, 9.451],
 }
 
 
@@ -271,8 +271,8 @@ def test_board_c_loss_at_the_measured_temperature(workspace) -> None:
 
 
 C_TEMP_RECORDED = {
-    "100%": [3.6, 8.8, 20.1, 40.9, 77.5, 126.8, 263.3, None],
-    "95%": [22.1, 26.6, 48.1, 92.0, 187.1, 345.4],
+    "100%": [3.6, 8.9, 20.1, 40.9, 77.5, 126.8, 263.5, None],
+    "95%": [27.3, 32.0, 54.0, 100.0, 202.9, 379.9],
 }
 
 

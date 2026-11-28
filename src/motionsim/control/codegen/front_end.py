@@ -333,7 +333,16 @@ def replay(files_at: dict[str, str]) -> dict:
                 (root / Path(name).name).write_text(text, encoding="utf-8")
         for precision, tolerance in TOLERANCE.items():
             built = root / f"replay_{precision}"
-            command = [*cc.split(), "-std=c99", "-O1", "-Wall", "-Wextra", "-Werror", f"-DFE_REAL={precision}"]
+            command = [
+                *cc.split(),
+                "-std=c99",
+                "-O1",
+                "-ffp-contract=off",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                f"-DFE_REAL={precision}",
+            ]
             command += [str(root / SOURCE), str(root / HARNESS), "-o", str(built), "-lm"]
             try:
                 made = subprocess.run(command, capture_output=True, text=True, timeout=SECONDS, check=False)

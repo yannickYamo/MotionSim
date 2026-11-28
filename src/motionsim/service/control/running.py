@@ -18,7 +18,16 @@ from motionsim.control.kernel import FIDELITIES, MOST_STEPS, Inverter, Kernel, T
 from motionsim.control.losses import Cost, cost
 from motionsim.control.metrics import ripple
 from motionsim.control.plant import Coupling, Machine, Plant
-from motionsim.control.presets import BUILDERS, Design, bandwidth, chosen, context, limited, offered
+from motionsim.control.presets import (
+    BUILDERS,
+    VERY_LOW_CARRIER_RATIO,
+    Design,
+    bandwidth,
+    chosen,
+    context,
+    limited,
+    offered,
+)
 from motionsim.control.references import total_loss
 from motionsim.control.safestate import bridge_speed
 from motionsim.control.scheme import SOURCES, Compiled, Scheme, compile_scheme
@@ -212,11 +221,14 @@ def _engine(rest: dict, design: Design) -> dict | None:
     }
 
 
-def stability(compiled: Compiled, ctx: Context, found: dict | None = None) -> dict:
+def stability(compiled: Compiled, ctx: Context, found: dict | None = None, ratio: float | None = None) -> dict:
     """What the linear analysis says of the gains before the run: whether every closed loop
     it can work out has its poles inside the unit circle, and which pole is not, in words.
     Gains that do not hold are run all the same: the voltage limit holds such a loop in an
-    oscillation short of running away, and that limit cycle is the thing to look at."""
+    oscillation short of running away, and that limit cycle is the thing to look at.
+    The analysis takes each axis alone, as with the rotor still. Given the design's carrier
+    ratio, under VERY_LOW_CARRIER_RATIO switching periods a turn it is said to be of the rotor
+    still only: the turn within a period couples the axes, and the run is what shows it."""
     found = linear.loops(compiled, ctx) if found is None else found
     analysed = [name for key, name in LOOPS if found[key] is not None]
     for key, name in LOOPS:
@@ -245,7 +257,13 @@ def stability(compiled: Compiled, ctx: Context, found: dict | None = None) -> di
         "analysed": True,
         "loop": None,
         "pole": None,
-        "said": f"every pole of the closed {' and '.join(analysed)} loop lies inside the unit circle",
+        "said": f"every pole of the closed {' and '.join(analysed)} loop lies inside the unit circle"
+        + (
+            f" with the rotor still; at {written(ratio, 2)} switching periods a turn of the output the axes "
+            "are coupled within a period, which this analysis leaves out: read the run"
+            if ratio is not None and ratio < VERY_LOW_CARRIER_RATIO
+            else ""
+        ),
     }
 
 
@@ -480,7 +498,7 @@ def prepared(data: dict, workspace: Workspace) -> Ready:
     if shaped is not scheme:
         # The shaper is outside the loop: the analysis stands, the scheme is compiled with its mode.
         scheme, compiled = shaped, compile_scheme(shaped, ctx)
-    stable = stability(compiled, ctx, analysis)
+    stable = stability(compiled, ctx, analysis, design.f_sw / design.f_out if design.f_out > 0 else None)
     motion = motion_of(data, needed=kind == "motion")
     stretch = None
     if kind == "motion" and motion is not None:

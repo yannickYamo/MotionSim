@@ -29,8 +29,10 @@ async function engineReady(ready: Promise<void>): Promise<boolean> {
     app.setup = await keptBack(app.state, await api.setup(), storedParts(), api);
   } catch (e) {
     ui.starting = null;
+    res.fault =
+      `The engine could not start in this browser: ${(e as Error).message}. Its numerical libraries are ` +
+      "fetched from cdn.jsdelivr.net: a network that blocks that address stops it.";
     renderEngineStatus();
-    res.fault = `The engine could not start in this browser: ${(e as Error).message}`;
     renderStage();
     renderPanel(true);
     return false;

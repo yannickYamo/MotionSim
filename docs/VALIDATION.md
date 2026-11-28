@@ -39,7 +39,7 @@ A claim here is held in one of three ways. A **test in CI** runs on every change
 | A device changed while an answer is on its way, the search for the largest load cancelled partway (the engine in the browser holds to having stopped), and two short random walks, on the local and the hosted page | script in CI | `web/scripts/race.mjs`, `walk.mjs` |
 | The search for the largest load reports each probe and ends in the answer it gave before; a page that stops waiting stops it on the server | test in CI | `tests/test_heavier_probes.py`, `tests/test_streamed.py` |
 | An answer kept for the report is the one worked out afresh, and never one for another request or device file | test in CI | `tests/test_remembered.py` |
-| The control lab: a held point against the settled engine, the loops against linear theory and a calculation by hand, the blocks against closed forms, every exploration's direction | test in CI | `tests/test_control_*.py`, 422 tests |
+| The control lab: a held point against the settled engine, the loops against linear theory and a calculation by hand, the blocks against closed forms, every exploration's direction | test in CI | `tests/test_control_*.py`, 424 tests |
 | The motor's saturating iron, the twisting shaft and the disturbance-observer speed loop: the iron map gives back its calibration and is reciprocal, the plant keeps the terminal energy, a free shaft swings at √(K(1/Jm+1/Jl)) and decays at c/2Jeq, the speed loop's poles are its control law's and its observer's | A, B; test in CI | `tests/test_control_magnetics.py`, `tests/test_control_shaft.py`, `tests/test_control_adrc.py` |
 | The board reader: partial inductances and meshed loops against closed forms, the half bridge found in made-up boards, files that cannot be read refused | test in CI | `tests/test_board_*.py`, 98 tests |
 | The local app: every address answered as the service's own dispatch answers it, the key never sent back, the store, the streams | test in CI | `tests/test_app_*.py`, 145 tests |
@@ -82,7 +82,7 @@ Also checked: steady-state temperatures, the self-consistent temperature for an 
 - Surface-magnet machine: torque current, voltages and frequency match the dq equations.
 - Electrical power into the motor equals shaft power plus copper loss, for surface-magnet and salient machines.
 - Salient machine: the chosen current is smaller than at neighbouring d-axis currents giving the same torque.
-- Field weakening: voltage sits at the limit and torque is unchanged.
+- Field weakening: voltage sits at 95% of the limit and torque is unchanged.
 
 ### Motor types
 
@@ -137,7 +137,7 @@ Also checked: steady-state temperatures, the self-consistent temperature for an 
 - A stepper's electrical power equals winding loss plus shaft power at six points covering all four quadrants, standstill and zero torque.
 - The output period of a permanent-magnet and an induction motor is the same forwards and backwards.
 - The busiest package carries one third, two thirds or all of a three-leg stage's loss for one-leg, two-leg and three-leg packages.
-- Recovery charge is zero at no current, follows the current below its test point and grows as the square root above it.
+- Recovery charge is zero at no current and follows the square root of the current, below its test point and above it.
 - Output power stops at the stage's linear range.
 - Checked once, with a script that is not in the repository: 3,400 calls through the page's interface, with speeds, torques, voltages and frequencies from negative to fifty times nominal, bad motor values, and impossible loads and motions, each returned a finite result or a stated refusal.
 
@@ -381,28 +381,28 @@ The three boards stand in still air with no heatsink, so what the guides measure
 | Switching | Phase current | Measured rise | Model, 45 K/W | Over measured | Model, 21 K/W | Over measured |
 |---|---|---|---|---|---|---|
 | 50 kHz | 5.1 A | 8.6 K | 16.2 K | 1.89 | 10.1 K | 1.18 |
-| 50 kHz | 10.2 A | 14.6 K | 29.0 K | 1.99 | 17.9 K | 1.23 |
-| 50 kHz | 15.7 A | 26.7 K | 50.8 K | 1.90 | 30.8 K | 1.15 |
-| 50 kHz | 19.6 A | 38.5 K | 75.1 K | 1.95 | 44.4 K | 1.15 |
-| 50 kHz | 24.9 A | 58.9 K | 121.6 K | 2.06 | 67.6 K | 1.15 |
-| 100 kHz | 5.0 A | 16.7 K | 31.0 K | 1.86 | 19.4 K | 1.16 |
-| 100 kHz | 10.2 A | 25.7 K | 53.3 K | 2.08 | 32.9 K | 1.28 |
-| 100 kHz | 14.3 A | 38.0 K | 78.6 K | 2.07 | 47.7 K | 1.26 |
-| 100 kHz | 19.5 A | 58.4 K | 131.8 K | 2.26 | 77.1 K | 1.32 |
-| 100 kHz | 22.9 A | 74.9 K | 178.8 K | 2.39 | 101.4 K | 1.35 |
+| 50 kHz | 10.2 A | 14.6 K | 29.1 K | 1.99 | 18.0 K | 1.23 |
+| 50 kHz | 15.7 A | 26.7 K | 50.6 K | 1.89 | 30.6 K | 1.15 |
+| 50 kHz | 19.6 A | 38.5 K | 74.6 K | 1.94 | 44.1 K | 1.15 |
+| 50 kHz | 24.9 A | 58.9 K | 120.9 K | 2.05 | 67.2 K | 1.14 |
+| 100 kHz | 5.0 A | 16.7 K | 31.1 K | 1.86 | 19.4 K | 1.16 |
+| 100 kHz | 10.2 A | 25.7 K | 53.4 K | 2.08 | 33.0 K | 1.28 |
+| 100 kHz | 14.3 A | 38.0 K | 78.1 K | 2.06 | 47.4 K | 1.25 |
+| 100 kHz | 19.5 A | 58.4 K | 130.9 K | 2.24 | 76.6 K | 1.31 |
+| 100 kHz | 22.9 A | 74.9 K | 177.7 K | 2.37 | 100.8 K | 1.34 |
 
 **Board B: 24 of the same transistor, four in parallel a switch.** A 135 by 100 mm board, the same conditions, a larger motor, 25.5 °C air, at 20, 50 and 100 kHz. Each package's copper is its share of the board, 5.6 cm².
 
 | Switching | Phase current | Measured rise | Model, 45 K/W | Over measured | Model, 21 K/W | Over measured |
 |---|---|---|---|---|---|---|
 | 20 kHz | 25.8 A | 18.4 K | 18.5 K | 1.01 | 14.9 K | 0.81 |
-| 20 kHz | 41.1 A | 31.2 K | 31.2 K | 1.00 | 24.9 K | 0.80 |
-| 20 kHz | 56.4 A | 54.2 K | 50.8 K | 0.94 | 40.0 K | 0.74 |
-| 50 kHz | 36.0 A | 35.6 K | 54.5 K | 1.53 | 43.7 K | 1.23 |
-| 50 kHz | 51.1 A | 60.3 K | 82.1 K | 1.36 | 64.7 K | 1.07 |
-| 100 kHz | 15.4 A | 25.3 K | 54.8 K | 2.16 | 44.3 K | 1.75 |
-| 100 kHz | 30.6 A | 44.3 K | 88.1 K | 1.99 | 70.8 K | 1.60 |
-| 100 kHz | 46.1 A | 74.5 K | 130.8 K | 1.76 | 103.6 K | 1.39 |
+| 20 kHz | 41.1 A | 31.2 K | 31.3 K | 1.00 | 25.0 K | 0.80 |
+| 20 kHz | 56.4 A | 54.2 K | 50.5 K | 0.93 | 39.8 K | 0.73 |
+| 50 kHz | 36.0 A | 35.6 K | 54.6 K | 1.53 | 43.8 K | 1.23 |
+| 50 kHz | 51.1 A | 60.3 K | 81.7 K | 1.35 | 64.4 K | 1.07 |
+| 100 kHz | 15.4 A | 25.3 K | 54.8 K | 2.17 | 44.3 K | 1.75 |
+| 100 kHz | 30.6 A | 44.3 K | 88.3 K | 1.99 | 70.9 K | 1.60 |
+| 100 kHz | 46.1 A | 74.5 K | 131.1 K | 1.76 | 103.8 K | 1.39 |
 
 **The switching part, with the board's path taken out.** At one current the path from a transistor to the air is the same at every switching frequency, so the ratio of two rises at that current says how much of the loss comes with switching, whatever the path is. The model's ratio barely moves with the junction-to-air figure (under 3%).
 
@@ -420,34 +420,34 @@ First the loss alone, with every case held at the temperature the guide measured
 
 | Winding current | Measured, 100% | Model | Measured, 95% | Model |
 |---|---|---|---|---|
-| 7.3 and 8.1 A | 2.57 W | 0.34 W | 3.60 W | 0.96 W |
-| 11.4 and 11.6 A | 3.42 W | 0.85 W | 4.48 W | 1.64 W |
-| 15.5 and 15.9 A | 4.91 W | 1.66 W | 7.35 W | 2.89 W |
-| 20.5 and 21.4 A | 6.81 W | 3.16 W | 10.87 W | 5.37 W |
-| 25.5 and 25.7 A | 9.42 W | 5.52 W | 14.48 W | 8.16 W |
-| 27.7 and 27.6 A | 10.73 W | 6.96 W | 16.74 W | 9.33 W |
+| 7.3 and 8.1 A | 2.57 W | 0.35 W | 3.60 W | 1.14 W |
+| 11.4 and 11.6 A | 3.42 W | 0.85 W | 4.48 W | 1.80 W |
+| 15.5 and 15.9 A | 4.91 W | 1.66 W | 7.35 W | 3.05 W |
+| 20.5 and 21.4 A | 6.81 W | 3.16 W | 10.87 W | 5.52 W |
+| 25.5 and 25.7 A | 9.42 W | 5.52 W | 14.48 W | 8.30 W |
+| 27.7 and 27.6 A | 10.73 W | 6.96 W | 16.74 W | 9.45 W |
 
 Then the whole chain on the board's own path, against the chart:
 
 | Winding current | Measured rise, 100% | Model | Over measured |
 |---|---|---|---|
 | 5.5 A | 6.8 K | 3.6 K | 0.53 |
-| 8.6 A | 8.8 K | 8.8 K | 1.00 |
+| 8.6 A | 8.8 K | 8.9 K | 1.01 |
 | 12.5 A | 16.7 K | 20.1 K | 1.20 |
 | 16.9 A | 26.8 K | 40.9 K | 1.53 |
 | 21.1 A | 42.1 K | 77.5 K | 1.84 |
 | 24.0 A | 54.2 K | 126.8 K | 2.34 |
-| 27.0 A | 69.1 K | 263.3 K | 3.81 |
+| 27.0 A | 69.1 K | 263.5 K | 3.81 |
 | 29.5 A | 86.1 K | no steady temperature | |
 
-At 95% duty the model is 1.2 times the measured rise at 8 A, 1.9 times at 18 A and 4 times at 26 A.
+At 95% duty the model is 1.5 times the measured rise at 8 A, 2.0 times at 18 A and 4.5 times at 26 A.
 
 What they show:
 
 - **The path to the air is the larger error, and it is on the hot side.** With the standard test board's junction-to-air figure, the one the tool asks for, the model is about twice the measured rise on board A at every current and both frequencies, and on board C from 1.2 times at 12 A to 3.8 times at 27 A, where the loss and the temperature feed each other until there is no steady state at 29.5 A, a current the board carried at 111 °C. These boards have copper planes in several layers spreading the heat; the board model leaves out layers and vias (said in its limits) and takes the datasheet's figure, from a board made to a standard, as each package's own path. With the figure the datasheet gives on its maker's own evaluation board, board A comes to 1.15 to 1.35 times. No tool figure is fitted to this; the datasheet's second figure is a choice a user can make by typing it.
-- **At the lowest frequency the chain can land close.** Board B at 20 kHz is within 6% with the standard figure; board C at 8.6 A agrees. That is agreement of a sum, not of each part: the 21 K/W figure, nearer on board A, is 19 to 26% low on board B at 20 kHz.
+- **At the lowest frequency the chain can land close.** Board B at 20 kHz is within 7% with the standard figure; board C at 8.6 A agrees. That is agreement of a sum, not of each part: the 21 K/W figure, nearer on board A, is 19 to 26% low on board B at 20 kHz.
 - **The switching estimate from charge grows faster with frequency than the boards do.** With the path taken out, board A agrees at 5 A, and at 19.5 A the rise at 100 kHz is 1.77 times the 50 kHz rise in the model against 1.53 measured; on board B the rise at 100 kHz is 3.71 times the 20 kHz rise in the model against 2.08 measured. Two things can make that, and the measurement cannot tell them apart: the estimate is high (the output charge of each of the four devices in parallel is taken through the full voltage at every hard turn-on; with the gate resistors at their least and a 1 nH loop the ratio still comes to 2.9), or loss outside the transistors that does not change with frequency, in the copper and shunts carrying 41 A, adds to the measured rise at every frequency alike and lowers the measured ratio. The second is what the first 48 V board above showed.
-- **Board C's loss, the path set aside, is low: a fixed 2 W the model does not draw, and half of what PWM adds.** Without PWM the measured loss is 2.0 W fixed plus a part in the square of the current; the fixed part is the gate driver, the supplies and the controller, which the guide puts at about 0.6 W for the driver alone and which nothing in the model draws. Of the part in the square of the current the model has 81%; the guide's 0.5 mΩ shunt in the link accounts for a third of the rest, and the board's copper can account for the remainder. What 20 kHz PWM adds, 95% against 100% duty at the same current, is 3.6 and 4.9 W measured at 21 and 26 A and half of that in the model: the switching estimate from charge, low here as it was at low current on the first board, with the snubbers' 0.2 W and the diode's conduction at each commutation, which the model leaves out, on the measured side.
+- **Board C's loss, the path set aside, is low: a fixed 2 W the model does not draw, and half of what PWM adds.** Without PWM the measured loss is 2.0 W fixed plus a part in the square of the current; the fixed part is the gate driver, the supplies and the controller, which the guide puts at about 0.6 W for the driver alone and which nothing in the model draws. Of the part in the square of the current the model has 81%; the guide's 0.5 mΩ shunt in the link accounts for a third of the rest, and the board's copper can account for the remainder. What 20 kHz PWM adds, 95% against 100% duty at the same current, is 3.6 and 4.9 W measured at 21 and 26 A and a little over half of that in the model: the switching estimate from charge, low here as it was at low current on the first board, with the snubbers' 0.2 W and the diode's conduction at each commutation, which the model leaves out, on the measured side.
 
 What they do not show: a junction temperature measured under the case, a part with measured switching energy, or a board whose own resistance or thermal path is known. Two parts, two makers' boards, all in still air. The guides' charts are read, not tabulated, and the readings are said with each.
 

@@ -276,6 +276,24 @@ def test_the_sensors_do_what_their_figures_say() -> None:
     assert theta == pytest.approx(math.floor(1.0 / step) * step) and theta != 1.0
 
 
+def test_an_encoder_s_speed_holds_through_the_wrap_of_the_angle_it_is_given() -> None:
+    # A shaft at a steady 100 rad/s, its electrical angle given wrapped to one turn as an encoder
+    # or a resolver gives it: over 4096 counts and a window of 8 samples the speed read stays
+    # within a count over the window of the true one, at every wrap as between two.
+    d = design()
+    ctx = context(d, foc_servo(d))
+    encoder = BLOCKS["position_sensing"]("p", {"sensor": "encoder", "counts": 4096.0, "speed_window": 8.0}, ctx)
+    encoder.reset()
+    true, pairs = 100.0, ctx.pole_pairs
+    read = []
+    for k in range(4000):
+        theta = math.fmod(pairs * true * k * ctx.ts, 2 * math.pi)
+        read.append(encoder.step(k * ctx.ts, theta, 0.0)[1])
+    assert pairs * true * 4000 * ctx.ts > 4 * 2 * math.pi  # the angle wrapped several times
+    within = (2 * math.pi / 4096.0) / (8 * ctx.ts)
+    assert max(abs(w - true) for w in read[8:]) <= within * 1.001
+
+
 def test_a_slow_speed_loop_still_has_its_margins_and_bandwidth_read() -> None:
     # Speed gains a hundred times lower put the crossover near 1 Hz, under the decade the current
     # loop's plot starts at: the speed loop's plot reaches down to it, and its margin is read.

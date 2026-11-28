@@ -315,7 +315,9 @@ def _fw_by_voltage(a: dict) -> None:
     # magnet adds where nothing measures torque, at more current.
     asked = float(a["said"][0].split("where ")[1].split(" N·m")[0])
     model, voltage = column(a, "torque_mean")
-    assert model < 0.5 * asked
+    # How much is lost depends on the part: the 5% of voltage the model's reference keeps in
+    # hand covers some of the stronger magnet.
+    assert model < 0.8 * asked
     assert 0.95 * asked < voltage < 1.2 * asked
     peak_model, peak_voltage = column(a, "channels.i_switch_peak")
     assert peak_voltage > peak_model

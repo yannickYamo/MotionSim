@@ -35,7 +35,7 @@ const SECTIONS: Section[] = [
       {
         is:
           "i_d chosen for the least current that gives the torque; made more negative when √(v_d² + v_q²) " +
-          "would pass what the supply can give",
+          "would pass 95% of what the supply can give",
         where:
           "Maximum torque per amp, then field weakening, down to the least voltage the torque can be had " +
           "for; with buried magnets that lies beyond full opposition of the magnet. A motor that still " +
@@ -168,14 +168,19 @@ const SECTIONS: Section[] = [
     equations: [
       {
         is: "t_on = (Q_gs − Q_g,th + Q_gd) · R_g,on / (V_drive − V_plateau)",
-        where: "The time the gate current takes to move the charge between threshold and the end of the plateau.",
+        where:
+          "The time the gate current takes to move the charge between threshold and the end of the plateau. " +
+          "On a supply under its test voltage Q_gd is taken less, by √(V_dc / V_ref).",
       },
-      { is: "t_off = (Q_gs − Q_g,th + Q_gd) · R_g,off / V_plateau", where: "" },
+      {
+        is: "t_off = (Q_gs − Q_g,th + Q_gd) · R_g,off / (V_plateau − V_off)",
+        where: "V_off is the gate driver's low level, nought or below.",
+      },
       {
         is: "E_on = 1/2 · V_dc · I · t_on + (Q_oss + Q_rr) · V_dc",
         where:
           "The overlap of current and voltage, plus the output charge of the leg and the recovery charge " +
-          "taken through the full voltage.",
+          "taken through the full voltage. Q_rr follows the square root of the current, from its test current.",
       },
       { is: "E_off = 1/2 · V_dc · I · t_off", where: "" },
       {

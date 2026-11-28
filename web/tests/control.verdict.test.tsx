@@ -6,13 +6,16 @@ import { act, fireEvent } from "@testing-library/react";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import type { Root } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { control, Missing } from "../src/control/client";
 import { idleRun, lab } from "../src/control/store";
 import type { Edit, Presets, Quality, Run, Verdict } from "../src/control/types";
 import { afterVerb, baselineOf, forgetTuned, leverWords, VerdictCard } from "../src/control/verdict";
 import presetsFile from "./fixtures/control-presets.json";
 import holdFile from "./fixtures/control-run-hold.json";
+
+// A lever pressed opens its setting 60 ms later: the page outlives that, as a browser's does.
+afterAll(() => new Promise((done) => setTimeout(done, 100)));
 
 const presets = presetsFile as unknown as Presets;
 const copy = <T,>(v: T): T => JSON.parse(JSON.stringify(v)) as T;

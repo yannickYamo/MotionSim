@@ -162,20 +162,17 @@ def test_in_a_slow_turn_the_rotor_moves_forward_by_the_turns_it_makes(monkeypatc
     assert steps == pytest.approx(np.full(len(steps), 0.025), abs=1e-9)
 
 
-def test_a_motor_with_little_magnet_never_draws_more_d_axis_current_than_its_magnet_holds() -> None:
+def test_a_motor_with_little_magnet_takes_its_least_current_past_where_the_magnet_is_cancelled() -> None:
     """With 0.01 Wb of magnet on a 1 mH d axis, a d-axis current of -10 A cancels the magnet's
-    flux; the search for least current keeps above -0.999 of that, -9.99 A. Torque here is
-    mostly reluctance torque, whose least-current point lies far beyond: so the answer is the
-    best within the bound, found again by brute force over the bound written in the test,
-    with the q-axis current from T = 1.5·p·(ψ + (Ld − Lq)·id)·iq."""
+    flux. Torque here is mostly reluctance torque, whose least-current point lies far beyond
+    that: the answer is the least current anywhere, found again by brute force over a range
+    written in the test, with the q-axis current from T = 1.5·p·(ψ + (Ld − Lq)·id)·iq."""
     psi, ld, lq, p, torque = 0.01, 1e-3, 5e-3, 4, 10.0
     motor = Pmsm(pole_pairs=p, flux_linkage=psi, ld=ld, lq=lq, rs=0.1, magnets="interior")
     state = operating_state(motor, 100.0, torque, 1e4)
-    floor = -0.999 * psi / ld
-    assert floor == pytest.approx(-9.99)
-    ids = np.linspace(floor, 0.0, 200_001)
+    ids = np.linspace(-60.0, 0.0, 600_001)
     iqs = torque / (1.5 * p * (psi + (ld - lq) * ids))
     best = int(np.argmin(ids**2 + iqs**2))
-    assert state.i_d >= floor - 1e-9
+    assert ids[best] < -psi / ld
     assert state.i_d == pytest.approx(ids[best], abs=1e-3)
     assert np.hypot(state.i_d, state.i_q) == pytest.approx(np.hypot(ids[best], iqs[best]), rel=1e-6)

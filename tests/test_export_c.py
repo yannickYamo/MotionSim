@@ -249,6 +249,20 @@ def test_only_a_scheme_that_closes_a_loop_inside_the_controller_is_anchored_in_d
 
 
 @needs_compiler
+def test_a_scheme_read_through_an_encoder_is_exported_and_steps_as_the_simulation() -> None:
+    ws = workspace()
+    base = started("example-mosfet", ws)
+    scheme = next(s for s in posted("/api/control/presets", base, ws)["schemes"] if s["id"] == "foc_servo")
+    position = next(b for b in scheme["blocks"] if b["name"] == "position")
+    position["params"] = {**position["params"], "sensor": "encoder", "counts": 4096.0}
+    out = bundle(base | {"scheme": scheme}, ws)
+    r = out["replay"]
+    assert r["ran"] and r["passed"], r["said"]
+    source = unzipped(out["zip"])["core/motionsim_ctrl.c"]
+    assert "sensor = encoder" in source and "b->turned" in source
+
+
+@needs_compiler
 @pytest.mark.parametrize("shunts", ["three", "two", "single"])
 @pytest.mark.parametrize("key", ["example-mosfet", "example-gan"])
 def test_currents_read_through_shunts_are_exported_and_step_as_the_simulation(key, shunts) -> None:

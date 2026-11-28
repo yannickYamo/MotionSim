@@ -51,19 +51,45 @@ def igbt(name: str, v0: float, **more):
 
 
 @pytest.mark.parametrize(("ld", "lq"), [(0.008, 0.008), (0.006, 0.015)])
-def test_a_saturating_pmsm_settles_on_inductances_that_belong_to_its_own_currents(ld, lq) -> None:
-    # vd = Rs*id - w*Lq*iq and vq = Rs*iq + w*(Ld*id + psi), with each inductance at the
-    # value its own axis current gives it: L0 / sqrt(1 + (i / i_sat)^2).
+def test_a_saturating_pmsm_settles_on_inductances_that_belong_to_its_own_current(ld, lq) -> None:
+    # vd = Rs*id - w*Lq*iq and vq = Rs*iq + w*(Ld*id + psi), with both inductances at the
+    # value the magnitude of the current gives them: L0 / sqrt(1 + (|i| / i_sat)^2).
     pairs, psi, rs, i_sat, rpm, torque = 4, 0.1, 1.0, 5.0, 1000.0, 4.8
     motor = Motor(pole_pairs=pairs, flux_linkage=psi, ld=ld, lq=lq, rs=rs, i_sat=i_sat)
     s = operating_state(motor, rpm, torque, 1e4)
     w = pairs * 2 * math.pi * rpm / 60
-    lq_now = lq / math.sqrt(1 + (s.i_q / i_sat) ** 2)
-    ld_now = ld / math.sqrt(1 + (s.i_d / i_sat) ** 2)
-    assert abs(s.i_d) > 1.0  # the d axis carries current here, so its inductance is in play
+    fallen = math.sqrt(1 + (s.i_d**2 + s.i_q**2) / i_sat**2)
+    ld_now, lq_now = ld / fallen, lq / fallen
+    assert fallen > 1.3  # well into saturation
     assert s.v_d == pytest.approx(rs * s.i_d - w * lq_now * s.i_q, rel=1e-5)
     assert s.v_q == pytest.approx(rs * s.i_q + w * (ld_now * s.i_d + psi), rel=1e-5)
     assert 1.5 * pairs * (psi + (ld_now - lq_now) * s.i_d) * s.i_q == pytest.approx(torque, rel=1e-5)
+
+
+def test_saturation_gives_a_surface_magnet_motor_no_reluctance_torque() -> None:
+    # Magnets on the surface: the torque is the magnet's alone, 1.5 p psi iq, whatever the iron
+    # does. Saturating, the motor needs the same current, all of it on the q axis.
+    hard = Motor(pole_pairs=4, flux_linkage=0.1, ld=8e-3, lq=8e-3, rs=0.05)
+    soft = hard.model_copy(update={"i_sat": 5.0})
+    for motor in (hard, soft):
+        s = operating_state(motor, 100.0, 8.0, 1e6)
+        assert s.i_d == 0.0
+        assert s.i_q == pytest.approx(8.0 / (1.5 * 4 * 0.1), rel=1e-9)
+
+
+def test_a_buried_magnet_motor_at_a_high_torque_takes_the_least_current_past_full_opposition() -> None:
+    # On the least-current line of a salient motor, id = (psi - sqrt(psi^2 + 8 (Lq-Ld)^2 I^2)) / (4 (Lq-Ld))
+    # for a current of magnitude I. At 40 N.m this motor's point lies at id = -20.5 A, past
+    # the -12.5 A at which its magnet is fully opposed (psi / Ld).
+    pairs, psi, ld, lq, torque = 4, 0.05, 4e-3, 16e-3, 40.0
+    s = operating_state(Motor(pole_pairs=pairs, flux_linkage=psi, ld=ld, lq=lq, rs=0.05), 100.0, torque, 1e6)
+    current = math.hypot(s.i_d, s.i_q)
+    assert s.i_d < -psi / ld
+    assert s.i_d == pytest.approx(
+        (psi - math.sqrt(psi**2 + 8 * (lq - ld) ** 2 * current**2)) / (4 * (lq - ld)), rel=1e-4
+    )
+    assert 1.5 * pairs * (psi + (ld - lq) * s.i_d) * s.i_q == pytest.approx(torque, rel=1e-9)
+    assert (s.i_d, s.i_q, current) == pytest.approx((-20.52, 22.51, 30.46), abs=0.01)
 
 
 def test_a_hot_brushed_motor_needs_more_current_because_its_magnets_give_less() -> None:
@@ -101,10 +127,11 @@ def test_an_induction_motor_ripples_against_its_leakage_not_its_magnetising_indu
 @pytest.mark.parametrize(("spec", "rpm", "torque"), [(INDUCTION, 1400.0, 8.0), (SYNRM, 1500.0, 6.0)])
 def test_a_motor_weakens_its_field_to_fit_the_voltage_the_stage_really_gives(spec, rpm, torque) -> None:
     # Space-vector modulation reaches v_dc / sqrt(3) peak per phase; a stage that gives
-    # three quarters of the ideal reaches three quarters of that.
+    # three quarters of the ideal reaches three quarters of that, and the field is weakened
+    # from 95% of it.
     v_dc, usable = 540.0, 0.75
     ideal = ADAPTER.validate_python(spec)
-    limit_rms = usable * v_dc / math.sqrt(3) / math.sqrt(2)
+    limit_rms = 0.95 * usable * v_dc / math.sqrt(3) / math.sqrt(2)
     unhindered = ideal.stage(rpm, torque, v_dc, Pwm.space_vector)
     assert summary(unhindered)["phase voltage"] > limit_rms and summary(unhindered)["field weakening"] == 0.0
     held = ideal.model_copy(update={"usable_voltage": usable}).stage(rpm, torque, v_dc, Pwm.space_vector)

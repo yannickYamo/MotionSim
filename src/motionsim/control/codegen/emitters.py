@@ -146,14 +146,17 @@ def position_sensing(u: Unit) -> None:
     u.choice("sensor")
     late, window = u.block._late + 1, u.block._window + 1
     count = u.derived("count", u.block._count, "rad", "a count of the encoder, 2π / counts")
+    turn = u.derived("turn", u.block._turn, "rad", "the shaft's angle an electrical turn is, 2π / pole pairs")
     u.param("counts")
     u.fields += [
         f"ms_real line[{late}];",
         "int line_n, line_head;",
         f"ms_real seen[{window}];",
         "int seen_n, seen_head;",
+        "ms_real last, turned;",
+        "int has_last;",
     ]
-    u.code(u.reset, "b->line_n = b->line_head = b->seen_n = b->seen_head = 0;")
+    u.code(u.reset, "b->line_n = b->line_head = b->seen_n = b->seen_head = b->has_last = 0;\nb->turned = MS_C(0.0);")
     u.code(
         u.step,
         """
@@ -163,8 +166,11 @@ int span;
 if (b->line_n < $late) { b->line[(b->line_head + b->line_n) % $late] = in_theta / CTX_PP; b->line_n++; }
 else { b->line[b->line_head] = in_theta / CTX_PP; b->line_head = (b->line_head + 1) % $late; }
 read = MS_FLOOR(b->line[b->line_head] / $count) * $count;
-if (b->seen_n < $window) { b->seen[(b->seen_head + b->seen_n) % $window] = read; b->seen_n++; }
-else { b->seen[b->seen_head] = read; b->seen_head = (b->seen_head + 1) % $window; }
+/* theta may come wrapped to one electrical turn: whole turns between two samples are taken back out. */
+if (b->has_last) b->turned -= MS_FLOOR((read - b->last) / $turn + MS_C(0.5)) * $turn;
+b->last = read; b->has_last = 1;
+if (b->seen_n < $window) { b->seen[(b->seen_head + b->seen_n) % $window] = read + b->turned; b->seen_n++; }
+else { b->seen[b->seen_head] = read + b->turned; b->seen_head = (b->seen_head + 1) % $window; }
 span = b->seen_n - 1;
 speed = span ? (b->seen[(b->seen_head + b->seen_n - 1) % $window] - b->seen[b->seen_head]) / ((ms_real)span * CTX_TS)
              : in_omega_m;
@@ -175,6 +181,7 @@ out_omega_e = CTX_PP * speed;
         late=str(late),
         window=str(window),
         count=count,
+        turn=turn,
     )
 
 

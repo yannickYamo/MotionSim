@@ -116,7 +116,8 @@ def test_on_a_one_way_supply_the_link_charges_to_the_magnet_s_line_voltage_again
     # where the peak of the line voltage, √3·ωe·ψ, is the link's and two diodes' drops.
     first = unloaded(ws, "one-way", safe="off", rpm=1000.0)
     bridge = first["trip"]["bridge_rpm"]
-    answer = unloaded(ws, "one-way", safe="off", rpm=over * bridge)
+    # At a torque the motor still reaches that far into field weakening.
+    answer = unloaded(ws, "one-way", safe="off", rpm=over * bridge, torque=1.0)
     design = prepared(salient(ws, "linear") | {"scheme": "foc_torque"}, ws).design
     w_e = design.pole_pairs * over * bridge * math.pi / 30.0
     want = math.sqrt(3.0) * w_e * design.psi - 2.0 * design.v_drop

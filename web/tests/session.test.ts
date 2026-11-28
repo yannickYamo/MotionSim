@@ -128,6 +128,19 @@ describe("the hosted page", () => {
 });
 
 describe("the page served on this machine", () => {
+  it("offers no chat where the server keeps no session, and keeps it where the session only failed", async () => {
+    const panel = `<dialog id="chat-panel"></dialog>`;
+    document.body.insertAdjacentHTML("beforeend", panel);
+    vi.stubGlobal("fetch", () => answer(500, { error: "the engine failed" }));
+    await startShared();
+    expect(sync.on).toBe(false);
+    expect(document.getElementById("chat-panel")).not.toBeNull();
+    vi.stubGlobal("fetch", () => answer(404, { error: "no such address" }));
+    await startShared();
+    expect(sync.on).toBe(false);
+    expect(document.getElementById("chat-panel")).toBeNull();
+  });
+
   it("writes its design as the first version where the session holds none", async () => {
     await startShared();
     await settled();

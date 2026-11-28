@@ -180,7 +180,8 @@ def least_loss_d_axis(device: Device, motor, rpm: float, torque: float, op: Oper
     least = float(np.hypot(usual.i_d, usual.i_q))
     most = motor.i_max * np.sqrt(2) if motor.i_max else 1.5 * least
     room = float(np.sqrt(max(most**2 - usual.i_q**2, 0.0)))
-    floor = max(-0.999 * motor.flux_linkage / motor.ld, -room)
+    # With buried magnets the least current may already lie past full opposition of the magnet.
+    floor = min(max(-0.999 * motor.flux_linkage / motor.ld, -room), usual.i_d)
     found = d_axis_current(total, usual.i_d, floor)
     # Where least current is also least loss there is nothing to advise, and nothing is said.
     return found if found.value.get("saving") else None

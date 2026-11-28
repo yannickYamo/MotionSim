@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from math import log
 
+import numpy as np
 import pytest
 from conftest import line, linear_device
 from test_mosfet import fet
@@ -96,6 +97,57 @@ def test_gate_resistors_meet_each_limit_exactly() -> None:
     weak = recommend.gate_resistors(device, op, i_peak, dvdt_max=dvdt, driver_peak=0.05)
     assert weak.value["rg_on"] == pytest.approx(op.v_drive / 0.05, rel=0.1)
     assert any("gate driver's 0.05 A peak" in text for text in weak.lines)
+
+
+def test_a_gate_pulled_below_nought_turns_off_faster_and_its_limits_ask_more_resistance() -> None:
+    # At turn-off the gate current is (plateau - low level) / Rg. Pulled to -4 V from a plateau
+    # of Vpl, it is (Vpl + 4) / Vpl times the current to nought: the overshoot and the slew
+    # limits ask that many times the resistance, and at one resistor the edge loses that
+    # many times less.
+    from dataclasses import replace
+
+    from motionsim.engine.mosfet import charge_energies
+
+    device = fet()
+    c = device.switch.charge
+    op = fet_op(i_rms=0.0, l_loop=10e-9)
+    below = replace(op, v_drive_off=-4.0)
+    i_peak, dvdt = 20.0, 5e9
+    harder = (c.v_plateau + 4.0) / c.v_plateau
+    room = 0.8 * device.ratings.v_max - op.v_dc
+    overshoot = op.l_loop * i_peak * (c.v_plateau + 4.0) / ((c.q_gs - c.q_g_th) * room)
+    slew = op.v_dc * (c.v_plateau + 4.0) / (c.q_gd * dvdt)
+    r = recommend.gate_resistors(device, below, i_peak, dvdt_max=dvdt)
+    assert r.value["rg_off"] >= max(slew, overshoot)
+    assert r.value["rg_off"] == pytest.approx(max(slew, overshoot), rel=0.1)
+    current = np.array([i_peak])
+    at_nought = float(charge_energies(device.switch, current, op)[1][0])
+    assert float(charge_energies(device.switch, current, below)[1][0]) == pytest.approx(at_nought / harder, rel=1e-9)
+    assert float(charge_energies(device.switch, current, below)[0][0]) == float(
+        charge_energies(device.switch, current, op)[0][0]
+    )
+    # The dead time's turn-off follows: each stretch by its own law of the discharge towards -4 V.
+    delay, rise, fall = recommend.turn_off_time(device, op.v_drive, 10.0, 1e-9, -4.0)
+    v_th = c.v_plateau * c.q_g_th / c.q_gs
+    assert delay == pytest.approx(10.0 * 1e-9 * log((op.v_drive + 4.0) / (c.v_plateau + 4.0)))
+    assert rise == pytest.approx(c.q_gd * 10.0 / (c.v_plateau + 4.0))
+    assert fall == pytest.approx(10.0 * (c.q_gs / c.v_plateau) * log((c.v_plateau + 4.0) / (v_th + 4.0)))
+
+
+def test_silicon_carbide_left_open_is_turned_off_below_nought_and_says_so() -> None:
+    from dataclasses import replace
+
+    from motionsim.recommend import choose_gate_drive
+
+    device = fet()
+    op = replace(fet_op(), v_drive=None, rg_on=None, rg_off=None, l_loop=None)
+    assert choose_gate_drive(device, op, 20.0).op.v_drive_off == 0.0  # silicon: to nought, and nothing said
+    device.technology = "SiC MOSFET"
+    chosen = choose_gate_drive(device, op, 20.0)
+    assert chosen.op.v_drive_off == -4.0
+    assert any("low level taken as -4 V" in str(line) for line in chosen.lines)
+    # A level given is the user's, nought included.
+    assert choose_gate_drive(device, replace(op, v_drive_off=0.0), 20.0).op.v_drive_off == 0.0
 
 
 def test_gate_resistors_say_what_is_missing() -> None:

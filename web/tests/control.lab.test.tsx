@@ -5,7 +5,7 @@
 import { act, fireEvent, waitFor } from "@testing-library/react";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Refused } from "../src/api/answers";
 import { api } from "../src/api";
 import { cancelRun } from "../src/control/actions";
@@ -31,6 +31,9 @@ import presetsFile from "./fixtures/control-presets.json";
 import kindsFile from "./fixtures/control-kinds.json";
 import holdFile from "./fixtures/control-run-hold.json";
 import stepFile from "./fixtures/control-run-step.json";
+
+// A lever pressed opens its setting 60 ms later: the page outlives that, as a browser's does.
+afterAll(() => new Promise((done) => setTimeout(done, 100)));
 
 const presets = presetsFile as unknown as Presets;
 const hold = holdFile as unknown as Run;

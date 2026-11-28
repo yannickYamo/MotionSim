@@ -82,14 +82,14 @@ def test_the_board_offered_is_the_smallest_on_which_the_verdict_on_the_junction_
 
 def test_the_board_offered_counts_the_loss_drawn_beyond_the_data(made) -> None:
     """At the starting point in air at 40 °C the junction's range tops out under 175 °C on
-    about 43 cm², where part of the loss is drawn beyond the datasheet's data, which could take
+    about 47 cm², where part of the loss is drawn beyond the datasheet's data, which could take
     it over: that board leaves the verdict undecided, so the board offered is larger, and on it
     the verdict on the junction is decided."""
     ws, start = made
     air = {"cooling": "board", "t_ambient": 40}
     offer = ask(ws, start, **air, board_area="")
-    assert temperature(ws, start, **air, board_area=43) == "undecided"
-    assert offer["value"] > 43
+    assert temperature(ws, start, **air, board_area=47) == "undecided"
+    assert offer["value"] > 47
     assert temperature(ws, start, **air, board_area=offer["value"]) in ("ok", "caution")
     sized = candidate(ws, start, **air, board_area=offer["value"], sized="board_area")
     assert not [c for c in sized["checks"] if c["topic"] == "temperature" and c["level"] == "undecided"]

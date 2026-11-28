@@ -26,6 +26,7 @@ from motionsim.control.scheme import Scheme
 from motionsim.control.stage import StageModel
 from motionsim.engine.modulation import Pwm
 from motionsim.errors import Refusal
+from motionsim.motor import pmsm
 from motionsim.text import whole
 
 LOW_CARRIER_RATIO = 30.0  # switching periods in a turn of the output, below which the ratio is low
@@ -196,7 +197,7 @@ def _reference(design: Design, torque_wire: str, strategy: str) -> BlockSpec:
         {
             "strategy": strategy,
             "i_limit": design.limit,
-            "voltage_share": design.usable,
+            "voltage_share": pmsm.WEAKENING_HEADROOM * design.usable,
             "torque_grid": max(design.torque_limit, abs(design.torque)) / 64.0,
             "speed_grid": max(abs(design.omega), 1.0) / 64.0,
         },
@@ -204,8 +205,9 @@ def _reference(design: Design, torque_wire: str, strategy: str) -> BlockSpec:
             "i_limit": "the motor's current limit"
             if design.i_limit
             else "1.5 times the design point's current: the motor gives no limit",
-            "voltage_share": "the share of the ideal voltage the stage gives at the design point (dead time, "
-            "shortest pulse and the devices' drop), as the loss engine takes it",
+            "voltage_share": "95% of the share of the ideal voltage the stage gives at the design point (dead "
+            "time, shortest pulse and the devices' drop): the 5% a drive keeps for its current regulator, as the "
+            "loss engine takes it",
             "torque_grid": "1/64 of the torque limit",
             "speed_grid": "1/64 of the design speed",
         },

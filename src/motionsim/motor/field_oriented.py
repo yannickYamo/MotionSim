@@ -96,15 +96,18 @@ class Pmsm(_Machine):
             **self.model_dump(exclude={"type", "magnets", "usable_voltage", "p_iron", "n_iron", "temperature_note"})
         )
         v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
-        return pmsm.operating_state(motor, rpm, torque, v_max, self.i_d_held)
+        # A d-axis current held by the user is held up to the full voltage; left to the
+        # control, the field is weakened from the share a drive keeps to.
+        kept = v_max if self.i_d_held is not None else pmsm.WEAKENING_HEADROOM * v_max
+        return pmsm.operating_state(motor, rpm, torque, kept, self.i_d_held)
 
     def flux_share(self, state: pmsm.DriveState) -> float:
         """The stator's flux linkage at a point, as a share of the magnet's own. Each
         inductance is the one the point was solved with: lower where the iron saturates."""
         ld, lq = self.ld, self.lq
         if self.i_sat:
-            ld /= float(np.sqrt(1 + (state.i_d / self.i_sat) ** 2))
-            lq /= float(np.sqrt(1 + (state.i_q / self.i_sat) ** 2))
+            fallen = pmsm.saturated(self.i_sat, state.i_d, state.i_q)
+            ld, lq = ld / fallen, lq / fallen
         return float(np.hypot(self.flux_linkage + ld * state.i_d, lq * state.i_q) / self.flux_linkage)
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
@@ -189,7 +192,7 @@ class SynRm(_Machine):
         )
 
     def _solve(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> tuple[Stage, float, float]:
-        v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
+        v_max = pmsm.WEAKENING_HEADROOM * self.usable_voltage * pwm.max_modulation_index * v_dc / 2
         w = self.pole_pairs * _rad_s(rpm)
         k = 1.5 * self.pole_pairs * (self.ld - self.lq)
         product = abs(torque) / k  # id * |iq|
@@ -288,7 +291,7 @@ class Induction(_Machine):
         return i_q, w, v_d, v_q
 
     def stage(self, rpm: float, torque: float, v_dc: float, pwm: Pwm) -> Stage:
-        v_max = self.usable_voltage * pwm.max_modulation_index * v_dc / 2
+        v_max = pmsm.WEAKENING_HEADROOM * self.usable_voltage * pwm.max_modulation_index * v_dc / 2
         i_d = self.i_magnetising
         weakening = False
 

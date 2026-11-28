@@ -135,7 +135,8 @@ def test_a_transistor_stage_with_no_current_still_pays_for_its_switching() -> No
     # output charge through the link voltage: 1.5e-7 C at 50 V, going with the root of the voltage.
     expected = 6 * 0.5 * 1.5e-7 * math.sqrt(48 / 50) * 48 * 20000
     assert at(0.0) == pytest.approx(expected, rel=1e-3)
-    assert at(0.0) == pytest.approx(at(1e-4), rel=1e-3)
+    # The recovery charge comes in as the square root of the current: steeply, from nothing.
+    assert at(0.0) == pytest.approx(at(1e-6), rel=1e-3)
 
 
 @pytest.mark.parametrize(
@@ -175,9 +176,10 @@ def test_the_gate_resistor_line_counts_the_recovery_charge_the_current_brings(am
     rec = recommend.gate_resistors(fet, op, amps)
     line = next(text for text in rec.lines if "switching event" in text)
     on, off = (float(x) for x in re.findall(r"([\d.]+) µJ", line))
-    moved = 2.0e-8 - 1.304e-8 + 1.4e-8
-    # In proportion below the 50 A it was measured at, as the square root above.
-    recovered = 1.2e-7 * (amps / 50.0 if amps <= 50.0 else math.sqrt(amps / 50.0))
+    # The gate-drain charge is tabulated at 50 V, and at 48 V is less by the root of the ratio.
+    moved = 2.0e-8 - 1.304e-8 + 1.4e-8 * math.sqrt(48 / 50)
+    # As the square root of the current from the 50 A it was measured at, below it and above.
+    recovered = 1.2e-7 * math.sqrt(amps / 50.0)
     e_on = 0.5 * 48 * amps * moved * rec.value["rg_on"] / (10 - 4.6) + (1.5e-7 * math.sqrt(48 / 50) + recovered) * 48
     e_off = 0.5 * 48 * amps * moved * rec.value["rg_off"] / 4.6
     assert on == pytest.approx(e_on * 1e6, rel=6e-3)  # written to three figures

@@ -32,6 +32,11 @@ RATES = {"igbt": (2.0, 20.0), "si": (5.0, 50.0), "sic": (20.0, 80.0), "gan": (50
 TJ = 25.0
 
 
+# The one edge whose energy the event cannot be brought to: see
+# test_energies_still_meet_the_loss_model.
+UNMET = ("si", "turn-off")
+
+
 @cache
 def part(name: str):
     s = SHEETS[name]
@@ -157,10 +162,17 @@ def test_a_gan_gate_driven_over_its_rating_is_a_caution() -> None:
 
 @pytest.mark.parametrize("kind", list(KINDS))
 def test_energies_still_meet_the_loss_model(kind) -> None:
+    """All but one: the silicon part's turn-off at 50 V, under the 95 V its gate-drain charge
+    is tabulated at, is counted by the loss model at about what the loop's inductance alone
+    holds, and the event says that no factor meets it."""
     ev = event(kind)
-    for e in (ev.on, ev.off):
-        assert e.met
-        assert e.read.energy == pytest.approx(e.target, rel=0.05)
+    for name, e in (("turn-on", ev.on), ("turn-off", ev.off)):
+        assert e.met == ((kind, name) != UNMET)
+        if e.met:
+            assert e.read.energy == pytest.approx(e.target, rel=0.05)
+        else:
+            assert e.target < e.read.energy < 1.2 * e.target
+            assert any(f"The {name} loses" in n and "no setting of the free factor meets it" in n for n in ev.notes)
 
 
 @pytest.mark.parametrize("kind", list(KINDS))
@@ -171,8 +183,10 @@ def test_rates_are_the_kinds_or_said_to_be_indicative(kind) -> None:
         rate = abs(e.read.dv_dt) / 1e9
         if not e.corrected:
             assert low <= rate <= high, (name, rate)
-        else:
+        elif e.met:
             assert any(f"The {name} meets the datasheet's energy only with a large correction" in n for n in ev.notes)
+        else:
+            assert (kind, name) == UNMET
 
 
 def test_an_igbt_keeps_its_datasheet_figures() -> None:
@@ -206,5 +220,8 @@ def test_a_given_layout_still_meets_the_loss_model(kind) -> None:
     e_on, e_off = energies(device, v_dc, current)
     given = Detail(l_loop=12e-9, l_cs=1e-9)
     ev = switching_event(device, v_dc=v_dc, current=current, tj=TJ, e_on=e_on, e_off=e_off, given=given)
-    for e in (ev.on, ev.off):
-        assert e.read.energy == pytest.approx(e.target, rel=0.05)
+    for name, e in (("turn-on", ev.on), ("turn-off", ev.off)):
+        if (kind, name) == UNMET:
+            assert not e.met and e.target < e.read.energy < 1.2 * e.target
+        else:
+            assert e.read.energy == pytest.approx(e.target, rel=0.05)

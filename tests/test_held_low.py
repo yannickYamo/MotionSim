@@ -29,12 +29,12 @@ def _with_recovery(q_rr: float, at: float | None):
     return device.switch.model_copy(update={"charge": charge})
 
 
-def test_recovery_charge_grows_as_the_square_root_above_its_test_current() -> None:
-    """100 nC at 20 A: 25 nC at 5 A in proportion, 100 at 20, and at 80 A twice that,
-    since 80 is four times 20 and the root of four is two. At 45 A: √2.25 = 1.5."""
+def test_recovery_charge_follows_the_square_root_of_the_current_from_its_test_current() -> None:
+    """100 nC at 20 A: 50 nC at 5 A, a quarter of the current and half the charge, 100 at 20,
+    and at 80 A twice that. At 45 A: √2.25 = 1.5."""
     c = _with_recovery(100e-9, 20.0).charge
     got = recovery_charge(c, np.array([0.0, 5.0, 20.0, 45.0, 80.0]))
-    assert got.tolist() == pytest.approx([0.0, 25e-9, 100e-9, 150e-9, 200e-9])
+    assert got.tolist() == pytest.approx([0.0, 50e-9, 100e-9, 150e-9, 200e-9])
 
 
 def test_a_silicon_junction_recovers_more_charge_hot_and_the_others_do_not() -> None:
@@ -69,7 +69,9 @@ def test_turn_on_energy_carries_the_recovery_charge_at_the_junctions_temperature
 
 def test_a_recovery_charge_used_away_from_its_conditions_is_said() -> None:
     chip = _with_recovery(100e-9, 20.0)
-    assert recovery_note(chip, "Si MOSFET", 15.0, 25.0) is None
+    assert recovery_note(chip, "Si MOSFET", 20.0, 25.0) is None
+    below = recovery_note(chip, "SiC MOSFET", 15.0, 25.0)
+    assert below is not None and "20 A" in below and "square root" in below
     above = recovery_note(chip, "SiC MOSFET", 40.0, 125.0)
     assert above is not None and "20 A" in above and "square root" in above and "°C" not in above
     hot = recovery_note(chip, "Si MOSFET", 15.0, 125.0)

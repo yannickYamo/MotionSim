@@ -185,18 +185,25 @@ export function adoptDesign(given: State): void {
   schedule();
 }
 
+/** What the session holds, or nothing where it cannot be read. The chat speaks through the
+ *  session: where the server keeps none, it is not offered. */
+async function held() {
+  try {
+    return await sessionApi.read();
+  } catch (e) {
+    if (e instanceof NoSession) document.getElementById("chat-panel")?.remove();
+    return null;
+  }
+}
+
 /** Start keeping the page in step with the session, where the server keeps one. */
 export async function startSession(): Promise<void> {
   if (api.mode() !== "server" || sync.on) return;
   // What the page holds as the read begins: an edit made while it is under way is the newer.
   const before = content(copy(app.state));
   const labBefore = carry.epoch();
-  let current;
-  try {
-    current = await sessionApi.read();
-  } catch {
-    return; // an older server, or none: the browser's copy is all there is
-  }
+  const current = await held();
+  if (!current) return; // an older server, or none: the browser's copy is all there is
   sync.on = true;
   const mark = readMark();
   await partsKnown(current.doc.design);

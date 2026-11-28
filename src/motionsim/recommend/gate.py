@@ -8,7 +8,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from motionsim.device.schema import Device, SwitchingEnergy
-from motionsim.engine.mosfet import charge_energies, output_charge
+from motionsim.engine.mosfet import charge_energies, miller_charge, output_charge
 from motionsim.engine.notes import Code, Note, coded
 from motionsim.engine.point import EDGE_LIMITS
 from motionsim.engine.solver import OperatingPoint
@@ -92,7 +92,7 @@ def _past_the_cable(
     assert op.v_drive is not None
     fastest = channel_rates(device, op, i_peak)
     if fastest is not None:
-        on[CHANNEL] = op.v_dc * (op.v_drive - c.v_plateau) / (c.q_gd * fastest[0])
+        on[CHANNEL] = op.v_dc * (op.v_drive - c.v_plateau) / (miller_charge(c, op.v_dc) * fastest[0])
     if driver_peak:
         return driver_peak
     usual = DRIVER_PEAK[family(device.technology)]
@@ -124,10 +124,14 @@ def _resistor_limits(
     lines: list[str] = []
     on: dict[str, float] = {}
     off: dict[str, float] = {}
+    # What pulls the gate down at turn-off: from its plateau to the driver's low level.
+    low = op.v_drive_off or 0.0
+    pulled = c.v_plateau - low
     if dvdt_max is not None:
         slew = f"{SLEW} {dvdt_max / 1e9:g} V/ns"
-        on[slew] = op.v_dc * (op.v_drive - c.v_plateau) / (c.q_gd * dvdt_max)
-        off[slew] = op.v_dc * c.v_plateau / (c.q_gd * dvdt_max)
+        q_gd = miller_charge(c, op.v_dc)
+        on[slew] = op.v_dc * (op.v_drive - c.v_plateau) / (q_gd * dvdt_max)
+        off[slew] = op.v_dc * pulled / (q_gd * dvdt_max)
     v_limit = voltage_share * device.ratings.v_max
     if op.l_loop is None:
         lines.append("turn-off overshoot is not considered: give the commutation-loop inductance (--lloop)")
@@ -139,13 +143,14 @@ def _resistor_limits(
     else:
         moved = max(c.q_gs - c.q_g_th, 1e-12)
         off[f"overshoot within {voltage_share:.0%} of the {device.ratings.v_max:g} V rating"] = (
-            op.l_loop * i_peak * c.v_plateau / (moved * (v_limit - op.v_dc))
+            op.l_loop * i_peak * pulled / (moved * (v_limit - op.v_dc))
         )
     if dvdt_max is None or dvdt_max > CABLE:
         driver_peak = _past_the_cable(device, op, i_peak, on, lines, driver_peak)
     if driver_peak:
-        on[f"gate driver's {driver_peak:g} A peak"] = op.v_drive / driver_peak
-        off[f"gate driver's {driver_peak:g} A peak"] = op.v_drive / driver_peak
+        # The gate swings between the driver's two levels, and the peak current is that swing's.
+        on[f"gate driver's {driver_peak:g} A peak"] = (op.v_drive - low) / driver_peak
+        off[f"gate driver's {driver_peak:g} A peak"] = (op.v_drive - low) / driver_peak
     else:
         lines.append("the gate driver's peak current is not considered: give it to include it")
     for limits in (on, off):
@@ -236,6 +241,9 @@ def gate_resistors(
 
 
 USUAL_DRIVE = {"Si MOSFET": 10.0, "SiC MOSFET": 18.0, "GaN HEMT": 5.0}  # V
+# The driver's low level where none is given, V: silicon carbide is usually turned off below
+# nought, to hold its low threshold off against the other switch's edge.
+USUAL_DRIVE_OFF = {"SiC MOSFET": -4.0}
 USUAL_LOOP = 20e-9  # H; a careful layout with discrete parts
 
 
@@ -421,8 +429,9 @@ def edge_rates(device: Device, op: OperatingPoint, i_peak: float | None = None) 
     c = device.switch.charge
     if c is None or not op.v_drive or not op.rg_on or not op.rg_off or op.v_drive <= c.v_plateau or c.q_gd <= 0:
         return None
-    on = op.v_dc * (op.v_drive - c.v_plateau) / (op.rg_on * c.q_gd)
-    off = op.v_dc * c.v_plateau / (op.rg_off * c.q_gd)
+    q_gd = miller_charge(c, op.v_dc)
+    on = op.v_dc * (op.v_drive - c.v_plateau) / (op.rg_on * q_gd)
+    off = op.v_dc * (c.v_plateau - (op.v_drive_off or 0.0)) / (op.rg_off * q_gd)
     held = channel_rates(device, op, i_peak) if i_peak is not None else None
     return (on, off) if held is None else (min(on, held[0]), min(off, held[1]))
 
@@ -449,15 +458,31 @@ def _choose_gate(device: Device, op: OperatingPoint, i_peak: float) -> GateDrive
     measured = sw.e_on is not None and sw.e_off is not None
     if measured or sw.charge is None:
         return _measured_gate(device, op)
+    op, low = _low_level(device, op)
     if op.v_drive is not None and op.rg_on is not None and op.rg_off is not None:
         return GateDrive(
-            op,
-            "given",
-            op.v_drive,
-            op.rg_on,
-            op.rg_off,
-            [
-                "gate drive voltage and resistors as you gave them",
-            ],
+            op, "given", op.v_drive, op.rg_on, op.rg_off, ["gate drive voltage and resistors as you gave them", *low]
         )
-    return _fill_gate(device, op, i_peak)
+    filled = _fill_gate(device, op, i_peak)
+    return replace(filled, lines=[*filled.lines, *low])
+
+
+def _low_level(device: Device, op: OperatingPoint) -> tuple[OperatingPoint, list[str]]:
+    """The conditions with the driver's low level filled in where it was left open, and what
+    is said of one taken below nought."""
+    if op.v_drive_off is not None:
+        return op, []
+    usual = USUAL_DRIVE_OFF.get(device.technology, 0.0)
+    said: list[str] = (
+        [
+            Note(
+                Code.gate_drive_taken,
+                "v_drive_off",
+                f"gate driver's low level taken as {usual:g} V, usual for a {device.technology}: the turn-off is "
+                "that much faster, and its resistor larger; give v_drive_off if yours differs",
+            )
+        ]
+        if usual
+        else []
+    )
+    return replace(op, v_drive_off=usual), said

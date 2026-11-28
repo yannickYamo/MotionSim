@@ -406,3 +406,17 @@ def test_a_second_of_switched_simulation_at_20_khz_takes_under_8_seconds() -> No
     assert trace.time.size == 20000 and trace.ended == "duration"
     assert trace.wire("plant.i_q")[-1] == pytest.approx(2.0 / (1.5 * SURFACE.pole_pairs * SURFACE.psi), rel=0.01)
     assert took < 8.0, f"{took:.2f} s"
+
+
+def test_under_twelve_switching_periods_a_turn_the_analysis_is_said_to_be_of_the_rotor_still() -> None:
+    from motionsim.service.control.running import stability
+
+    loop = {"stable": True, "poles": [{"re": 0.5, "im": 0.0, "hz": 0.0}]}
+    found = {"current_d": loop, "current_q": loop, "speed": None, "missing": []}
+    plain = "every pole of the closed d-axis current and q-axis current loop lies inside the unit circle"
+    assert stability(None, None, found)["said"] == plain
+    assert stability(None, None, found, 12.0)["said"] == plain
+    low = stability(None, None, found, 8.0)
+    assert low["linear_stable"] is True
+    assert low["said"].startswith(plain + " with the rotor still; at 8 switching periods a turn")
+    assert low["said"].endswith("read the run")

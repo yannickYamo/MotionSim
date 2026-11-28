@@ -160,3 +160,21 @@ def test_life_counts_the_swing_of_every_turn_of_the_motor() -> None:
 
     in_trace = sum(c for s, _, c in rainflow(slow_trace.chips[label]) if s > 0.5 * slow.swing)
     assert 100 <= counted + in_trace <= 140
+
+
+def test_a_life_figure_goes_with_the_swings_its_model_was_fitted_to() -> None:
+    """The model was fitted to swings of 30 to 80 K. A life whose wear comes from a swing
+    outside them is said to be extrapolated; one inside is not; no wear, no word."""
+    from types import SimpleNamespace
+
+    from motionsim.service.motion.follow import _life
+
+    def of(low: float, high: float) -> dict:
+        tj = [low, high] * 20
+        return _life(SimpleNamespace(chips={"transistor": tj}, swings={}), tj, 60.0)
+
+    inside, small, large, still = of(60.0, 110.0), of(60.0, 70.0), of(40.0, 140.0), of(60.0, 60.2)
+    assert [a["fitted"] for a in (inside, small, large, still)] == [[30.0, 80.0]] * 4
+    assert (inside["swing"], small["swing"], large["swing"]) == pytest.approx((50.0, 10.0, 100.0))
+    assert [a["extrapolated"] for a in (inside, small, large, still)] == [False, True, True, False]
+    assert still["repeats"] is None

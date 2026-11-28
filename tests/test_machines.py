@@ -118,7 +118,8 @@ def test_induction_motor_weakens_flux_at_the_voltage_limit() -> None:
     limited = IM.stage(3000.0, 2.0, 300.0, Pwm.space_vector)
     v = {label: value for label, value, _ in limited.summary}
     assert v["field weakening"] == 1.0
-    assert v["phase voltage"] * math.sqrt(2) == pytest.approx(2 / math.sqrt(3) * 150.0, rel=1e-6)
+    # At 95% of what the stage gives: the share a drive keeps to in field weakening.
+    assert v["phase voltage"] * math.sqrt(2) == pytest.approx(0.95 * 2 / math.sqrt(3) * 150.0, rel=1e-6)
     assert limited.p_electrical == pytest.approx(limited.p_shaft + limited.p_motor_loss, rel=1e-9)
     assert limited.i_peak > free.i_peak * 0.5  # less flux, more torque current
 
@@ -586,8 +587,7 @@ def test_the_d_axis_advice_appears_for_a_motor_with_iron_loss_and_not_without() 
     # A motor whose iron saturates is weighed with the inductances its point was solved with.
     soft = Pmsm(**figures, i_sat=5.0)
     point = soft.state(1500.0, 3.0, op.v_dc, op.pwm)
-    ld = 5e-3 / math.sqrt(1 + (point.i_d / 5.0) ** 2)
-    lq = 5e-3 / math.sqrt(1 + (point.i_q / 5.0) ** 2)
+    ld = lq = 5e-3 / math.sqrt(1 + (point.i_d**2 + point.i_q**2) / 5.0**2)
     assert lq < 0.9 * 5e-3  # the q-axis is well into saturation at this torque
     assert soft.flux_share(point) == pytest.approx(math.hypot(0.2 + ld * point.i_d, lq * point.i_q) / 0.2, rel=1e-6)
     # A great deal of it: the loss is still falling where the search ends, at half as much

@@ -20,7 +20,8 @@ from motionsim.control.codegen.writer import Generated
 
 MAKEFILE = """# The replay, built and run on the host: `make check` (or `make CC=clang check`).
 CC ?= cc
-CFLAGS ?= -std=c99 -O2 -Wall -Wextra -DMOTIONSIM_CTRL_REPLAY
+# No fused multiply-add: the replay holds the C to the arithmetic of the simulation.
+CFLAGS ?= -std=c99 -O2 -ffp-contract=off -Wall -Wextra -DMOTIONSIM_CTRL_REPLAY
 CORE = ../core
 
 all: replay-float replay-double

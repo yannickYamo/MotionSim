@@ -41,6 +41,7 @@ UNITS = {
     "rg_on": "Ω",
     "rg_off": "Ω",
     "v_drive": "V",
+    "v_drive_off": "V",
     "l_loop": "H",
     "i_rms": "A",
     "rpm": "rpm",
@@ -257,6 +258,13 @@ WORDS = {
 }
 
 
+def _low_level(data: dict) -> float | None:
+    """The gate driver's low level where it is given: nought, or below it."""
+    if data.get("v_drive_off") in ("", None):
+        return None
+    return _number(data["v_drive_off"], "gate driver's low level", low=-25, high=0, field="v_drive_off")
+
+
 def _optional(data: dict, key: str) -> float | None:
     if data.get(key) in ("", None):
         return None
@@ -373,6 +381,7 @@ def conditions(data: dict, default_pwm: Pwm = Pwm.sine) -> OperatingPoint:
         t_dead_given=t_dead_given,
         t_min_pulse=t_min_pulse,
         v_drive=_optional(data, "v_drive"),
+        v_drive_off=_low_level(data),
         rg_on=_optional(data, "rg_on"),
         rg_off=_optional(data, "rg_off"),
         l_loop=_optional(data, "l_loop"),

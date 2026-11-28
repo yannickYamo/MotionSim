@@ -218,7 +218,9 @@ export function poleZeroMap(loop: Loop): string {
   const said =
     `Poles and zeros of the closed ${loop.name} in the z plane: ${count(loop.poles.length, "pole")}, ` +
     `${count(loop.zeros.length, "zero")}; ` +
-    (out ? `${out} outside the unit circle, so the loop does not settle.` : "every pole inside the unit circle.") +
+    (out
+      ? `${out} outside the unit circle, so the loop does not settle.`
+      : "every pole of this linear model inside the unit circle.") +
     (crowd ? ` ${crowd.poles} poles and ${crowd.zeros} zeros lie within ${NEAR} of z = 1${crowd.spoken}.` : "");
   // At the scale of the circle they are one mark: what lies there is said beside it.
   // In the figures' face the note is too long for one line left of the mark: what cancels goes
