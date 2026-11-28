@@ -2,20 +2,25 @@
 
 [![ci](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml/badge.svg)](https://github.com/yannickYamo/MotionSim/actions/workflows/ci.yml)
 
-MotionSim is an open-source simulator for motor drives. Give it a power transistor from any semiconductor manufacturer, a motor and a load, and it tells you what the part loses, how hot it runs and whether it holds. It covers the whole drive, from the mains to the control code.
+MotionSim is an open-source simulator for motor drives. Give it a power transistor from any semiconductor manufacturer, a motor and a load, and it tells you what the part loses, how hot it runs and whether it holds. One physical model covers the whole drive: the switching edges, the losses and the junction temperature, the mains front end, the motor, and the control loop down to its C code.
 
 [Try it in your browser](https://yannickyamo.github.io/MotionSim/): nothing to install, no account, and nothing you enter leaves the page.
 
-![The MotionSim page for a 650 V SiC MOSFET driving a compressor from the mains: the front end and the inverter drawn on the left with each switch's loss and temperature; on the right the verdict in one word, then loss, hottest junction and load margin](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/page.png)
+![The MotionSim page for a 1200 V SiC module driving an electric car's motor from an 800 V battery: the inverter drawn with each switch's loss and temperature, the verdict in one word, then loss, hottest junction and load margin](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/page.png)
 
-## The problem
+## Everything in one place
 
-Choosing a power transistor at the start of a motor drive takes about a week, and the answer is still hard to stand behind.
+A drive is usually designed in pieces: a loss calculator from each semiconductor manufacturer, a circuit simulator for the stage, a control toolbox for the loop, and a spreadsheet to hold them together. Each has its own model, and none knows what the others assumed.
 
-- **Every semiconductor manufacturer's calculator knows only its own parts.** To put an IGBT from one beside a SiC MOSFET from another, you build both models by hand.
-- **It asks for what you do not have.** A modulation index and a power factor, when what you have is a motor, a supply and a load.
-- **It gives one number.** Nothing on what the number rests on, or on what the datasheet left out.
-- **It stops at one operating point.** A heatsink takes minutes to warm, and a washing machine's slow tumble is harder on the junction than its spin.
+MotionSim is one tool and one simulation, from the circuit to the code:
+
+- **Choose the part.** Any manufacturer's transistor, modelled from its own datasheet and compared on your duty.
+- **Design the stage.** Losses, junction temperatures, gate drive, DC link and the mains front end.
+- **Match the motor.** Seven kinds of motor, each run through its real load from start-up until the heatsink is warm.
+- **Find the best control.** Twenty-four schemes, tuned for your motor, simulated switch by switch and compared on what they cost the power stage.
+- **Export the code.** The control law as C, checked against the simulation, for your microcontroller.
+
+Change one figure and every answer follows, because it is the same model all the way down.
 
 ## The infrastructure
 
@@ -45,34 +50,52 @@ Five steps, one page, the power stage drawn on screen the whole time.
 
 From there, open the control lab, close the loop and take the code.
 
-### One question, start to finish
+### One design, start to finish
 
-*Can a 650 V SiC MOSFET run an air-conditioner compressor from a wall socket?* The part here is made up; the figures are the tool's own.
+*A 1200 V SiC module, an eight-pole interior-magnet motor, an 800 V battery: can it drive an electric car, and what is the best way to control it?* The part is made up; every figure and graph below is the tool's own.
 
-**1. Pick the part.** It opens on a compressor motor at 4200 rpm and 2.05 N·m, about 900 W at the shaft.
+**1. The verdict.** Passes. At 4500 rpm and 156 N·m the six switches lose 369 W, 220 W of it in switching, at 98.4 % efficiency with the motor's windings. The hottest junction is 82 °C, at standstill, and the part would carry 1.74 times this load.
 
-**2. Put it on the mains.** MotionSim recommends the stage between the socket and the DC link, and says why: a totem-pole PFC, 16.6 W lost against 24.5 W for a boost stage. The motor needs only 262 V, so it offers a lower link that saves another 1.73 W.
+**2. The drive cycle.** Town, main road, a hill, and town again. The junction is followed through all of it, with the worst swing marked, and braking puts 3.73 MJ back in the battery.
 
-![Step 3 with AC mains chosen: 230 V, one phase, a totem-pole PFC recommended with its loss and the reason, and the offer to hold a lower link](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/supply.png)
+![The Motion tab: the junction temperature through a drive of town, main road, a hill and town again, the start and the worst swing marked](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/motion.png)
 
-**3. Read the verdict.** Passes. The inverter loses 12.7 W, the hottest junction reaches 71 °C, 104 K under its rating, and the load could be 1.28 times heavier.
+**3. One switching edge.** Press a spike on the loss chart and the turn-off opens as an oscilloscope would show it: 132 A cut off, the voltage overshooting to 895 V on an 800 V link, then ringing out. The turn-on sits beside it, with di/dt, dv/dt and the energy of each.
 
-**4. Follow it through an hour.** A compressor starts, pulls down, holds and stops, three times an hour. The junction is drawn through all of it.
+![A turn-off through time: the drain current falling from 132 A as the drain-source voltage rises, overshoots to 895 V and rings, against the 1200 V rating](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/event.png)
 
-![The Motion tab: the junction temperature through an hour of three compressor runs, the start marked, against the heatsink](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/motion.png)
+**4. The control.** The control lab opens on torque control with least current and field weakening, every gain tuned for this motor, and runs it switch by switch. It passes, and points at the switching loss: a modulation that clamps each leg at its current peak would cut it.
 
-**5. Close the loop.** A compressor has no encoder, so the control lab picks a sensorless scheme, tunes it and runs it switch by switch with the PFC stage holding the link. The link holds within 5.3 V, and the lab offers a modulation that takes the switching loss toward 6.4 W.
+![The control lab: the scheme as a block diagram from the command to the motor, the verdict of the run and the three phase currents](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/control.png)
 
-![The control lab: the scheme as a block diagram from the command to the motor, the mains and the PFC stage under it, the verdict of the run and the phase currents](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/control.png)
+**5. A better scheme.** Pick the traction scheme with the clamp placed for least switching loss and run again: 255 W in place of 369 W, the switching loss halved to 113 W and the junction 4 K cooler, with the current's distortion going from 1.77 % to 2.24 %.
 
-Change any figure and every answer follows.
+**6. The loop, in frequency.** The Laplace lens gives the same loop its Bode plot, margins, step and poles: 62.8° of phase margin, 10 dB of gain margin, a 2.25 kHz bandwidth.
+
+![The Laplace lens: bandwidth, phase margin, gain margin and crossover, the Bode plot of the current loop with its margins marked, and the step it predicts](https://raw.githubusercontent.com/yannickYamo/MotionSim/main/docs/images/laplace.png)
+
+**7. The code.** Export the scheme as C, with a replay that checks it against the run.
 
 ## Outcomes
 
-- **A part chosen in minutes.** Up to five parts, from any manufacturers, side by side on your own duty.
+- **A part chosen on your own duty.** Up to five parts, from any manufacturers, side by side.
 - **An answer you can stand behind.** Every figure opens on its equation and its datasheet page. Where the datasheet cannot settle it, you are told what to measure.
 - **Thermal trouble found before the prototype.** The hottest moment of the real duty, and the life that cycling leaves.
 - **A drive, not only a part.** The front end, the tuned control and the C that runs it, from the same design.
+
+## Built for AI agents
+
+MotionSim runs an MCP server beside the page. Connect Claude Code, or any MCP client, and your agent works on the same design you see:
+
+```
+claude mcp add --transport http motionsim http://localhost:4310/mcp --header "Authorization: Bearer <code>"
+```
+
+- **It reads what you see.** The design, the results, the scheme's blocks and gains, the loop margins and the traces of the last run.
+- **It does what you do.** Chooses a part, changes a figure, switches the scheme, retunes a gain, runs a test or a sweep, exports the report and the C.
+- **You stay in control.** Every change shows on your page as it happens, with **Undo**, and is listed in the agent's activity.
+
+Ask it to review the design, to tune the current loop for more phase margin, or to find the lowest-loss scheme. The server runs on your machine only. With no page at all, `motionsim agent` prints the guide for driving MotionSim from a terminal. See [docs/MCP.md](https://github.com/yannickYamo/MotionSim/blob/main/docs/MCP.md).
 
 ## Your own parts
 
@@ -84,7 +107,7 @@ uvx --from git+https://github.com/yannickYamo/MotionSim motionsim serve
 
 The datasheet is read by a language model you choose, with your own key, or by one you host. The project runs no server: your files go from your machine to your model and nowhere else.
 
-It also runs from a terminal, with no datasheet and no key:
+From a terminal, with no datasheet and no key:
 
 ```
 motionsim simulate example --vdc 300 --irms 10 --m 0.9 --pf 0.85 --fsw 8000 --tsink 60

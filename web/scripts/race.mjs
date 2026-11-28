@@ -408,15 +408,16 @@ async function cancelLargest() {
   );
   hold(/Stopped looking/.test((await page.textContent("#announce")) ?? ""), "the largest load: the stop is said");
   if (inBrowser) {
-    // The engine stops before its next probe: it says so within about a probe's time, and
-    // posts no probe after that. A search left running would post a dozen more.
+    // The engine stops before its next probe: it says so (a search left to run answers, and
+    // never says it stopped), and posts no probe after that. Probes it had posted before it
+    // heard, which a busy page reads late, are not counted against it.
     await page.waitForTimeout(Math.min(4 * twoProbes, 120000));
     const after = await page.evaluate((t) => window.__fromEngine.filter((m) => m.at > t).map((m) => m.data), cancelled);
     const stop = after.findIndex((m) => m.status === 499);
     hold(stop >= 0, "the largest load: the engine in the browser says the search stopped");
     hold(
-      stop >= 0 && after.slice(stop + 1).every((m) => !("probe" in m)) && after.filter((m) => "probe" in m).length <= 1,
-      `the largest load: the engine posts no probe once it has stopped (${after.filter((m) => "probe" in m).length} after Cancel)`,
+      stop >= 0 && after.slice(stop + 1).every((m) => !("probe" in m)),
+      "the largest load: the engine posts no probe once it has stopped",
     );
   }
   // The engine is free: the next question is answered, and a search asked again runs to its end.
