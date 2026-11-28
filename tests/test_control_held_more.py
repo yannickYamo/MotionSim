@@ -13,6 +13,7 @@ import math
 
 import numpy as np
 import pytest
+from scipy.integrate import trapezoid
 from test_control_bench import engine_answer, posted, started, workspace
 
 from motionsim import guard
@@ -326,7 +327,7 @@ def test_the_window_of_peak_torque_is_centred_on_it_and_the_drive_follows_it(ws)
     # (1 + 4)/2 = 2.5 N·m, within 1%.
     t = np.array(answer["series"]["t"])
     made = np.array(answer["series"]["wires"]["plant.torque"])
-    assert float(np.trapezoid(made, t) / (t[-1] - t[0])) == pytest.approx(2.5, rel=0.01)
+    assert float(trapezoid(made, t) / (t[-1] - t[0])) == pytest.approx(2.5, rel=0.01)
     assert any("each instant of the mission stands until the next" in s for s in answer["taken"])
     # No drive makes the step of 3 N·m at 0.5 s at once: the error is read from ten of the
     # current loop's time constants after it, 10/ωc, ωc = 2π/(20·Ts) by the tuning rule (the

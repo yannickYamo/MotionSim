@@ -220,11 +220,12 @@ def test_a_loop_that_runs_away_after_its_observer_lost_the_rotor_is_refused_for_
 
 
 def test_a_reversal_that_ends_short_of_its_speed_says_so(ws) -> None:
-    # The run cut off at half the time the speed takes to arrive (read from the full run): it
-    # ends short of its speed, and says so.
+    # The run cut off at half the time the speed takes to arrive (read from the full run, or its
+    # whole length where an observer that lost the rotor never brings it there): it ends short
+    # of its speed, and says so.
     full = reversal(ws, "sensorless_smo")
     times, speeds = full["series"]["t"], full["series"]["wires"]["plant.omega_m"]
-    arrived = next(t for t, w in zip(times, speeds, strict=True) if w * RPM < -0.98 * 1500.0)
+    arrived = next((t for t, w in zip(times, speeds, strict=True) if w * RPM < -0.98 * 1500.0), times[-1])
     base = started(KEY, ws)
     rpm = 0.5 * base["conditions"]["rpm"]
     test = {"kind": "speed_step", "from_rpm": rpm, "to_rpm": -rpm, "duration": 0.5 * arrived}
